@@ -142,7 +142,7 @@ plan's rejection of the experiment for GLM can be dropped.
 **Evidence (data).** Task `019f92d4` (code / GLM-5.2, subtask of `019f8e32`), consecutive billed
 requests, strictly sequential in time:
 
-```
+```text
 29  08:49:08  in=219,162
 30  08:49:17  in= 92,394     <- microcompacted
 31  08:49:54  in=222,714     <- NOT microcompacted
@@ -255,7 +255,10 @@ Prompt-side contributors in the active mode definition
 
 **Dead rules directory (confirmed).** `~/.roo/rules-code-reviewer/` holds 7 files / **39,212
 bytes** of XML — and it is **never loaded**. `sections/custom-instructions.ts:422` resolves
-`path.join(rooDir, \`rules-${mode}\`)`where`mode`is the slug, and the active slug is`reviewer`, not `code-reviewer`(the`code-reviewer`slug belongs to the *old*`rooveterinaryinc.roo-cline`storage). The fallbacks`.roorules-reviewer`/`.clinerules-reviewer`don't exist either. So the reviewer today runs on`.roo/rules/` (4,004 B project + 145 B global)
+a directory named "rules-" followed by the mode **slug**, and the active slug is `reviewer`, not
+`code-reviewer` (the `code-reviewer` slug belongs to the _old_ `rooveterinaryinc.roo-cline`
+storage). The fallbacks `.roorules-reviewer` / `.clinerules-reviewer` don't exist either. So the
+reviewer today runs on `.roo/rules/` (4,004 B project + 145 B global)
 plus its role definition — nothing else. Either rename the directory (and accept +39 kB/turn on
 every reviewer turn, which is the _wrong_ direction) or delete it. Right now it is invisible
 dead weight that also means past attempts to steer the reviewer via those files did nothing.
@@ -319,10 +322,10 @@ Rewrite `tool-use-guidelines.ts` item 3 so it stops issuing the absolute
 "each step must be informed by the previous step's result". Keep the genuine constraint
 (don't chain on an _unknown_ result) and make the default explicit:
 
-> 3. Batch by default. In one response, call every tool whose input you already know — reads,
->    searches, and listings of different paths are independent and must go in the same message.
->    Split into separate messages only when a tool's input literally depends on another tool's
->    output. Never assume a tool's result.
+> Batch by default. In one response, call every tool whose input you already know — reads,
+> searches, and listings of different paths are independent and must go in the same message.
+> Split into separate messages only when a tool's input literally depends on another tool's
+> output. Never assume a tool's result.
 
 Write it as an imperative with a concrete example; weak models follow examples, not principles.
 Delete the softer "you may use multiple tools… or use tools iteratively" hedge — a weak model
@@ -409,9 +412,13 @@ Branch: `perf/orchestrator-payload`
 
 ### WS-7 — Settings (user-side, zero code)
 
-- Turn on `alwaysAllowWrite` for the workspaces where the user already auto-approves execute.
-  Auto-approving _execute_ but not _write_ is the wrong way round on a risk basis and costs
-  195 waits > 60 s.
+- **Do not touch `alwaysAllowWrite`.** An earlier draft of this document recommended enabling it,
+  on the grounds that `execute` is already auto-approved with `bash` on the allowlist, so the
+  write gate buys no safety. That reasoning is rejected: it makes a security boundary depend on a
+  mutable runtime setting. Someone narrows `allowedCommands` and the gate silently becomes load-
+  bearing again. The write-approval gate must justify itself on its own terms. Measured cost of
+  keeping it is ~9.8 h across 204 tasks (~2.9 min/task) — second-order next to WS-1, and not
+  worth trading a boundary for.
 - Close finished tasks. 87.3% of measured "duration" is an open tab.
 - Keep `deferredTools: true` — it is free (§2.4).
 
