@@ -22,7 +22,13 @@ export const historyItemSchema = z.object({
 	apiConfigName: z.string().optional(), // Provider profile name for sticky profile feature
 	status: z.enum(["active", "completed", "delegated"]).optional(),
 	delegatedToId: z.string().optional(), // Last child this parent delegated to
-	childIds: z.array(z.string()).optional(), // All children spawned by this task
+	childIds: z.array(z.string()).optional(), // All children spawned by this task (new_task foreground delegation)
+	// Headless background children spawned by `run_parallel_tasks`. Kept
+	// separate from `childIds` (which implies sequential foreground delegation
+	// and drives the delegated/awaitingChildId state machine) so the two
+	// flows do not collide. Persisted going forward; pre-fix history items
+	// simply lack the field and rehydration falls back to an empty panel.
+	parallelChildIds: z.array(z.string()).optional(),
 	awaitingChildId: z.string().optional(), // Child currently awaited (set when delegated)
 	completedByChildId: z.string().optional(), // Child that completed and resumed this parent
 	completionResultSummary: z.string().optional(), // Summary from completed child

@@ -128,4 +128,117 @@ describe("SubagentRegistry", () => {
 		registry.register(makeSummary({ taskId: "a", parentTaskId: "p1", index: 0 }))
 		expect(registry.list().map((s) => s.taskId)).toEqual(["a", "b"])
 	})
+
+	describe("clearAll", () => {
+		it("drops every entry and watch flag, and posts an empty list", () => {
+			registry.register(makeSummary({ taskId: "a", parentTaskId: "p1" }))
+			registry.register(makeSummary({ taskId: "b", parentTaskId: "p2", index: 1 }))
+			registry.watch("a")
+			posted.length = 0
+
+			registry.clearAll()
+
+			expect(registry.list()).toEqual([])
+			expect(registry.has("a")).toBe(false)
+			expect(registry.has("b")).toBe(false)
+			expect(registry.isWatched("a")).toBe(false)
+			expect(posted).toHaveLength(1)
+			expect(posted[0].type).toBe("subagentsUpdated")
+			expect(posted[0].subagents).toEqual([])
+		})
+
+		it("is a no-op (no post) when the registry is already empty", () => {
+			posted.length = 0
+			registry.clearAll()
+			expect(posted).toHaveLength(0)
+		})
+
+		it("does not interfere with beginFanOut's per-parent semantics", () => {
+			// clearAll is global; beginFanOut stays scoped. After clearAll,
+			// a fresh fan-out for a new parent registers cleanly.
+			registry.register(makeSummary({ taskId: "old", parentTaskId: "p1" }))
+			registry.clearAll()
+			posted.length = 0
+
+			registry.register(makeSummary({ taskId: "new", parentTaskId: "p2" }))
+			expect(registry.list().map((s) => s.taskId)).toEqual(["new"])
+			expect(posted[0].subagents).toHaveLength(1)
+		})
+	})
+
+	describe("snapshot", () => {
+		it("returns a copy of every summary in panel order", () => {
+			registry.register(makeSummary({ taskId: "b", parentTaskId: "p1", index: 1 }))
+			registry.register(makeSummary({ taskId: "a", parentTaskId: "p1", index: 0 }))
+			const snap = registry.snapshot()
+			expect(snap.map((s) => s.taskId)).toEqual(["a", "b"])
+		})
+
+		it("returns fresh objects so mutating a snapshot does not affect the registry", () => {
+			registry.register(makeSummary({ taskId: "a", parentTaskId: "p1" }))
+			const snap = registry.snapshot()
+			snap[0].taskId = "mutated"
+			expect(registry.get("a")?.taskId).toBe("a")
+		})
+	})
+
+	describe("restore", () => {
+		it("re-populates the registry from persisted summaries without posting", () => {
+			posted.length = 0
+			registry.restore("p1", [
+				makeSummary({ taskId: "c1", parentTaskId: "p1", index: 0, status: "completed" }),
+				makeSummary({ taskId: "c2", parentTaskId: "p1", index: 1, status: "failed" }),
+			])
+			expect(registry.list().map((s) => s.taskId)).toEqual(["c1", "c2"])
+			// restore does NOT post — the caller is responsible for the
+			// matching subagentsUpdated after the parent task is on the stack.
+			expect(posted).toHaveLength(0)
+		})
+
+		it("drops existing entries for the same parent first (idempotent re-rehydrate)", () => {
+			registry.register(makeSummary({ taskId: "old", parentTaskId: "p1", index: 0 }))
+			registry.restore("p1", [makeSummary({ taskId: "new", parentTaskId: "p1", index: 0 })])
+			expect(registry.has("old")).toBe(false)
+			expect(registry.list().map((s) => s.taskId)).toEqual(["new"])
+		})
+
+		it("ignores summaries that belong to a different parent (corrupt sidecar guard)", () => {
+			registry.restore("p1", [
+				makeSummary({ taskId: "good", parentTaskId: "p1", index: 0 }),
+				makeSummary({ taskId: "bad", parentTaskId: "p2", index: 0 }),
+			])
+			expect(registry.list().map((s) => s.taskId)).toEqual(["good"])
+		})
+
+		it("is a no-op for an empty list", () => {
+			registry.register(makeSummary({ taskId: "a", parentTaskId: "p1" }))
+			posted.length = 0
+			registry.restore("p1", [])
+			// Empty restore still drops existing entries for the parent
+			// (idempotent re-rehydrate with no persisted children).
+			expect(registry.has("a")).toBe(false)
+			expect(posted).toHaveLength(0)
+		})
+	})
+
+	describe("sourceTaskId stamping", () => {
+		it("stamps the current task id from the provider on every post", () => {
+			const localPosted: ExtensionMessage[] = []
+			const scoped = new SubagentRegistry(
+				(msg) => localPosted.push(msg),
+				() => "current-task-id",
+			)
+			scoped.register(makeSummary())
+			expect(localPosted[0].sourceTaskId).toBe("current-task-id")
+		})
+
+		it("leaves sourceTaskId undefined when no current task provider is wired", () => {
+			// Default constructor arg: legacy/older wiring. The webview
+			// treats undefined sourceTaskId as "accept unconditionally" so
+			// the reset path still works.
+			posted.length = 0
+			registry.register(makeSummary())
+			expect(posted[0].sourceTaskId).toBeUndefined()
+		})
+	})
 })

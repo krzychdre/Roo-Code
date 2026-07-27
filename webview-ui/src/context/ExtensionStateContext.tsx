@@ -51,6 +51,15 @@ export interface ExtensionStateContextType extends ExtensionState {
 	mdmCompliant?: boolean
 	hasOpenedModeSelector: boolean // New property to track if user has opened mode selector
 	setHasOpenedModeSelector: (value: boolean) => void // Setter for the new property
+	/**
+	 * Clear the parallel-subagent panel slice. Belt-and-suspenders for
+	 * `handleChatReset`: the backend's `subagentsUpdated: []` broadcast on
+	 * task reset already drives this via the message handler, but an
+	 * explicit clear protects against any future path that forgets to
+	 * broadcast. Subagents belong to a specific task; a new task must start
+	 * with an empty panel.
+	 */
+	clearSubagents: () => void
 	alwaysAllowFollowupQuestions: boolean // New property for follow-up questions auto-approve
 	setAlwaysAllowFollowupQuestions: (value: boolean) => void // Setter for the new property
 	followupAutoApproveTimeoutMs: number | undefined // Timeout in ms for auto-approving follow-up questions
@@ -412,7 +421,31 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 				}
 				case "subagentsUpdated": {
 					const subagents = message.subagents ?? []
-					setState((prevState) => ({ ...prevState, subagents }))
+					// Defense-in-depth scope guard: a `subagentsUpdated` push
+					// whose `sourceTaskId` does not match the current foreground
+					// task is dropped. This catches late terminal updates from a
+					// just-abandoned parent (its detached children finishing
+					// after the user already switched tasks) so they cannot
+					// pollute the new task's panel even if the backend registry
+					// has not been cleared yet. Two exceptions:
+					//   - `sourceTaskId` is `undefined`: legacy/older backend, or
+					//     a reset broadcast sent before the new task id is known.
+					//     Accept unconditionally so the reset path keeps working.
+					//   - The carried list is empty: a reset broadcast. Always
+					//     accept — clearing the panel for the current task is the
+					//     intent regardless of who sent it.
+					setState((prevState) => {
+						const sourceTaskId = message.sourceTaskId
+						if (
+							sourceTaskId !== undefined &&
+							prevState.currentTaskId !== undefined &&
+							sourceTaskId !== prevState.currentTaskId &&
+							subagents.length > 0
+						) {
+							return prevState
+						}
+						return { ...prevState, subagents }
+					})
 					break
 				}
 				case "memoryActivity": {
@@ -619,6 +652,7 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 		enterBehavior: state.enterBehavior ?? "send",
 		setEnterBehavior: (value) => setState((prevState) => ({ ...prevState, enterBehavior: value })),
 		setHasOpenedModeSelector: (value) => setState((prevState) => ({ ...prevState, hasOpenedModeSelector: value })),
+		clearSubagents: () => setState((prevState) => ({ ...prevState, subagents: [] })),
 		setAutoCondenseContext: (value) => setState((prevState) => ({ ...prevState, autoCondenseContext: value })),
 		setAutoCondenseContextPercent: (value) =>
 			setState((prevState) => ({ ...prevState, autoCondenseContextPercent: value })),

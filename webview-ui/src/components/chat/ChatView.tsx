@@ -102,6 +102,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		showWorktreesInHomeScreen,
 		subagents,
 		memoryActivity,
+		clearSubagents,
 	} = useExtensionState()
 
 	// Show a WarningRow when the user sends a message with a retired provider.
@@ -634,7 +635,14 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		// Do not reset mode here as it should persist.
 		// setPrimaryButtonText(undefined)
 		// setSecondaryButtonText(undefined)
-	}, [])
+
+		// Belt-and-suspenders: subagents belong to a specific task. The
+		// backend's `subagentsUpdated: []` broadcast on task reset already
+		// drives this via the message handler, but an explicit clear protects
+		// against any future path that forgets to broadcast, so a new task
+		// never inherits the previous task's subagent panel.
+		clearSubagents()
+	}, [clearSubagents])
 
 	/**
 	 * Handles sending messages to the extension

@@ -2,7 +2,13 @@ import * as os from "os"
 import * as path from "path"
 
 import { worktreeService } from "@roo-code/core"
-import { DEFAULT_PARALLEL_TASKS_MAX_CONCURRENCY, isParallelTasksEnabled, RooCodeEventName } from "@roo-code/types"
+import {
+	DEFAULT_PARALLEL_TASKS_MAX_CONCURRENCY,
+	isParallelTasksEnabled,
+	RooCodeEventName,
+	type HistoryItem,
+	type SubagentSummary,
+} from "@roo-code/types"
 
 import { Task, type AutoApprovalOverride } from "../task/Task"
 import { buildSubagentApprovalPolicy, type ApprovalState } from "../task/subagentApproval"
@@ -220,6 +226,8 @@ export interface SubtaskRegistry {
 	}): void
 	markTerminal(taskId: string, status: "completed" | "failed" | "cancelled", finalMessage?: string): void
 	get(taskId: string): { status: string } | undefined
+	/** Snapshot of every registered summary in panel order (for sidecar persistence). */
+	snapshot(): SubagentSummary[]
 }
 
 /** Provider surface needed by a single subtask worker. */
@@ -242,6 +250,18 @@ interface SubtaskProvider {
 	getState(): Promise<ApprovalState & { parallelTasksMaxConcurrency?: number }>
 	subagentRegistry: SubtaskRegistry
 	getLiveTaskInstance(taskId: string): { messageQueueService: { addMessage(text: string): unknown } } | undefined
+	/**
+	 * Atomically read the parent's `HistoryItem`, apply `updater`, and write
+	 * it back. Used to record `parallelChildIds` as each child is spawned.
+	 * Mirrors `TaskHistoryStore.atomicReadAndUpdate`; the tool never imports
+	 * the store directly so the fan-out stays testable with a fake provider.
+	 */
+	atomicReadAndUpdateHistoryItem(taskId: string, updater: (current: HistoryItem) => HistoryItem): Promise<HistoryItem>
+	/**
+	 * Absolute path of the extension global storage directory (the parent of
+	 * `tasks/<id>/`). Used to resolve the `subagents.json` sidecar path.
+	 */
+	readonly globalStoragePath: string
 }
 
 /** Truncate a subtask message for panel display. */
@@ -314,6 +334,15 @@ async function runOneSubtask({
 			subagentInfo: { parentTaskId, index, description: subagentDescription(subtask.message) },
 		})
 		registryId = child.taskId
+		// Persist the parent→child relation on the parent's HistoryItem so
+		// rehydration from history can discover this fan-out's children.
+		// Mirror of `delegateParentAndOpenChild`'s `atomicReadAndUpdate`, but
+		// WITHOUT setting `status: "delegated"` / `awaitingChildId` — the
+		// parent is NOT delegated to a parallel subagent, it waits inline on
+		// the tool result. Best-effort: a failure to persist the relation
+		// must not break the fan-out (the sidecar write below and the live
+		// panel still work; only rehydration of this run would be affected).
+		await persistParallelChildId(provider, parentTaskId, child.taskId)
 		const outcome = await provider.awaitTaskCompletion(child, { signal })
 
 		// Cancellation shows up two ways: the fan-out signal (parent aborted)
@@ -359,6 +388,57 @@ async function finalize(cwd: string, result: ParallelSubtaskResult): Promise<Par
 	if (!worktreePath || !branch) return result
 	const cleaned = await cleanupSubtaskWorktreeIfEmpty({ cwd, worktreePath, branch })
 	return cleaned ? { ...result, cleaned: true } : result
+}
+
+/**
+ * Best-effort persistence of the parent→child relation for a parallel
+ * fan-out: appends `childTaskId` to the parent HistoryItem's
+ * `parallelChildIds` (deduped, order-preserving) via the provider's atomic
+ * read-modify-write. Never throws — a failure is logged and the fan-out
+ * continues (only historical rehydration of this run would be affected; the
+ * live panel and tool result are independent).
+ */
+async function persistParallelChildId(
+	provider: SubtaskProvider,
+	parentTaskId: string,
+	childTaskId: string,
+): Promise<void> {
+	try {
+		await provider.atomicReadAndUpdateHistoryItem(parentTaskId, (current) => ({
+			...current,
+			parallelChildIds: Array.from(new Set([...(current.parallelChildIds ?? []), childTaskId])),
+		}))
+	} catch (error) {
+		// Non-fatal: the live fan-out and panel still work. Only rehydration
+		// from history of this specific run would lack the child relation.
+		console.warn(
+			`[run_parallel_tasks] Failed to persist parallelChildIds for parent ${parentTaskId} (child ${childTaskId}): ${
+				error instanceof Error ? error.message : String(error)
+			}`,
+		)
+	}
+}
+
+/**
+ * Best-effort persistence of the terminal subagent summaries to the parent
+ * task's sidecar (`tasks/<parentTaskId>/subagents.json`). Called once after
+ * the whole fan-out settles so rehydration can repopulate the panel without
+ * re-reading each child's messages. Never throws — a missing/corrupt sidecar
+ * only means the historical panel stays empty for this run.
+ */
+async function persistSubagentSummariesSidecar(provider: SubtaskProvider, parentTaskId: string): Promise<void> {
+	try {
+		const { saveSubagentSummaries } = await import("../task-persistence/subagentSummariesStore")
+		const summaries = provider.subagentRegistry.snapshot()
+		await saveSubagentSummaries(provider.globalStoragePath, parentTaskId, summaries)
+	} catch (error) {
+		// Non-fatal: see persistParallelChildId. The live panel is unaffected.
+		console.warn(
+			`[run_parallel_tasks] Failed to persist subagents sidecar for parent ${parentTaskId}: ${
+				error instanceof Error ? error.message : String(error)
+			}`,
+		)
+	}
 }
 
 export class RunParallelTasksTool extends BaseTool<"run_parallel_tasks"> {
@@ -499,6 +579,14 @@ export class RunParallelTasksTool extends BaseTool<"run_parallel_tasks"> {
 						)
 				}
 				pushToolResult(report)
+				// Persist the terminal subagent summaries to the parent's
+				// sidecar so rehydration from history can repopulate the
+				// panel. Best-effort: never throws (see helper). Done after
+				// the report is pushed so a sidecar write failure cannot
+				// block the tool result. Runs in both the normal and the
+				// abandoned-parent paths — the rehydrated parent needs the
+				// summaries either way.
+				await persistSubagentSummariesSidecar(provider, task.taskId)
 			} finally {
 				task.off(RooCodeEventName.TaskAborted, onParentAborted)
 			}

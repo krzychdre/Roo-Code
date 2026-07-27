@@ -153,9 +153,16 @@ export class ClineProvider
 	private backgroundTasks = new Map<string, Task>()
 	// Live summaries + tail subscriptions for the UI-visible subset of
 	// backgroundTasks (parallel subagents). Memory writers never register.
-	public readonly subagentRegistry = new SubagentRegistry((message) => {
-		this.postMessageToWebview(message).catch(() => {})
-	})
+	// The `currentTaskIdProvider` stamps `sourceTaskId` on every
+	// `subagentsUpdated` push so the webview can scope updates by
+	// `currentTaskId` (defense-in-depth against late terminal updates from a
+	// just-abandoned task leaking into the new task's panel).
+	public readonly subagentRegistry = new SubagentRegistry(
+		(message) => {
+			this.postMessageToWebview(message).catch(() => {})
+		},
+		() => this.getCurrentTask()?.taskId,
+	)
 	// Live memory-system activity counters ("recalling/writing memory…" badge).
 	private memoryActivityCounts = { recall: 0, write: 0 }
 	// Children whose delegated parent could not be proven detached on cancel.
@@ -673,8 +680,12 @@ export class ClineProvider
 			// NOTE: deliberately no subagentRegistry cleanup here. Popping a
 			// task is often mere abandonment (switching tasks via history, an
 			// in-place rehydrate) — its fan-out children keep running detached
-			// and must stay visible in the panel. Rows are cleared only by the
-			// next fan-out for the same parent (beginFanOut).
+			// and must stay visible in the panel. The panel is reset at task
+			// boundaries by the entry points (createTask / clearTask /
+			// createTaskWithHistoryItem) via `resetSubagentPanel`, NOT here,
+			// so mid-task re-fan-out for the same parent (beginFanOut) keeps
+			// its semantics. For a pure abandonment (history switch), the
+			// detached children stay visible until the next task boundary.
 
 			task.emit(RooCodeEventName.TaskUnfocused)
 
@@ -1141,6 +1152,18 @@ export class ClineProvider
 		const isRehydratingCurrentTask = currentTask && currentTask.taskId === historyItem.id
 
 		if (!isRehydratingCurrentTask) {
+			// Reset the subagent panel BEFORE popping the stack so the
+			// broadcast still carries the about-to-be-popped task's id as
+			// `sourceTaskId` (the webview scopes by currentTaskId; after the
+			// pop there is no current task and the post would be dropped by
+			// the scope guard). Historical subagents for the task we are
+			// about to rehydrate are restored AFTER the new Task is on the
+			// stack, via `rehydrateSubagents` below.
+			try {
+				await this.resetSubagentPanel()
+			} catch {
+				// Non-fatal: panel reset is best-effort.
+			}
 			await this.removeClineFromStack()
 		}
 
@@ -1300,6 +1323,16 @@ export class ClineProvider
 				`[createTaskWithHistoryItem] ${task.parentTask ? "child" : "parent"} task ${task.taskId}.${task.instanceId} instantiated`,
 			)
 		}
+
+		// Restore the historical parallel-subagent panel for this task. Reads
+		// `parallelChildIds` + the `subagents.json` sidecar written by
+		// `run_parallel_tasks`; no-op (panel stays empty) for pre-fix history
+		// items or tasks that never fanned out. Done after the Task is on the
+		// stack so `getCurrentTask()` matches the parent we are restoring,
+		// and before the eager state push so the push carries the restored
+		// rows. Best-effort: a missing/corrupt sidecar never breaks the
+		// parent rehydration.
+		await this.rehydrateSubagents(historyItem)
 
 		// Eager state push so the webview shows the new task immediately;
 		// resumeTaskFromHistory pushes further updates asynchronously.
@@ -3262,6 +3295,17 @@ export class ClineProvider
 
 		// Single-open-task invariant: always enforce for user-initiated top-level tasks
 		if (!parentTask) {
+			// Reset the subagent panel BEFORE popping the stack so the
+			// broadcast still carries the about-to-be-popped task's id as
+			// `sourceTaskId` (the webview scopes by currentTaskId; after the
+			// pop there is no current task and the post would be dropped by
+			// the scope guard). Subagents from the previous task never leak
+			// into the new task's panel.
+			try {
+				await this.resetSubagentPanel()
+			} catch {
+				// Non-fatal: panel reset is best-effort.
+			}
 			try {
 				await this.removeClineFromStack()
 			} catch {
@@ -3424,6 +3468,31 @@ export class ClineProvider
 			}
 		}
 		return undefined
+	}
+
+	/**
+	 * Absolute path of the extension global storage directory (the parent of
+	 * `tasks/<id>/`). Exposed so `run_parallel_tasks` can resolve its
+	 * `subagents.json` sidecar path without importing storage helpers
+	 * directly (keeps the tool's provider surface narrow and testable).
+	 */
+	public get globalStoragePath(): string {
+		return this.contextProxy.globalStorageUri.fsPath
+	}
+
+	/**
+	 * Atomically read a task's `HistoryItem`, apply `updater`, and write it
+	 * back. Thin wrapper over `TaskHistoryStore.atomicReadAndUpdate` exposed
+	 * so `run_parallel_tasks` can record `parallelChildIds` on the parent
+	 * without importing the store directly. Throws if the store is missing
+	 * the task; callers (the tool) wrap this in best-effort error handling.
+	 */
+	public async atomicReadAndUpdateHistoryItem(
+		taskId: string,
+		updater: (current: HistoryItem) => HistoryItem,
+	): Promise<HistoryItem> {
+		const taskHistoryStore = await this.getTaskHistoryStore()
+		return taskHistoryStore.atomicReadAndUpdate(taskId, updater, this.taskHistoryOrigin)
 	}
 
 	/**
@@ -3860,9 +3929,91 @@ export class ClineProvider
 		await this.createTaskWithHistoryItem({ ...historyItem, rootTask, parentTask })
 	}
 
+	/**
+	 * Single source of truth for resetting the parallel-subagent panel at a
+	 * task boundary: clears the in-memory registry and broadcasts an empty
+	 * `subagentsUpdated` so the webview panel renders nothing for the new
+	 * task. Called from every entry point that begins a fresh foreground
+	 * task (`createTask` for a user-initiated top-level task, `clearTask`,
+	 * and `createTaskWithHistoryItem` for a rehydrated root). Mid-task
+	 * re-fan-out continues to use `SubagentRegistry.beginFanOut`.
+	 *
+	 * The broadcast is best-effort: if the webview is not yet mounted the
+	 * post is dropped silently, and the next `postStateToWebview` will carry
+	 * the now-empty `subagents` slice via the state payload anyway.
+	 */
+	private async resetSubagentPanel(): Promise<void> {
+		this.subagentRegistry.clearAll()
+		// `clearAll` already posts; this second explicit post is belt-and-
+		// suspenders in case a subclass overrides the registry's post hook,
+		// and keeps the contract that this method always broadcasts `[]`.
+		await this.postMessageToWebview({
+			type: "subagentsUpdated",
+			sourceTaskId: this.getCurrentTask()?.taskId,
+			subagents: [],
+		})
+	}
+
+	/**
+	 * Rehydrate the parallel-subagent panel for a parent task being restored
+	 * from history. Reads `parallelChildIds` from the parent's history item
+	 * (the persisted parent→child relation written by `run_parallel_tasks`),
+	 * loads the matching terminal summaries from the parent's sidecar
+	 * (`tasks/<parentId>/subagents.json`), and registers them so the panel
+	 * renders the historical fan-out.
+	 *
+	 * Graceful degradation: if `parallelChildIds` is absent (pre-fix history
+	 * item) or the sidecar is missing/corrupt, the panel stays empty — the
+	 * task is NOT marked corrupt and no error is thrown.
+	 *
+	 * Posts a single `subagentsUpdated` carrying the restored list (and the
+	 * current task id as `sourceTaskId`). Called after the parent Task is on
+	 * the stack so `getCurrentTask()` matches the parent we just restored.
+	 */
+	private async rehydrateSubagents(historyItem: HistoryItem): Promise<void> {
+		const parallelChildIds = historyItem.parallelChildIds
+		if (!parallelChildIds || parallelChildIds.length === 0) {
+			// Pre-fix history item or a task that never fanned out — nothing
+			// to restore. The panel was already cleared by
+			// `resetSubagentPanel` at the top of the rehydrate path.
+			return
+		}
+		try {
+			const globalStoragePath = this.contextProxy.globalStorageUri.fsPath
+			const { loadSubagentSummaries } = await import("../task-persistence/subagentSummariesStore")
+			const summaries = await loadSubagentSummaries(globalStoragePath, historyItem.id)
+			// Only keep summaries whose taskId is in the persisted
+			// parent→child list. The sidecar and `parallelChildIds` are
+			// written together, but a partially-written sidecar from a
+			// crashed run could carry stale entries; this guard keeps the
+			// panel honest.
+			const allowed = new Set(parallelChildIds)
+			const restored = summaries.filter((s) => allowed.has(s.taskId))
+			this.subagentRegistry.restore(historyItem.id, restored)
+			await this.postMessageToWebview({
+				type: "subagentsUpdated",
+				sourceTaskId: this.getCurrentTask()?.taskId,
+				subagents: this.subagentRegistry.list(),
+			})
+		} catch (error) {
+			// Sidecar loading is best-effort. A missing/corrupt sidecar must
+			// never break rehydration of the parent task itself.
+			this.log(
+				`[rehydrateSubagents] Failed to restore subagents for task ${historyItem.id} (non-fatal): ${
+					error instanceof Error ? error.message : String(error)
+				}`,
+			)
+		}
+	}
+
 	// Clear the current task without treating it as a subtask.
 	// This is used when the user cancels a task that is not a subtask.
 	public async clearTask(): Promise<void> {
+		// Reset the subagent panel before popping the stack so the broadcast
+		// still carries the about-to-be-cleared task's id as `sourceTaskId`
+		// (the webview scopes by currentTaskId; after the pop there is no
+		// current task and the post would be dropped by the scope guard).
+		await this.resetSubagentPanel()
 		if (this.clineStack.length > 0) {
 			const task = this.clineStack[this.clineStack.length - 1]
 			console.log(`[clearTask] clearing task ${task.taskId}.${task.instanceId}`)

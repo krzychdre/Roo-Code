@@ -1,6 +1,18 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest"
 
 import { EventEmitter } from "events"
+import * as fs from "fs/promises"
+import { mkdtempSync, rmSync } from "fs"
+import * as path from "path"
+import * as os from "os"
+
+// Storage root for every fake provider in this file. Created eagerly so the
+// synchronous `makeFakeProvider` helper can carve out a subdirectory per
+// provider, and removed once the suite finishes.
+const tmpStorageRoot = mkdtempSync(path.join(os.tmpdir(), "rpt-storage-"))
+afterAll(() => {
+	rmSync(tmpStorageRoot, { recursive: true, force: true })
+})
 
 import { RooCodeEventName } from "@roo-code/types"
 
@@ -22,6 +34,19 @@ vi.mock("@roo-code/core", () => ({
 		branchHasCommits: mockBranchHasCommits,
 		deleteWorktree: mockDeleteWorktree,
 	},
+}))
+
+// `vscode` is pulled in transitively via `subagentSummariesStore` →
+// `utils/storage` (`getStorageBasePath` reads vscode.workspace config).
+// Mock it so the positive sidecar-write test can use a real temp dir as the
+// storage base (empty custom path → default path = globalStoragePath arg).
+vi.mock("vscode", () => ({
+	workspace: {
+		getConfiguration: vi.fn().mockReturnValue({
+			get: vi.fn().mockReturnValue(""),
+		}),
+	},
+	window: { showErrorMessage: vi.fn() },
 }))
 
 // Mock formatResponse to keep output predictable.
@@ -46,11 +71,44 @@ import type { ToolCallbacks } from "../BaseTool"
 // Helpers for execute() tests
 // ---------------------------------------------------------------------------
 
-/** A minimal fake provider that records calls and lets tests control outcomes. */
+/**
+ * A minimal fake provider that records calls and lets tests control outcomes.
+ * Now exposes the persistence surface (`atomicReadAndUpdateHistoryItem` +
+ * `globalStoragePath`) required by `run_parallel_tasks`' new sidecar/relation
+ * persistence. `atomicReadAndUpdateHistoryItem` records every call and
+ * mutates an in-memory record so tests can assert what was persisted.
+ */
 function makeFakeProvider(state: Record<string, unknown> = {}) {
 	const children: FakeChild[] = []
+	// In-memory HistoryItem store keyed by task id. Tests seed entries for
+	// the parent task; `atomicReadAndUpdateHistoryItem` reads + writes here.
+	const historyItems = new Map<string, Record<string, unknown>>()
+	const atomicReadAndUpdateHistoryItem = vi
+		.fn()
+		.mockImplementation(async (taskId: string, updater: (c: any) => any) => {
+			const current = historyItems.get(taskId) ?? {
+				id: taskId,
+				number: 1,
+				ts: 0,
+				task: "parent",
+				tokensIn: 0,
+				tokensOut: 0,
+				totalCost: 0,
+			}
+			const updated = updater(current)
+			historyItems.set(taskId, updated)
+			return updated
+		})
+	const subagentRegistry = {
+		beginFanOut: vi.fn(),
+		registerQueued: vi.fn(),
+		markTerminal: vi.fn(),
+		get: vi.fn().mockReturnValue(undefined),
+		snapshot: vi.fn().mockReturnValue([]),
+	}
 	const provider = {
 		children,
+		historyItems,
 		createBackgroundTask: vi.fn().mockImplementation(() => {
 			const child = new FakeChild()
 			children.push(child)
@@ -66,16 +124,18 @@ function makeFakeProvider(state: Record<string, unknown> = {}) {
 			deniedCommands: [],
 			...state,
 		}),
-		subagentRegistry: {
-			beginFanOut: vi.fn(),
-			registerQueued: vi.fn(),
-			markTerminal: vi.fn(),
-			get: vi.fn().mockReturnValue(undefined),
-		},
+		subagentRegistry,
 		getLiveTaskInstance: vi.fn().mockReturnValue(undefined),
+		atomicReadAndUpdateHistoryItem,
+		// A per-provider temp dir, so the best-effort sidecar write that every
+		// fan-out performs hits the real fs without polluting the workspace.
+		// An empty string here would resolve to a *relative* path and create
+		// `src/tasks/<parentTaskId>/subagents.json` in the repo.
+		globalStoragePath: mkdtempSync(path.join(tmpStorageRoot, "provider-")),
 	}
 	return provider as unknown as {
 		children: FakeChild[]
+		historyItems: Map<string, Record<string, unknown>>
 		createBackgroundTask: ReturnType<typeof vi.fn>
 		awaitTaskCompletion: ReturnType<typeof vi.fn>
 		getState: ReturnType<typeof vi.fn>
@@ -83,8 +143,11 @@ function makeFakeProvider(state: Record<string, unknown> = {}) {
 			beginFanOut: ReturnType<typeof vi.fn>
 			registerQueued: ReturnType<typeof vi.fn>
 			markTerminal: ReturnType<typeof vi.fn>
+			snapshot: ReturnType<typeof vi.fn>
 		}
 		getLiveTaskInstance: ReturnType<typeof vi.fn>
+		atomicReadAndUpdateHistoryItem: ReturnType<typeof vi.fn>
+		globalStoragePath: string
 	}
 }
 
@@ -601,6 +664,216 @@ describe("RunParallelTasksTool.execute", () => {
 		// false; the ask then surfaces interactively in the subagents panel,
 		// bounded by the TaskAskSay fallback which denies it unanswered).
 		expect(await opts.autoApprovalOverride!("command", "rm -rf /tmp", false)).toBeUndefined()
+	})
+
+	// ---------------------------------------------------------------------------
+	// parallelChildIds + subagents.json sidecar persistence
+	// ---------------------------------------------------------------------------
+
+	describe("parallel-subagent persistence", () => {
+		it("records each child's taskId in the parent HistoryItem.parallelChildIds", async () => {
+			const provider = makeFakeProvider()
+			// Seed a parent HistoryItem so atomicReadAndUpdate has a record
+			// to read; the fake provider auto-creates one if absent, but
+			// seeding lets us assert the field was added, not created fresh.
+			provider.historyItems.set("parent-12345678", {
+				id: "parent-12345678",
+				number: 1,
+				ts: 0,
+				task: "parent",
+				tokensIn: 0,
+				tokensOut: 0,
+				totalCost: 0,
+			})
+			const parent = makeFakeParentTask(provider)
+			const callbacks = makeCallbacks()
+
+			const execPromise = runParallelTasksTool.execute(
+				{ subtasks: [{ message: "task A" }, { message: "task B" }] },
+				parent,
+				callbacks,
+			)
+
+			await vi.waitFor(() => expect(provider.children.length).toBe(2))
+			// Each child is spawned; the persistence call happens right
+			// after createBackgroundTask, so by the time both children exist
+			// both parallelChildIds writes should have fired.
+			await vi.waitFor(() => expect(provider.atomicReadAndUpdateHistoryItem).toHaveBeenCalledTimes(2))
+			provider.children.forEach((c) => c.complete())
+			await execPromise
+
+			const parentItem = provider.historyItems.get("parent-12345678") as Record<string, unknown>
+			expect(parentItem.parallelChildIds).toBeDefined()
+			const recorded = parentItem.parallelChildIds as string[]
+			expect(recorded).toHaveLength(2)
+			// Order: the first child spawned is recorded first. Both child
+			// ids must be present (deduped).
+			expect(recorded).toEqual(expect.arrayContaining([provider.children[0].taskId, provider.children[1].taskId]))
+		})
+
+		it("dedupes parallelChildIds (no duplicates even if the updater is called twice for the same id)", async () => {
+			const provider = makeFakeProvider()
+			const parent = makeFakeParentTask(provider)
+			const callbacks = makeCallbacks()
+
+			const execPromise = runParallelTasksTool.execute(
+				{ subtasks: [{ message: "task A" }, { message: "task B" }] },
+				parent,
+				callbacks,
+			)
+			await vi.waitFor(() => expect(provider.children.length).toBe(2))
+			provider.children.forEach((c) => c.complete())
+			await execPromise
+
+			// Two distinct children → two distinct ids, no duplicates.
+			const parentItem = provider.historyItems.get("parent-12345678") as Record<string, unknown>
+			const recorded = parentItem.parallelChildIds as string[]
+			expect(recorded).toHaveLength(2)
+			expect(new Set(recorded).size).toBe(2)
+
+			// The updater itself uses Array.from(new Set(...)), so even a
+			// pre-existing duplicate in the record is collapsed.
+			const calls = provider.atomicReadAndUpdateHistoryItem.mock.calls as Array<[string, (c: any) => any]>
+			const [, updater] = calls[0]
+			const withDup = {
+				id: "parent-12345678",
+				number: 1,
+				ts: 0,
+				task: "p",
+				tokensIn: 0,
+				tokensOut: 0,
+				totalCost: 0,
+				parallelChildIds: ["dup", "dup"],
+			} as any
+			const after = updater(withDup)
+			expect((after.parallelChildIds as string[]).filter((x) => x === "dup")).toHaveLength(1)
+		})
+
+		it("does NOT set status: delegated / awaitingChildId on the parent (parallel, not foreground delegation)", async () => {
+			const provider = makeFakeProvider()
+			provider.historyItems.set("parent-12345678", {
+				id: "parent-12345678",
+				number: 1,
+				ts: 0,
+				task: "parent",
+				tokensIn: 0,
+				tokensOut: 0,
+				totalCost: 0,
+				status: "active",
+			})
+			const parent = makeFakeParentTask(provider)
+			const callbacks = makeCallbacks()
+
+			const execPromise = runParallelTasksTool.execute(
+				{ subtasks: [{ message: "task A" }, { message: "task B" }] },
+				parent,
+				callbacks,
+			)
+			await vi.waitFor(() => expect(provider.children.length).toBe(2))
+			provider.children.forEach((c) => c.complete())
+			await execPromise
+
+			const parentItem = provider.historyItems.get("parent-12345678") as Record<string, unknown>
+			expect(parentItem.status).toBe("active")
+			expect(parentItem.awaitingChildId).toBeUndefined()
+			expect(parentItem.delegatedToId).toBeUndefined()
+		})
+
+		it("writes the subagents.json sidecar after the fan-out settles", async () => {
+			const tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "rpt-sidecar-"))
+			const provider = makeFakeProvider()
+			provider.globalStoragePath = tmpRoot
+			provider.subagentRegistry.snapshot.mockReturnValue([
+				{
+					taskId: "child-x",
+					parentTaskId: "parent-12345678",
+					index: 0,
+					mode: "code",
+					description: "task A",
+					status: "completed",
+					tokensIn: 0,
+					tokensOut: 0,
+					totalCost: 0,
+					startedAt: 1,
+					lastActivityAt: 2,
+				},
+			])
+			const parent = makeFakeParentTask(provider)
+			const callbacks = makeCallbacks()
+
+			const execPromise = runParallelTasksTool.execute(
+				{ subtasks: [{ message: "task A" }, { message: "task B" }] },
+				parent,
+				callbacks,
+			)
+			await vi.waitFor(() => expect(provider.children.length).toBe(2))
+			provider.children.forEach((c) => c.complete())
+			await execPromise
+
+			// The sidecar is written at <tmpRoot>/tasks/<parentTaskId>/subagents.json
+			const sidecarPath = path.join(tmpRoot, "tasks", "parent-12345678", "subagents.json")
+			const exists = await fs
+				.access(sidecarPath)
+				.then(() => true)
+				.catch(() => false)
+			expect(exists).toBe(true)
+			const raw = await fs.readFile(sidecarPath, "utf8")
+			const parsed = JSON.parse(raw)
+			expect(Array.isArray(parsed)).toBe(true)
+			expect(parsed[0].taskId).toBe("child-x")
+		})
+
+		it("survives a sidecar write failure (best-effort, does not throw)", async () => {
+			// Make globalStoragePath point at a FILE, not a directory, so
+			// `getTaskDirectoryPath`'s `mkdir(<file>/tasks/<id>)` fails with
+			// ENOTDIR. This deterministically exercises the best-effort error
+			// handling in `persistSubagentSummariesSidecar` without invoking
+			// real cross-process lock-file paths (which would hang on
+			// unwritable dirs like /proc).
+			const blocker = await fs.mkdtemp(path.join(os.tmpdir(), "rpt-block-"))
+			const blockerFile = path.join(blocker, "i-am-a-file")
+			await fs.writeFile(blockerFile, "", "utf8")
+			const provider = makeFakeProvider()
+			provider.globalStoragePath = blockerFile
+			provider.subagentRegistry.snapshot.mockReturnValue([])
+			const parent = makeFakeParentTask(provider)
+			const callbacks = makeCallbacks()
+
+			const execPromise = runParallelTasksTool.execute(
+				{ subtasks: [{ message: "task A" }, { message: "task B" }] },
+				parent,
+				callbacks,
+			)
+			await vi.waitFor(() => expect(provider.children.length).toBe(2))
+			provider.children.forEach((c) => c.complete())
+			await execPromise
+
+			// The sidecar write failed (ENOTDIR), but the tool still
+			// completes normally and pushes its report.
+			expect(callbacks.pushToolResult).toHaveBeenCalledOnce()
+			const report = callbacks.pushToolResult.mock.calls[0][0] as string
+			expect(report).toContain("2 completed")
+		})
+
+		it("survives an atomicReadAndUpdateHistoryItem failure (best-effort)", async () => {
+			const provider = makeFakeProvider()
+			provider.atomicReadAndUpdateHistoryItem.mockRejectedValue(new Error("store down"))
+			const parent = makeFakeParentTask(provider)
+			const callbacks = makeCallbacks()
+
+			const execPromise = runParallelTasksTool.execute(
+				{ subtasks: [{ message: "task A" }, { message: "task B" }] },
+				parent,
+				callbacks,
+			)
+			await vi.waitFor(() => expect(provider.children.length).toBe(2))
+			provider.children.forEach((c) => c.complete())
+			await execPromise
+
+			// The fan-out completes despite the persistence failure; only
+			// historical rehydration of this run would be affected.
+			expect(callbacks.pushToolResult).toHaveBeenCalledOnce()
+		})
 	})
 
 	// ---------------------------------------------------------------------------

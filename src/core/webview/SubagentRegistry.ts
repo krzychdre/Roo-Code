@@ -25,13 +25,40 @@ export function queuedSubagentId(parentTaskId: string, index: number): string {
  * list to the webview (`subagentsUpdated`) — the list is small (fan-outs are
  * a handful of subtasks) and full pushes keep the webview merge trivial.
  *
+ * `subagentsUpdated` carries a `sourceTaskId` equal to the foreground task
+ * that owns the registry at post time. The webview scopes by
+ * `currentTaskId`: a late terminal update from a just-abandoned task cannot
+ * pollute the new task's panel even if the registry has not been cleared yet.
+ *
  * Memory-writer background tasks never register here, so they stay invisible.
  */
 export class SubagentRegistry {
 	private summaries = new Map<string, SubagentSummary>()
 	private watched = new Set<string>()
 
-	constructor(private readonly post: (message: ExtensionMessage) => void) {}
+	/**
+	 * @param post Broadcast an extension message to the webview.
+	 * @param currentTaskIdProvider Returns the current foreground task id at
+	 *   post time (may be `undefined` during startup). Stamped onto
+	 *   `subagentsUpdated` as `sourceTaskId` so the webview can scope updates
+	 *   by `currentTaskId` (defense-in-depth: late terminal updates from a
+	 *   just-abandoned parent are dropped before reaching the panel).
+	 */
+	constructor(
+		private readonly post: (message: ExtensionMessage) => void,
+		private readonly currentTaskIdProvider: () => string | undefined = () => undefined,
+	) {}
+
+	/**
+	 * Snapshot of every currently-registered summary, in panel order. The
+	 * returned array is a deep-enough copy (each entry is a fresh object
+	 * spread) so a caller persisting it cannot be racing with a later
+	 * mutation that swaps fields in place. Used by `run_parallel_tasks` to
+	 * write the sidecar after the fan-out settles.
+	 */
+	snapshot(): SubagentSummary[] {
+		return this.list().map((summary) => ({ ...summary }))
+	}
 
 	/**
 	 * Start a new fan-out for `parentTaskId`: drop the previous fan-out's
@@ -49,6 +76,57 @@ export class SubagentRegistry {
 		}
 		if (changed) {
 			this.postUpdate()
+		}
+	}
+
+	/**
+	 * Reset the registry entirely and broadcast an empty panel. Called by
+	 * `ClineProvider` at every entry point that begins a fresh foreground
+	 * task (new task, clearTask, rehydrate from history) so subagents from a
+	 * previous task never leak into the new one.
+	 *
+	 * Unlike {@link beginFanOut} (which scopes to one parent and preserves
+	 * detached fan-outs still running for other parents), this drops every
+	 * entry. It is the right call only at task boundaries where the previous
+	 * foreground task is gone; mid-task re-fan-out continues to use
+	 * `beginFanOut`.
+	 */
+	clearAll(): void {
+		if (this.summaries.size === 0 && this.watched.size === 0) {
+			return
+		}
+		this.summaries.clear()
+		this.watched.clear()
+		this.postUpdate()
+	}
+
+	/**
+	 * Re-populate the registry from persisted summaries (rehydration from
+	 * history). Existing entries for the same parent are dropped first so
+	 * rehydrating the same task idempotently replaces rather than duplicates.
+	 * Entries are inserted as-is (status already terminal); the panel renders
+	 * them like a finished fan-out. Does NOT broadcast — the caller is
+	 * responsible for posting the matching `subagentsUpdated` after the
+	 * parent task is on the stack, so the webview's `currentTaskId` is set
+	 * before the message arrives.
+	 */
+	restore(parentTaskId: string, summaries: SubagentSummary[]): void {
+		// Drop any live or stale entries for this parent first (idempotent
+		// re-rehydrate of the same task should not double the panel).
+		for (const [taskId, summary] of this.summaries) {
+			if (summary.parentTaskId === parentTaskId) {
+				this.summaries.delete(taskId)
+				this.watched.delete(taskId)
+			}
+		}
+		for (const summary of summaries) {
+			// Only restore entries that actually belong to this parent; the
+			// sidecar is written by us and should never mix parents, but the
+			// guard is cheap and keeps a corrupt sidecar from polluting the
+			// panel with rows from another task.
+			if (summary.parentTaskId === parentTaskId) {
+				this.summaries.set(summary.taskId, { ...summary })
+			}
 		}
 	}
 
@@ -171,6 +249,10 @@ export class SubagentRegistry {
 	}
 
 	private postUpdate(): void {
-		this.post({ type: "subagentsUpdated", subagents: this.list() })
+		this.post({
+			type: "subagentsUpdated",
+			sourceTaskId: this.currentTaskIdProvider(),
+			subagents: this.list(),
+		})
 	}
 }
