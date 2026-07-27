@@ -18,6 +18,51 @@ describe("createReadFileTool", () => {
 		})
 	})
 
+	describe("whole-file reads as the default", () => {
+		it("should tell the model to omit offset and limit", () => {
+			const tool = createReadFileTool()
+			const description = getFunctionDef(tool).description
+
+			expect(description).toContain("Omit offset and limit to read the whole file")
+			expect(description).toContain("this is the default and what you should normally do")
+		})
+
+		it("should state the round-trip economics on the limit parameter itself", () => {
+			const tool = createReadFileTool()
+			const schema = getFunctionDef(tool).parameters as any
+
+			// The schema description is what a weak model actually reads when filling in
+			// arguments, so the economics have to live there, not only in the preamble.
+			expect(schema.properties.limit.description).toContain("Omit it to read the whole file")
+			expect(schema.properties.limit.description).toContain("another round trip")
+			expect(schema.properties.offset.description).toContain("Omit it")
+		})
+
+		it("should forbid re-reading a file already in context", () => {
+			const tool = createReadFileTool()
+			const description = getFunctionDef(tool).description
+
+			expect(description).toContain("Never re-read a file")
+		})
+
+		it("should show a batched multi-file example", () => {
+			const tool = createReadFileTool()
+			const description = getFunctionDef(tool).description
+
+			expect(description).toContain("three files, all in ONE message")
+		})
+
+		it("should demote indentation mode to large files only", () => {
+			const tool = createReadFileTool()
+			const description = getFunctionDef(tool).description
+			const schema = getFunctionDef(tool).parameters as any
+
+			expect(description).not.toContain("PREFER indentation mode")
+			expect(description).toContain("Use indentation mode only for files larger than 2000 lines")
+			expect(schema.properties.mode.description).toContain("only for files larger than 2000 lines")
+		})
+	})
+
 	describe("indentation mode", () => {
 		it("should always include indentation mode in description", () => {
 			const tool = createReadFileTool()

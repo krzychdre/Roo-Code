@@ -72,6 +72,46 @@ export function nextAutoCompactFailureCount(current: number, result: CondenseOut
 }
 
 /**
+ * Outcome fields from `manageContext` relevant to the microcompaction feedback loop.
+ * `summary` marks a condense, `truncationId` a sliding-window truncation — both rewrite
+ * the history structurally.
+ */
+export interface MicrocompactOutcome {
+	summary?: string
+	truncationId?: string
+	microcompactTokensCleared?: number
+}
+
+/**
+ * Pure rule for the microcompaction size correction carried into the NEXT request.
+ *
+ * The threshold check runs on the provider-reported context size of the PREVIOUS
+ * request. When that request was microcompacted, the provider measured the STRIPPED
+ * payload — but `apiConversationHistory` still holds the pristine content, because the
+ * strip only ever touches the outgoing copy. Comparing a pristine history against a
+ * stripped measurement is what makes the gate oscillate: strip → reported size drops
+ * below the threshold → next turn skips the strip → the full history goes out → over
+ * threshold → strip again. That two-cycle flip-flop changes the sent prefix every turn,
+ * so prompt caching can never hit.
+ *
+ * Returning what we stripped lets the caller add it back and gate on the true pristine
+ * size, which is monotone in the history.
+ *
+ * Returns 0 when:
+ * - nothing was cleared (reported size already equals the pristine size), or
+ * - the pass ALSO condensed or truncated: those rewrite the history structurally, the
+ *   reported size reflects the new shape, and the cleared ids may no longer resolve.
+ *   Under-correcting for one turn is the pre-fix behaviour — never worse.
+ */
+export function nextMicrocompactStrippedTokens(result: MicrocompactOutcome, clearedIdCount: number): number {
+	const structurallyChanged = !!result.summary || !!result.truncationId
+	if (structurallyChanged || clearedIdCount === 0) {
+		return 0
+	}
+	return result.microcompactTokensCleared ?? 0
+}
+
+/**
  * Interface for Task access needed by TaskContextManager.
  * This is a narrow interface to minimize coupling between modules.
  */
@@ -100,6 +140,11 @@ export interface TaskContextManagerAccess {
 	// Non-destructive microcompaction: transient set of tool_use_ids to clear at
 	// send time. Written by the manager each request; read by buildCleanConversationHistory.
 	microcompactedToolUseIds: Set<string>
+
+	// Estimated tokens the send-time strip removed from the last request. Written by
+	// the manager each request; read by the API loop to un-deflate the reported
+	// context size before the next threshold check. See Task#microcompactStrippedTokens.
+	microcompactStrippedTokens: number
 
 	// Workspace path
 	cwd: string
@@ -585,6 +630,17 @@ export class TaskContextManager {
 			for (const id of truncateResult.microcompactClearedToolUseIds ?? []) {
 				this.access.microcompactedToolUseIds.add(id)
 			}
+
+			// Record how much the strip will remove from the outgoing request, so the
+			// NEXT request can un-deflate the provider-reported context size before
+			// re-running the threshold check (see nextMicrocompactStrippedTokens).
+			// Without this the gate compares a pristine history against a stripped
+			// measurement and flip-flops every other turn (measured: 31% of tasks,
+			// 77M excess input tokens).
+			this.access.microcompactStrippedTokens = nextMicrocompactStrippedTokens(
+				truncateResult,
+				this.access.microcompactedToolUseIds.size,
+			)
 
 			if (truncateResult.messages !== this.access.apiConversationHistory) {
 				await this.access.history.overwriteApiConversationHistory(truncateResult.messages)

@@ -5,7 +5,17 @@ Author: analysis session (no code changes yet)
 Scope: agent-loop turn economics, prompt/rule design, reviewer mode
 Baseline: `main` @ `23ed3f7ba`, 204 real tasks recorded after 2026-07-14 in
 `~/.config/Code/User/globalStorage/qub-it.tumble-code/tasks`
-Daily driver: **GLM-5.2 (Z.ai)**, secondary profile **OpenAI Sol**
+Daily driver: **GLM-5.2, self-hosted on the user's own vLLM**, reached through an
+**OpenAI-Compatible** profile (`OpenAiHandler`); secondary profile **OpenAI Sol**
+
+> **Premise correction (2026-07-27, after the first draft).** This document originally attributed
+> the GLM profile to a hosted vendor (Z.ai). That is wrong: no hosted GLM vendor is involved.
+> Corrections applied below in §2.3, RC-1 and WS-8. Two consequences worth stating up front:
+> (a) the dollar figures come from a user-configured price table (measured blended rate ≈ $1.4/M
+> input) — for a self-hosted server they are a **proxy for GPU time and token volume**, not a
+> bill; (b) the measured 0.3% cache hit rate is not trustworthy, because the client never parsed
+> the field that server reports cache hits in — see
+> `ai_plans/2026-07-27_openai-compatible-cache-usage.md`.
 
 Predecessor: `ai_plans/2026-07-12_glm-agent-loop-efficiency.md` (WS-F and WS-8 still open).
 This document supersedes its cost model — the measured numbers below are materially worse
@@ -84,11 +94,20 @@ the codebase from zero. The code↔reviewer 1:1 pairing doubles that overhead by
 | GLM-5.2    | 5,242    | 515.6 M | 1.5 M     | **0.3%** | 94,943         | 176,510 | 384,911 |
 | OpenAI Sol | 4,820    | 470.2 M | 250.1 M   | 34.7%    | 99,348         | 307,429 | 739,401 |
 
-The parsing side is correct (`base-openai-compatible-provider.ts:219` reads
-`prompt_tokens_details.cached_tokens`, and the `ROO_LOG_RAW_USAGE=1` spike from WS-6 is still
-in place). The system prompt is byte-stable across a task — no timestamp, and `todoList` is
-passed as `undefined` (`ApiRequestBuilder.ts:177`). So a 0.3% hit rate is **not** explained by
-prompt drift at the head. It _is_ explained by §3.1.
+> **Corrected.** The original text here claimed "the parsing side is correct", citing
+> `base-openai-compatible-provider.ts:219`. That is the wrong file for this profile. The GLM
+> requests go through `OpenAiHandler` (`src/api/providers/openai.ts`), whose
+> `processUsageMetrics` read **only** Anthropic's `cache_read_input_tokens` and never the
+> OpenAI-standard `prompt_tokens_details.cached_tokens` that vLLM reports. So `cacheRead` was
+> structurally pinned near zero on that profile no matter what the server did, and the **0.3%
+> figure cannot distinguish "the server did not cache" from "the client did not look"**. Fixed
+> in `fix/openai-compatible-cache-usage`; the number must be re-measured before it is used for
+> anything. The Sol column (34.7%) is unaffected — it runs on a different handler.
+
+The system prompt is byte-stable across a task — no timestamp, and `todoList` is passed as
+`undefined` (`ApiRequestBuilder.ts:177`). So whatever the real hit rate turns out to be, it is
+**not** explained by prompt drift at the head. §3.1 remains a sufficient cause on its own,
+independently of the broken instrumentation.
 
 ### 2.4 Fixed per-turn payload
 
@@ -119,8 +138,9 @@ plan's rejection of the experiment for GLM can be dropped.
 
 - **79.5%** of code-mode assistant turns contain exactly one `tool_use` block.
 - Every `OpenAI Sol` turn does (1.00–1.01 tools/msg, 0–1% multi-tool) — that profile never
-  batches regardless of what the prompt says. `parallel_tool_calls: true` _is_ being sent
-  (`openai-codex.ts:337`, `zai.ts:125`), so this is a model policy, not a wiring bug.
+  batches regardless of what the prompt says. `parallel_tool_calls: true` _is_ being sent on both
+  paths (`openai-codex.ts:337` for Sol; `openai.ts:238,314,469,509` for the OpenAI-Compatible
+  profile the local vLLM uses), so this is a model policy, not a wiring bug.
 - GLM-5.2 batches only in `architect` (2.46) and `ask` (3.57); in `code` it manages 1.30.
 - Reasoning per assistant message: code/GLM 2,552 chars, reviewer/GLM 1,231 chars.
 
@@ -171,9 +191,14 @@ requests, strictly sequential in time:
 **Consequences.**
 
 - The byte prefix sent to the provider changes on **every single turn**, so prefix caching can
-  never hit. This is a complete, sufficient explanation for the measured **0.3%** GLM hit rate —
-  no Z.ai-side probe is needed to explain it (a probe is still worth running to know the ceiling).
-- On every "rebound" turn the full context is billed at full price.
+  never hit. This is a sufficient explanation on its own — it holds regardless of the broken
+  cache reporting corrected in §2.3, because an unstable prefix defeats caching even on a
+  perfectly instrumented client. (It is no longer the _only_ candidate explanation for the
+  measured 0.3%; that number was also blind. Both must be true to be sure, hence WS-8.)
+- On every "rebound" turn the full context is re-prefilled. On a self-hosted vLLM that is not a
+  bill, it is **GPU time**: ~95 k median tokens of prefill thrown away and redone, on every other
+  turn, competing with decode for the same device. That makes WS-1 the single largest latency
+  lever on local hardware — larger than it looked when this was framed as a billing problem.
 - The model watches old tool results vanish and reappear. That is a strong candidate cause for
   the paging behaviour in §2.5: content it already read is no longer in context, so it reads it
   again — with a different offset, because it doesn't remember the previous window either.
@@ -306,8 +331,9 @@ Acceptance criteria:
 
 - a synthetic 40-turn task shows a **monotonically non-decreasing** `tokensIn` sequence apart from
   genuine `condense_context` events
-- `cacheReads > 0` on GLM after turn 2 in a real task (if Z.ai reports caching at all — run the
-  `ROO_LOG_RAW_USAGE=1` probe first to separate "we broke it" from "they don't report it")
+- `cacheReads > 0` on GLM after turn 2 in a real task — now meaningful, since the client-side
+  parsing gap is fixed; cross-check against vLLM's own `/metrics` (WS-8) to separate "we broke
+  it" from "the server does not report it"
 - regression test asserting the gate is computed from pristine size, with a fixture that
   reproduces the 92 k/222 k alternation
 
@@ -466,11 +492,28 @@ should be used one at a time" is narrowed to state-changing operations.
 - Close finished tasks. 87.3% of measured "duration" is an open tab.
 - Keep `deferredTools: true` — it is free (§2.4).
 
-### WS-8 — Z.ai cache probe (prerequisite for judging WS-1)
+### WS-8 — vLLM prefix-cache probe (prerequisite for judging WS-1)
 
-Still open from the July plan. Run with `ROO_LOG_RAW_USAGE=1` and inspect
-`prompt_tokens_details` on a task with a stable prefix (i.e. **after** WS-1). Until then, we know
-the client makes caching impossible; we do not know what Z.ai would give us if it were possible.
+Rewritten after the premise correction. Half of it is already done: the client-side blindness
+(§2.3) is fixed in `fix/openai-compatible-cache-usage`, so `cacheReads` now carries whatever the
+server reports. What remains is server-side and needs the machine, which the user cannot start
+before the end of the week (2026-07-31):
+
+1. Confirm the server was **not** started with `--no-enable-prefix-caching` (automatic prefix
+   caching is on by default in current vLLM, but it is silently disabled by some
+   quantisation/attention-backend combinations, and it is per-`--served-model-name` KV cache
+   space, so a small `--gpu-memory-utilization` can evict the prefix between turns).
+2. Read `vllm:prefix_cache_queries_total` / `vllm:prefix_cache_hits_total` from the server's
+   `/metrics`. This is the **authoritative** number: it is true even if the response body never
+   reports `cached_tokens`.
+3. Then run `ROO_LOG_RAW_USAGE=1` on a task with a stable prefix (i.e. **after** WS-1) and check
+   the two agree. Disagreement means the server caches but does not report — worth knowing,
+   because then the client-side hit rate is a lower bound forever and only `/metrics` can judge
+   WS-1.
+
+The distinction that matters on local hardware: a prefix-cache hit does not save money, it saves
+**prefill time on a GPU that is also doing decode**. Judging WS-1 by cost is meaningless here;
+judge it by tokens re-prefilled and by wall-clock time to first token.
 
 ---
 
@@ -485,7 +528,9 @@ the client makes caching impossible; we do not know what Z.ai would give us if i
 
 ## 6. Open questions
 
-- Does Z.ai's coding plan report `cached_tokens` at all? (WS-8)
+- Does the local vLLM actually serve prefix-cache hits, and does it report them in the response
+  body as well as in `/metrics`? (WS-8 — the client half is fixed, the server half needs the
+  machine)
 - Is `OpenAI Sol`'s hard 1.00 tools/msg a Responses-API constraint or a model policy? If the
   former, there may be a request-shape fix; if the latter, only turn-reduction helps. Worth one
   probe before assuming it is immovable.
@@ -495,8 +540,8 @@ the client makes caching impossible; we do not know what Z.ai would give us if i
 
 ## 7. Implementation log
 
-One branch per work stream, none merged. Stacked where the change only makes sense on top of an
-earlier one.
+One branch per work stream, stacked where the change only makes sense on top of an earlier one.
+**All merged into `main` with `--no-ff`** on 2026-07-27, in the order listed below.
 
 | WS   | Branch                                    | Commit(s)                | State                                               |
 | ---- | ----------------------------------------- | ------------------------ | --------------------------------------------------- |
@@ -509,8 +554,25 @@ earlier one.
 | WS-3 | `feat/read-file-whole-file-default`       | `3112b14d8`              | done                                                |
 | WS-6 | `perf/orchestrator-payload`               | `f9df69cc7`, `3bb51db9d` | done (file-listing reuse; review-batching rule)     |
 | WS-7 | —                                         | —                        | user-side settings; `alwaysAllowWrite` left alone   |
-| WS-8 | —                                         | —                        | **open** — needs the user to run the cache probe    |
+| WS-8 | `fix/openai-compatible-cache-usage`       | `6c4e7b92f`              | client half done; server half needs the vLLM box    |
+| —    | `fix/roomodes-schema-sync`                | `7fea01a4b`              | pre-existing red test on `main`, unrelated          |
+| —    | `docs/local-vllm-premise-correction`      | this commit              | premise correction (§2.3, RC-1, WS-8)               |
 
 Not yet measured: every acceptance criterion in this document is stated against the pre-change
 baseline. Re-running `scripts/agent-bench` after these land is what turns them from arguments into
 results.
+
+### What can be validated before the vLLM server is back
+
+The `OpenAI Sol` profile is available now, but it can only settle part of this:
+
+| WS     | Testable on Sol? | Why                                                                            |
+| ------ | ---------------- | ------------------------------------------------------------------------------ |
+| WS-1   | **yes**          | Sol reports 34.7% cache reads, so a monotone prefix shows up directly          |
+| WS-6   | **yes**          | `environment_details` size is model-independent — count bytes per user message |
+| WS-4   | partly           | reviewer report quality is judgeable, but not on the model that produced §2    |
+| WS-2/3 | **no**           | Sol emits 1.00 tools/msg (0–1% multi-tool) regardless of prompt — no signal    |
+| WS-8   | **no**           | it is a question about the local server's KV cache                             |
+
+So batching (WS-2, WS-3, the `rules.ts` bullet) stays unvalidated until GLM is reachable. Running
+it on Sol and seeing no change would be a **false negative**, not a result.
