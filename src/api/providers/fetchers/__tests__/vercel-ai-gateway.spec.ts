@@ -83,6 +83,69 @@ describe("Vercel AI Gateway Fetchers", () => {
 			expect(models["anthropic/claude-3.5-haiku"]).toBeDefined()
 		})
 
+		it("ignores non-language models without token limits", async () => {
+			const consoleErrorSpy = vitest.spyOn(console, "error").mockImplementation(() => {})
+			mockedAxios.get.mockResolvedValueOnce({
+				data: {
+					object: "list",
+					data: [
+						mockResponse.data.data[0],
+						{
+							id: "openai/gpt-4o-transcribe",
+							object: "model",
+							created: 1640995200,
+							owned_by: "openai",
+							name: "GPT-4o Transcribe",
+							description: "Speech-to-text model",
+							type: "transcription",
+							pricing: { input: "0.000006" },
+						},
+						{
+							id: "openai/tts-1",
+							object: "model",
+							created: 1640995200,
+							owned_by: "openai",
+							name: "TTS-1",
+							description: "Text-to-speech model",
+							type: "speech",
+							pricing: { input: "0.000015" },
+						},
+					],
+				},
+			})
+
+			const models = await getVercelAiGatewayModels()
+
+			expect(Object.keys(models)).toEqual(["anthropic/claude-sonnet-4"])
+			expect(consoleErrorSpy).not.toHaveBeenCalled()
+			consoleErrorSpy.mockRestore()
+		})
+
+		it("skips language models without token limits", async () => {
+			const consoleErrorSpy = vitest.spyOn(console, "error").mockImplementation(() => {})
+			mockedAxios.get.mockResolvedValueOnce({
+				data: {
+					object: "list",
+					data: [
+						mockResponse.data.data[0],
+						{
+							...mockResponse.data.data[1],
+							context_window: undefined,
+							max_tokens: undefined,
+						},
+					],
+				},
+			})
+
+			const models = await getVercelAiGatewayModels()
+
+			expect(Object.keys(models)).toEqual(["anthropic/claude-sonnet-4"])
+			expect(consoleErrorSpy).toHaveBeenCalledWith(
+				expect.stringContaining("Vercel AI Gateway language model anthropic/claude-3.5-haiku is invalid"),
+			)
+			consoleErrorSpy.mockRestore()
+		})
+
 		it("handles API errors gracefully", async () => {
 			const consoleErrorSpy = vitest.spyOn(console, "error").mockImplementation(() => {})
 			mockedAxios.get.mockRejectedValueOnce(new Error("Network error"))

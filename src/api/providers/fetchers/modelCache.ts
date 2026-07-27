@@ -223,32 +223,6 @@ export const refreshModels = async (options: GetModelsOptions): Promise<ModelRec
 }
 
 /**
- * Initialize background model cache refresh.
- * Refreshes public provider caches without blocking or requiring auth.
- * Should be called once during extension activation.
- */
-export async function initializeModelCacheRefresh(): Promise<void> {
-	// Wait for extension to fully activate before refreshing
-	setTimeout(async () => {
-		// Providers that work without API keys
-		const publicProviders: Array<{ provider: CacheableModelSourceId; options: GetModelsOptions }> = [
-			{ provider: "openrouter", options: { provider: "openrouter" } },
-			{ provider: "vercel-ai-gateway", options: { provider: "vercel-ai-gateway" } },
-		]
-
-		// Refresh each provider in background (fire and forget)
-		for (const { options } of publicProviders) {
-			refreshModels(options).catch(() => {
-				// Silent fail - old cache remains available
-			})
-
-			// Small delay between refreshes to avoid API rate limits
-			await new Promise((resolve) => setTimeout(resolve, 500))
-		}
-	}, 2000)
-}
-
-/**
  * Flush models memory cache for a specific router.
  *
  * @param options - The options for fetching models, including provider, apiKey, and baseUrl

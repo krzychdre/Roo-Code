@@ -212,11 +212,11 @@ vi.mock("../core/webview/ClineProvider", async () => {
 })
 
 // Mock modelCache to prevent network requests during module loading
+const mockGetModels = vi.fn().mockResolvedValue([])
 const mockRefreshModels = vi.fn().mockResolvedValue({})
 vi.mock("../api/providers/fetchers/modelCache", () => ({
 	flushModels: vi.fn(),
-	getModels: vi.fn().mockResolvedValue([]),
-	initializeModelCacheRefresh: vi.fn(),
+	getModels: mockGetModels,
 	refreshModels: mockRefreshModels,
 }))
 
@@ -271,6 +271,17 @@ describe("extension.ts", () => {
 		await activate(mockContext)
 
 		expect(dotenvx.config).toHaveBeenCalledTimes(1)
+	})
+
+	test("does not fetch provider model catalogs during activation", async () => {
+		vi.resetModules()
+		vi.clearAllMocks()
+
+		const { activate } = await import("../extension")
+		await activate(mockContext)
+
+		expect(mockGetModels).not.toHaveBeenCalled()
+		expect(mockRefreshModels).not.toHaveBeenCalled()
 	})
 
 	test("continues activation in local-only mode when CloudService.createInstance rejects", async () => {

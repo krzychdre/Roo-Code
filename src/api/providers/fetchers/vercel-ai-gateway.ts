@@ -23,17 +23,23 @@ const vercelAiGatewayPricingSchema = z.object({
  * VercelAiGatewayModel
  */
 
-const vercelAiGatewayModelSchema = z.object({
+const vercelAiGatewayCatalogModelSchema = z.object({
 	id: z.string(),
 	object: z.string(),
 	created: z.number(),
 	owned_by: z.string(),
 	name: z.string(),
 	description: z.string(),
-	context_window: z.number(),
-	max_tokens: z.number(),
+	// Speech and transcription models do not expose token limits.
+	context_window: z.number().optional(),
+	max_tokens: z.number().optional(),
 	type: z.string(),
 	pricing: vercelAiGatewayPricingSchema,
+})
+
+const vercelAiGatewayModelSchema = vercelAiGatewayCatalogModelSchema.extend({
+	context_window: z.number(),
+	max_tokens: z.number(),
 })
 
 export type VercelAiGatewayModel = z.infer<typeof vercelAiGatewayModelSchema>
@@ -44,7 +50,7 @@ export type VercelAiGatewayModel = z.infer<typeof vercelAiGatewayModelSchema>
 
 const vercelAiGatewayModelsResponseSchema = z.object({
 	object: z.string(),
-	data: z.array(vercelAiGatewayModelSchema),
+	data: z.array(vercelAiGatewayCatalogModelSchema),
 })
 
 type VercelAiGatewayModelsResponse = z.infer<typeof vercelAiGatewayModelsResponseSchema>
@@ -66,15 +72,23 @@ export async function getVercelAiGatewayModels(options?: ApiHandlerOptions): Pro
 			console.error(`Vercel AI Gateway models response is invalid ${JSON.stringify(result.error.format())}`)
 		}
 
-		for (const model of data) {
-			const { id } = model
-
+		for (const catalogModel of data) {
 			// Only include language models for chat inference.
 			// Embedding models are statically defined in embeddingModels.ts.
-			if (model.type !== "language") {
+			if (catalogModel.type !== "language") {
 				continue
 			}
 
+			const parsedModel = vercelAiGatewayModelSchema.safeParse(catalogModel)
+			if (!parsedModel.success) {
+				console.error(
+					`Vercel AI Gateway language model ${catalogModel.id} is invalid ${JSON.stringify(parsedModel.error.format())}`,
+				)
+				continue
+			}
+
+			const model = parsedModel.data
+			const { id } = model
 			models[id] = parseVercelAiGatewayModel({ id, model })
 		}
 	} catch (error) {
