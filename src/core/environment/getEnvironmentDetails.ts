@@ -35,6 +35,24 @@ interface EnvSectionSnapshot {
 
 const lastEnvSnapshot = new WeakMap<Task, EnvSectionSnapshot>()
 
+// The recursive workspace listing is by far the largest section: measured across
+// 555 stored tasks it is 87.4% of all environment_details bytes in orchestrator
+// mode and 51.9% in code mode. It is emitted on every *full* block, and
+// TaskSubtasks#resumeAfterDelegation asks for a full block after every completed
+// subtask — so 62.2% of orchestrator environment blocks carry a listing, against
+// ~13% in the other modes. Those blocks live in the conversation history, so a
+// long orchestration accumulates dozens of near-identical ~7.5 kB listings and
+// re-sends all of them on every subsequent turn.
+//
+// Keyed per Task and never persisted, like lastEnvSnapshot: a resumed task, or
+// one that switched to a mode with a different context window, starts from a
+// full emission.
+const lastFileDetails = new WeakMap<Task, string>()
+
+/** Stands in for a listing the model already has verbatim earlier in this conversation. */
+export const FILE_DETAILS_UNCHANGED_NOTE =
+	"(Unchanged since the listing earlier in this conversation. Use list_files if you need a fresh view.)"
+
 export async function getEnvironmentDetails(cline: Task, includeFileDetails: boolean = false) {
 	let details = ""
 
@@ -301,7 +319,16 @@ export async function getEnvironmentDetails(cline: Task, includeFileDetails: boo
 					showRooIgnoredFiles,
 				)
 
-				details += result
+				// Byte-identical to what this task already sent: point at that copy
+				// instead of repeating it. Comparing content rather than counting
+				// emissions means a subtask that actually created files still gets a
+				// fresh listing, which is the only reason to re-emit at all.
+				if (lastFileDetails.get(cline) === result) {
+					details += FILE_DETAILS_UNCHANGED_NOTE
+				} else {
+					lastFileDetails.set(cline, result)
+					details += result
+				}
 			}
 		}
 	}

@@ -4,7 +4,7 @@ import pWaitFor from "p-wait-for"
 import delay from "delay"
 import type { Mock } from "vitest"
 
-import { getEnvironmentDetails } from "../getEnvironmentDetails"
+import { getEnvironmentDetails, FILE_DETAILS_UNCHANGED_NOTE } from "../getEnvironmentDetails"
 import { getFullModeDetails } from "../../../shared/modes"
 import { isToolAllowedForMode } from "../../tools/validateToolUse"
 import { getApiMetrics } from "../../../shared/getApiMetrics"
@@ -178,6 +178,44 @@ describe("getEnvironmentDetails", () => {
 			mockCline.rooIgnoreController,
 			false,
 		)
+	})
+
+	describe("workspace file listing reuse", () => {
+		// resumeAfterDelegation requests a full block after every completed subtask,
+		// so an orchestration used to append a fresh ~7.5 kB listing per subtask and
+		// re-send every one of them on every later turn.
+		it("replaces an identical repeat listing with a pointer to the earlier one", async () => {
+			const first = await getEnvironmentDetails(mockCline as Task, true)
+			expect(first).toContain("file1.ts\nfile2.ts")
+			expect(first).not.toContain(FILE_DETAILS_UNCHANGED_NOTE)
+
+			const second = await getEnvironmentDetails(mockCline as Task, true)
+			expect(second).toContain("# Current Workspace Directory")
+			expect(second).toContain(FILE_DETAILS_UNCHANGED_NOTE)
+			expect(second).not.toContain("file1.ts\nfile2.ts")
+		})
+
+		it("emits a full listing again once the workspace contents change", async () => {
+			await getEnvironmentDetails(mockCline as Task, true)
+			;(formatResponse.formatFilesList as Mock).mockReturnValue("file1.ts\nfile2.ts\nfile3.ts")
+
+			const afterChange = await getEnvironmentDetails(mockCline as Task, true)
+			expect(afterChange).toContain("file3.ts")
+			expect(afterChange).not.toContain(FILE_DETAILS_UNCHANGED_NOTE)
+
+			// And the new listing becomes the baseline for the next comparison.
+			const afterChangeAgain = await getEnvironmentDetails(mockCline as Task, true)
+			expect(afterChangeAgain).toContain(FILE_DETAILS_UNCHANGED_NOTE)
+		})
+
+		it("keeps the listing per task, so another task still gets a full one", async () => {
+			await getEnvironmentDetails(mockCline as Task, true)
+
+			const otherTask = { ...mockCline } as Task
+			const result = await getEnvironmentDetails(otherTask, true)
+			expect(result).toContain("file1.ts\nfile2.ts")
+			expect(result).not.toContain(FILE_DETAILS_UNCHANGED_NOTE)
+		})
 	})
 
 	it("should not include file details when includeFileDetails is false", async () => {
