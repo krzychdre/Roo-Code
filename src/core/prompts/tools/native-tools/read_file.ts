@@ -54,6 +54,11 @@ export interface ReadFileToolOptions {
  *    - Respects code structure based on indentation hierarchy
  *    - Useful for extracting functions, classes, or logical blocks
  *
+ * The descriptions steer hard towards a single whole-file slice read. Windowed reads
+ * looked cheap per call but measured at 11.8% default-window usage and ~52% same-path
+ * re-reads: the model paged through a file it could have had in one round trip, and
+ * every extra round trip re-sends the whole conversation.
+ *
  * @param options - Configuration options for the tool
  * @returns Native tool definition for read_file
  */
@@ -66,11 +71,16 @@ export function createReadFileTool(options: ReadFileToolOptions = {}): OpenAI.Ch
 
 	const modeDescription =
 		` Supports two modes: 'slice' (default) reads lines sequentially with offset/limit; 'indentation' extracts complete semantic code blocks around an anchor line based on indentation hierarchy.` +
-		` Slice mode is ideal for initial file exploration, understanding overall structure, reading configuration/data files, or when you need a specific line range. Use it when you don't have a target line number.` +
-		` PREFER indentation mode when you have a specific line number from search results, error messages, or definition lookups - it guarantees complete, syntactically valid code blocks without mid-function truncation.` +
+		` Use slice mode with no offset and no limit for almost everything - it is the cheapest way to get a file's full content and structure.` +
+		` Use indentation mode only for files larger than ${DEFAULT_LINE_LIMIT} lines, when you already have a target line number from search results, an error message, or a definition lookup and reading the whole file is not practical.` +
 		` IMPORTANT: Indentation mode requires anchor_line to be useful. Without it, only header content (imports) is returned.`
 
-	const limitNote = ` By default, returns up to ${DEFAULT_LINE_LIMIT} lines per file. Lines longer than ${MAX_LINE_LENGTH} characters are truncated.`
+	const limitNote =
+		` Omit offset and limit to read the whole file (up to ${DEFAULT_LINE_LIMIT} lines) - this is the default and what you should normally do.` +
+		` One whole-file read costs far less than several windowed reads of the same file, because every extra call is another round trip that also re-sends the entire conversation.` +
+		` Pass limit only for files you already know are larger than ${DEFAULT_LINE_LIMIT} lines.` +
+		` Never re-read a file, or a part of a file, that is already in this conversation - scroll back instead.` +
+		` Lines longer than ${MAX_LINE_LENGTH} characters are truncated.`
 
 	const description =
 		descriptionIntro +
@@ -79,7 +89,8 @@ export function createReadFileTool(options: ReadFileToolOptions = {}): OpenAI.Ch
 		" " +
 		getReadFileSupportsNote(supportsImages) +
 		` Example: { path: 'src/app.ts' }` +
-		` Example (indentation mode): { path: 'src/app.ts', mode: 'indentation', indentation: { anchor_line: 42 } }`
+		` Example (three files, all in ONE message - three separate read_file calls, no limit on any of them): { path: 'src/app.ts' }, { path: 'src/router.ts' }, { path: 'src/config.ts' }` +
+		` Example (indentation mode, only for a file above ${DEFAULT_LINE_LIMIT} lines): { path: 'src/huge.ts', mode: 'indentation', indentation: { anchor_line: 42 } }`
 
 	const indentationProperties: Record<string, unknown> = {
 		anchor_line: {
@@ -116,16 +127,16 @@ export function createReadFileTool(options: ReadFileToolOptions = {}): OpenAI.Ch
 		mode: {
 			type: "string",
 			enum: ["slice", "indentation"],
-			description:
-				"Reading mode. 'slice' (default): read lines sequentially with offset/limit - use for general file exploration or when you don't have a target line number (may truncate code mid-function). 'indentation': extract complete semantic code blocks containing anchor_line - PREFERRED when you have a line number because it guarantees complete, valid code blocks. WARNING: Do not use indentation mode without specifying indentation.anchor_line, or you will only get header content.",
+			description: `Reading mode. 'slice' (default): read lines sequentially with offset/limit - use it for everything, and omit offset and limit so you get the whole file. 'indentation': extract the semantic code block containing anchor_line - use it only for files larger than ${DEFAULT_LINE_LIMIT} lines, where a whole-file read is not possible. WARNING: Do not use indentation mode without specifying indentation.anchor_line, or you will only get header content.`,
 		},
 		offset: {
 			type: "integer",
-			description: "1-based line offset to start reading from (slice mode, default: 1)",
+			description:
+				"1-based line offset to start reading from (slice mode, default: 1). Omit it. Only set it when you have already read the first part of a file above the line limit and need the next chunk.",
 		},
 		limit: {
 			type: "integer",
-			description: `Maximum number of lines to return (slice mode, default: ${DEFAULT_LINE_LIMIT})`,
+			description: `Maximum number of lines to return (slice mode, default: ${DEFAULT_LINE_LIMIT}). Omit it to read the whole file, which is what you should normally do: one whole-file read costs less than several windowed reads, because each extra call is another round trip. Only set it for files you already know are larger than ${DEFAULT_LINE_LIMIT} lines.`,
 		},
 		indentation: {
 			type: "object",
