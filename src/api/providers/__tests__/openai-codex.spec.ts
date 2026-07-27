@@ -14,7 +14,9 @@ describe("OpenAiCodexHandler.getModel", () => {
 			expect(model.id).toBe(apiModelId)
 			expect(model.info).toMatchObject({
 				contextWindow: 200_000,
-				maxTokens: 128_000,
+				// Response reservation only (the Codex backend rejects max_output_tokens);
+				// kept at 20% of the window so auto-condense doesn't fire early.
+				maxTokens: 40_000,
 				supportsImages: true,
 				supportsReasoningEffort: ["none", "low", "medium", "high", "xhigh", "max"],
 				reasoningEffort: "medium",
