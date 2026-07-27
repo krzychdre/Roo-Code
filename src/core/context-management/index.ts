@@ -9,7 +9,7 @@ import { ApiMessage } from "../task-persistence/apiMessages"
 import { ANTHROPIC_DEFAULT_MAX_TOKENS } from "@roo-code/types"
 import { RooIgnoreController } from "../ignore/RooIgnoreController"
 import { microcompactToolResults, microcompactTargetChars, MICROCOMPACT_PLACEHOLDER_TOKENS } from "./microcompact"
-import { buildContextLedger } from "./ledger"
+import { buildContextLedger, type ContextLedger } from "./ledger"
 
 /**
  * Context Management
@@ -366,6 +366,12 @@ export async function manageContext({
 	let microcompactTokensCleared = 0
 	let microcompactClearedToolUseIds: string[] = []
 
+	// Built at most once per pass and shared by both consumers: microcompaction reads it as a
+	// protection list, condense reads it as a critical-fact checklist. One linear pass over the
+	// history, no model call — so it cannot fail or hallucinate on a weak local model.
+	let ledgerMemo: ContextLedger | undefined
+	const getLedger = () => (ledgerMemo ??= buildContextLedger(messages))
+
 	if (overCondenseThreshold || overAllowedTokens) {
 		// The binding ceiling is whichever limit we are actually being pushed against.
 		// When auto-condense is off, only the hard allowance applies.
@@ -375,13 +381,10 @@ export async function manageContext({
 		const ceilingTokens = Math.min(condenseCeilingTokens, allowedTokens)
 		const targetChars = microcompactTargetChars(prevContextTokens - ceilingTokens)
 
-		// Deterministic, no model call: one linear pass that marks which results carry
-		// facts the model cannot cheaply re-derive.
-		const ledger = buildContextLedger(messages)
-
 		const mc = microcompactToolResults(messages, {
 			targetChars,
-			criticalToolUseIds: ledger.criticalToolUseIds,
+			// Marks which results carry facts the model cannot cheaply re-derive.
+			criticalToolUseIds: getLedger().criticalToolUseIds,
 			alreadyClearedToolUseIds: previouslyClearedToolUseIds,
 		})
 		if (mc.clearedCount > 0) {
@@ -462,6 +465,10 @@ export async function manageContext({
 				filesReadByRoo,
 				cwd,
 				rooIgnoreController,
+				// The summary is written by an LLM (often a small background model); this is the
+				// checklist it is validated against, so dropped critical facts are restored
+				// deterministically instead of silently lost.
+				ledger: getLedger(),
 			})
 			if (result.error) {
 				error = result.error

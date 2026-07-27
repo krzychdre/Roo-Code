@@ -618,6 +618,8 @@ describe("Context Management", () => {
 				systemPrompt: "System prompt",
 				taskId,
 				isAutomaticTrigger: true,
+				// The typed state ledger the summary is validated against.
+				ledger: expect.objectContaining({ facts: expect.any(Array) }),
 			})
 
 			// Verify the result contains the summary information
@@ -790,6 +792,8 @@ describe("Context Management", () => {
 				systemPrompt: "System prompt",
 				taskId,
 				isAutomaticTrigger: true,
+				// The typed state ledger the summary is validated against.
+				ledger: expect.objectContaining({ facts: expect.any(Array) }),
 			})
 
 			// Verify the result contains the summary information
@@ -925,6 +929,7 @@ describe("Context Management", () => {
 				filesReadByRoo,
 				cwd,
 				rooIgnoreController: mockRooIgnoreController,
+				ledger: expect.objectContaining({ facts: expect.any(Array) }),
 			})
 
 			// Verify the result contains the summary information
@@ -987,6 +992,8 @@ describe("Context Management", () => {
 				systemPrompt: "System prompt",
 				taskId,
 				isAutomaticTrigger: true,
+				// The typed state ledger the summary is validated against.
+				ledger: expect.objectContaining({ facts: expect.any(Array) }),
 			})
 
 			// Verify the result
@@ -1050,6 +1057,7 @@ describe("Context Management", () => {
 				isAutomaticTrigger: true,
 				filesReadByRoo: [],
 				cwd: "/test/project",
+				ledger: expect.objectContaining({ facts: expect.any(Array) }),
 			})
 
 			// Clean up

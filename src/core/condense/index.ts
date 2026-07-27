@@ -10,9 +10,12 @@ import { maybeRemoveImageBlocks } from "../../api/transform/image-cleaning"
 import { findLast } from "../../shared/array"
 import { supportPrompt } from "../../shared/support-prompt"
 import { RooIgnoreController } from "../ignore/RooIgnoreController"
+import type { ContextLedger } from "../context-management/ledger/types"
 import { generateFoldedFileContext } from "./foldedFileContext"
+import { validateSummaryFacts } from "./factValidation"
 
 export type { FoldedFileContextResult, FoldedFileContextOptions } from "./foldedFileContext"
+export * from "./factValidation"
 
 /**
  * Converts a tool_use block to a text representation.
@@ -237,6 +240,8 @@ export type SummarizeResponse = {
 	error?: string // Populated iff the operation fails: error message shown to the user on failure (see Task.ts)
 	errorDetails?: string // Detailed error information including stack trace and API error info
 	condenseId?: string // The unique ID of the created Summary message, for linking to condense_context clineMessage
+	factsChecked?: number // Critical ledger facts the summary was validated against (0 when no ledger was supplied)
+	factsRecovered?: number // Critical facts the summary dropped and the addendum restored
 }
 
 export type SummarizeConversationOptions = {
@@ -251,6 +256,14 @@ export type SummarizeConversationOptions = {
 	filesReadByRoo?: string[]
 	cwd?: string
 	rooIgnoreController?: RooIgnoreController
+	/**
+	 * Deterministic state ledger for the history being condensed. When supplied, the summary is
+	 * checked against its critical facts and anything the model dropped is appended verbatim.
+	 * Passed in rather than built here so the caller can share the single build it already does
+	 * for microcompaction — and so this module keeps no dependency on the ledger builder, which
+	 * imports `getEffectiveApiHistory` from here.
+	 */
+	ledger?: ContextLedger
 }
 
 /**
@@ -338,6 +351,7 @@ export async function summarizeConversation(options: SummarizeConversationOption
 		filesReadByRoo,
 		cwd,
 		rooIgnoreController,
+		ledger,
 	} = options
 	TelemetryService.instance.captureContextCondensed(
 		taskId,
@@ -476,10 +490,38 @@ export async function summarizeConversation(options: SummarizeConversationOption
 	const firstMessage = messages[0]
 	const commandBlocks = firstMessage ? extractCommandBlocks(firstMessage) : ""
 
+	// Computed here rather than at the rewrite below because the fact check needs to know what
+	// survives the condense verbatim: a fact still sitting in the kept raw tail was never at risk.
+	const keepBoundary = computeCondenseKeepBoundary(messages)
+	const recentTail = messages.slice(keepBoundary)
+
 	// Build the summary content as separate text blocks
 	const summaryContent: Anthropic.Messages.ContentBlockParam[] = [
 		{ type: "text", text: `## Conversation Summary\n${summary}` },
 	]
+
+	// Critical-fact validation. Deterministic, no model call, and it can only ADD text — a
+	// summary that already carried everything is left exactly as the model wrote it.
+	const retainedText = transformMessagesForCondensing(recentTail)
+		.flatMap(({ content }) =>
+			typeof content === "string" ? [content] : content.map((block) => (block.type === "text" ? block.text : "")),
+		)
+		.join("\n")
+	const retainedToolUseIds = new Set<string>()
+	for (const message of recentTail) {
+		if (!Array.isArray(message.content)) {
+			continue
+		}
+		for (const block of message.content) {
+			if (block.type === "tool_result") {
+				retainedToolUseIds.add(block.tool_use_id)
+			}
+		}
+	}
+	const factCheck = validateSummaryFacts(summary, ledger, { text: retainedText, toolUseIds: retainedToolUseIds })
+	if (factCheck.addendum) {
+		summaryContent.push({ type: "text", text: factCheck.addendum })
+	}
 
 	// Add command blocks (active workflows) in their own system-reminder block if present
 	if (commandBlocks) {
@@ -555,8 +597,6 @@ ${commandBlocks}
 	//
 	// On small histories computeCondenseKeepBoundary returns messages.length, so
 	// the tail is empty and this reduces to the classic [..tagged, summary] shape.
-	const keepBoundary = computeCondenseKeepBoundary(messages)
-
 	const newMessages: ApiMessage[] = []
 	for (let i = 0; i < keepBoundary; i++) {
 		const msg = messages[i]
@@ -564,7 +604,6 @@ ${commandBlocks}
 		newMessages.push(msg.condenseParent ? msg : { ...msg, condenseParent: condenseId })
 	}
 	newMessages.push(summaryMessage)
-	const recentTail = messages.slice(keepBoundary)
 	for (const msg of recentTail) {
 		newMessages.push(msg)
 	}
@@ -602,7 +641,15 @@ ${commandBlocks}
 	}
 
 	const newContextTokens = messageTokens + toolTokens + tailTokens
-	return { messages: newMessages, summary, cost, newContextTokens, condenseId }
+	return {
+		messages: newMessages,
+		summary,
+		cost,
+		newContextTokens,
+		condenseId,
+		factsChecked: factCheck.checked,
+		factsRecovered: factCheck.missing.length,
+	}
 }
 
 /**

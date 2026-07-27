@@ -215,12 +215,65 @@ on turn 8 and puts 15,699 tokens on the wire — above both the last full turn (
 strip latches. The spec now asserts that, which is a statement about the invariant rather than
 about the old policy's amplitude.
 
-### 2.3 Condense critical-fact validation
+### 2.3 Condense critical-fact validation — as implemented
 
-After `summarizeConversation()` returns, check the summary text against the ledger's critical
-facts (`goal`, `open_error`, `file_change`). Missing facts are **appended as a deterministic
-addendum**, never a retry or a failure — a weak model that writes a poor summary still gets a
-correct one, at zero extra model calls.
+Before the summary message is assembled, its text is checked against the ledger's critical facts
+(`goal`, `open_error`, `file_change`). Missing facts are **appended as a deterministic addendum**,
+never a retry and never a failure — a weak model that writes a poor summary still ends up with a
+correct one, at zero extra model calls. `src/core/condense/factValidation.ts`.
+
+**Why lexical, not semantic.** A semantic check needs a model call, which reintroduces exactly the
+failure mode it is meant to guard against (§0). The check is token overlap: a fact counts as
+retained when ≥ `FACT_COVERAGE_THRESHOLD` (0.5) of its _distinctive_ tokens — length ≥ 4, minus a
+~50-word stopword set — appear in the summary. Half tolerates paraphrase and word-form drift
+(`failed`/`failing`) while still rejecting a summary that merely name-drops a path.
+
+**One rule, different probe text per class.** This is what makes a single threshold produce the
+right strictness everywhere:
+
+| class         | probe                           | effect                                                                                              |
+| ------------- | ------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `goal`        | the request prose               | 50% overlap answers "is this summary about this task"                                               |
+| `file_change` | the **file name only**          | one token, so it must be present; the directory prefix is noise a summary is entitled to drop       |
+| `open_error`  | file/command **+ failure text** | a summary that mentions `pnpm test` but drops "3 assertions failed" lands under 0.5 and is restored |
+
+**What survives the condense is not re-stated.** The kept raw tail is evidence too, but the two
+kinds of evidence are not equally strong, and mixing them was a real bug caught by the integration
+test: a `file_change` probe is a _single_ token, so matching it against a large raw tail suppresses
+the fact whenever anything in the tail happens to mention the file — including a message about
+something else entirely (a lint error naming `openrouter.ts` silently cancelled "openrouter.ts was
+already rewritten"). So:
+
+- a fact **derived from a tool result** is settled by `tool_use_id`: retained iff that exact result
+  is still in the tail. Unfakeable, and it composes with WS-2 — those ids are precisely
+  `criticalToolUseIds`, which microcompaction protects from stripping.
+- a fact with **no id of its own** (`goal`, plan items) falls back to token coverage over summary +
+  tail text.
+
+**Failure modes all degrade to silence.** A fact with no distinctive tokens (`"do it now"`) is
+skipped rather than guessed at; no ledger means the pass is a no-op; the addendum is capped at
+`MAX_ADDENDUM_FACTS` (20) with an explicit `- (N further facts omitted for length)` line, because a
+hidden cap reads as "everything was carried over". The pass can only ever ADD text.
+
+**Shape, for a weak reader** — one heading, one instruction sentence, one fact per line, each line
+prefixed with an explicit label (`GOAL`, `STILL BROKEN`, `ALREADY CHANGED`), ordered by cost of loss
+(task statement → unresolved failure → completed change). No nesting, no prose to parse:
+
+```
+<system-reminder>
+## Facts Carried Over From The Condensed History
+The summary above did not mention the following. They are still true — treat them as part of the
+summary and do not redo or contradict them.
+
+- GOAL: Add exponential backoff to the openrouter provider
+- STILL BROKEN: execute_command failed on pnpm test: Error: 3 assertions failed in backoff.spec.ts
+- ALREADY CHANGED: src/api/providers/openrouter.ts (write_to_file)
+</system-reminder>
+```
+
+`SummarizeResponse` now carries `factsChecked` / `factsRecovered`, so the review's "regresje po
+kondensacji" metric has a cheap leading indicator: a persistently high recovered/checked ratio means
+the condense prompt is losing facts, not that the validator is noisy.
 
 ### 2.4 Versioned semantic execution snapshot
 
@@ -237,7 +290,7 @@ holds and falls back to today's behaviour when it does not (stale, missing, or v
 | ---- | ------------------------------- | ------------------------------------------------------------ | ------ |
 | WS-1 | `feat/context-ledger`           | ledger module + tests + this plan (no behaviour change)      | done   |
 | WS-2 | `feat/adaptive-microcompaction` | need-adaptive target + reclaim floor + protection; telemetry | done   |
-| WS-3 | `feat/condense-fact-validation` | critical-fact addendum on condense output                    | todo   |
+| WS-3 | `feat/condense-fact-validation` | critical-fact addendum on condense output                    | done   |
 | WS-4 | `feat/resume-semantic-snapshot` | snapshot write at checkpoint, hash-bound resume              | todo   |
 
 Stacked in order (they overlap in `context-management/` and `task/`).
@@ -251,5 +304,8 @@ Stacked in order (they overlap in `context-management/` and `task/`).
 - **reread rate** — baseline 44.4% / 11.3% post-gap (§1.4); re-run `ledger_measure2.py` after a
   week of use.
 - **first-turn tokens after resume** — baseline median 43,953 (§1.6).
+- **critical facts recovered** — shipped in WS-3 as `factsChecked` / `factsRecovered` on
+  `SummarizeResponse`. A persistently high ratio means the condense prompt is losing facts; a ratio
+  near zero across many condenses means the addendum is dead weight and the threshold can rise.
 - **condensation cost vs. saved tokens**, **post-condense regressions** — deferred: at 3.7% task
   reach (§1.5) the sample cannot support a conclusion yet.
