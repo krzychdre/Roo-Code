@@ -12,6 +12,20 @@ export type OpenAiCodexModelId = keyof typeof openAiCodexModels
 
 export const openAiCodexDefaultModelId: OpenAiCodexModelId = "gpt-5.6-sol"
 
+/**
+ * The Codex backend rejects `max_output_tokens`, so this provider never sends it
+ * (see `buildRequestBody` in `src/api/providers/openai-codex.ts`). `maxTokens` here
+ * is therefore purely a bookkeeping value: it is what `getModelMaxOutputTokens`
+ * reserves out of the context window for the response, which in turn sets the
+ * auto-condense/truncation threshold (`contextWindow * 0.9 - reservedTokens`).
+ *
+ * GPT-5 model IDs bypass the usual 20%-of-context clamp in `getModelMaxOutputTokens`,
+ * so on the 200k subscription window the reserve must be kept at 20% by hand —
+ * otherwise a 128k reserve leaves only ~52k of usable context and condensing fires
+ * almost immediately.
+ */
+const SUBSCRIPTION_200K_MAX_OUTPUT_TOKENS = 40_000
+
 const commonSubscriptionModelInfo = {
 	includedTools: ["apply_patch"],
 	excludedTools: ["apply_diff", "write_to_file"],
@@ -25,7 +39,7 @@ const commonSubscriptionModelInfo = {
 export const openAiCodexModels = {
 	"gpt-5.6-sol": {
 		...commonSubscriptionModelInfo,
-		maxTokens: 128_000,
+		maxTokens: SUBSCRIPTION_200K_MAX_OUTPUT_TOKENS,
 		contextWindow: 200_000,
 		supportsImages: true,
 		supportsReasoningEffort: ["none", "low", "medium", "high", "xhigh", "max"],
@@ -36,7 +50,7 @@ export const openAiCodexModels = {
 	},
 	"gpt-5.6-terra": {
 		...commonSubscriptionModelInfo,
-		maxTokens: 128_000,
+		maxTokens: SUBSCRIPTION_200K_MAX_OUTPUT_TOKENS,
 		contextWindow: 200_000,
 		supportsImages: true,
 		supportsReasoningEffort: ["none", "low", "medium", "high", "xhigh", "max"],
@@ -46,7 +60,7 @@ export const openAiCodexModels = {
 	},
 	"gpt-5.6-luna": {
 		...commonSubscriptionModelInfo,
-		maxTokens: 128_000,
+		maxTokens: SUBSCRIPTION_200K_MAX_OUTPUT_TOKENS,
 		contextWindow: 200_000,
 		supportsImages: true,
 		supportsReasoningEffort: ["none", "low", "medium", "high", "xhigh", "max"],
@@ -56,7 +70,7 @@ export const openAiCodexModels = {
 	},
 	"gpt-5.5": {
 		...commonSubscriptionModelInfo,
-		maxTokens: 128_000,
+		maxTokens: SUBSCRIPTION_200K_MAX_OUTPUT_TOKENS,
 		contextWindow: 200_000,
 		supportsImages: true,
 		supportsReasoningEffort: ["none", "low", "medium", "high", "xhigh"],
@@ -75,7 +89,7 @@ export const openAiCodexModels = {
 	},
 	"gpt-5.4": {
 		...commonSubscriptionModelInfo,
-		maxTokens: 128_000,
+		maxTokens: SUBSCRIPTION_200K_MAX_OUTPUT_TOKENS,
 		contextWindow: 200_000,
 		supportsImages: true,
 		supportsReasoningEffort: ["none", "low", "medium", "high", "xhigh"],
@@ -85,7 +99,7 @@ export const openAiCodexModels = {
 	},
 	"gpt-5.4-mini": {
 		...commonSubscriptionModelInfo,
-		maxTokens: 128_000,
+		maxTokens: SUBSCRIPTION_200K_MAX_OUTPUT_TOKENS,
 		contextWindow: 200_000,
 		supportsImages: true,
 		supportsReasoningEffort: ["none", "low", "medium", "high", "xhigh"],
