@@ -360,12 +360,31 @@ export class OpenAiHandler extends BaseProvider implements SingleCompletionHandl
 	}
 
 	protected processUsageMetrics(usage: any, _modelInfo?: ModelInfo): ApiStreamUsageChunk {
+		// Spike instrumentation: dump the endpoint's raw usage object so cache
+		// reporting can be verified endpoint-by-endpoint (e.g. whether a local
+		// vLLM server reports prefix-cache hits). Mirrors the same switch in
+		// base-openai-compatible-provider.ts.
+		if (process.env.ROO_LOG_RAW_USAGE === "1") {
+			console.log(`[openai-compatible] raw usage: ${JSON.stringify(usage)}`)
+		}
+
+		// Cached prompt tokens are reported two different ways by OpenAI-compatible
+		// servers: the OpenAI standard nests them under `prompt_tokens_details`
+		// (vLLM, SGLang, LiteLLM, OpenAI itself), while Anthropic-style gateways
+		// put them at the top level. Read the standard shape first and fall back
+		// to the Anthropic-style fields, otherwise prefix-cache hits from a
+		// self-hosted server are invisible to the client and always read as zero.
+		// Both conventions include cached tokens in `prompt_tokens`, which is what
+		// calculateApiCostOpenAI expects, so nothing is double-counted here.
+		const cacheWriteTokens = usage?.prompt_tokens_details?.cache_write_tokens || usage?.cache_creation_input_tokens
+		const cacheReadTokens = usage?.prompt_tokens_details?.cached_tokens || usage?.cache_read_input_tokens
+
 		return {
 			type: "usage",
 			inputTokens: usage?.prompt_tokens || 0,
 			outputTokens: usage?.completion_tokens || 0,
-			cacheWriteTokens: usage?.cache_creation_input_tokens || undefined,
-			cacheReadTokens: usage?.cache_read_input_tokens || undefined,
+			cacheWriteTokens: cacheWriteTokens || undefined,
+			cacheReadTokens: cacheReadTokens || undefined,
 		}
 	}
 
