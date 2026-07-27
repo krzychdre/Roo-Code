@@ -513,6 +513,105 @@ describe("ChatView - Notification Sound with Queued Messages", () => {
 			{ timeout: 1000 },
 		)
 	})
+
+	describe("ChatView - Rehydration Sound Suppression", () => {
+		beforeEach(() => vi.clearAllMocks())
+
+		it("does not play celebration sound when a completed task is reopened from history", async () => {
+			renderChatView()
+
+			// Simulate the extension pushing the rehydrated task state: the saved
+			// clineMessages already end in the original completion_result ask, and
+			// currentTaskItem identifies the reopened task. No prior state for this
+			// task was observed in this ChatView session, so this is rehydration,
+			// not a fresh completion.
+			mockPostMessage({
+				soundEnabled: true,
+				messageQueue: [],
+				currentTaskItem: { id: "completed-task-1" },
+				clineMessages: [
+					{ type: "say", say: "task", ts: 1000, text: "Initial task" },
+					{
+						type: "ask",
+						ask: "completion_result",
+						ts: 2000,
+						text: "Task completed successfully",
+						partial: false,
+					},
+				],
+			})
+
+			await waitFor(
+				() => {
+					expect(mockPlayFunction).not.toHaveBeenCalled()
+				},
+				{ timeout: 1000 },
+			)
+		})
+
+		it("does not play celebration sound when switching to a different completed task from history", async () => {
+			renderChatView()
+
+			// First, observe a live task completing — this SHOULD play the sound.
+			// (No currentTaskItem here, mirroring the existing passing test that
+			// verifies the celebration plays on a genuine completion.)
+			mockPostMessage({
+				soundEnabled: true,
+				messageQueue: [],
+				clineMessages: [{ type: "say", say: "task", ts: 1000, text: "Live task" }],
+			})
+
+			mockPlayFunction.mockClear()
+
+			mockPostMessage({
+				soundEnabled: true,
+				messageQueue: [],
+				clineMessages: [
+					{ type: "say", say: "task", ts: 1000, text: "Live task" },
+					{
+						type: "ask",
+						ask: "completion_result",
+						ts: 2000,
+						text: "Live task done",
+						partial: false,
+					},
+				],
+			})
+
+			await waitFor(() => {
+				expect(mockPlayFunction).toHaveBeenCalledTimes(1)
+			})
+
+			mockPlayFunction.mockClear()
+
+			// Now the user opens a DIFFERENT completed task from history. Its saved
+			// messages already end in a completion_result, and the task id changes
+			// (live-task-1 -> completed-task-2), so this is a rehydration and must
+			// NOT replay the sound.
+			mockPostMessage({
+				soundEnabled: true,
+				messageQueue: [],
+				currentTaskItem: { id: "completed-task-2" },
+				clineMessages: [
+					{ type: "say", say: "task", ts: 5000, text: "Reopened task" },
+					{
+						type: "ask",
+						ask: "completion_result",
+						ts: 6000,
+						text: "Reopened task done",
+						partial: false,
+					},
+				],
+			})
+
+			await waitFor(
+				() => {
+					expect(mockPlayFunction).not.toHaveBeenCalled()
+				},
+				{ timeout: 1000 },
+			)
+		})
+	})
 })
 
 describe("ChatView - Sound Debounce", () => {

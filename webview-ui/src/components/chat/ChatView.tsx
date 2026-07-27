@@ -243,6 +243,17 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	const [playProgressLoop] = useSound(progressLoopSrc, { volume, soundEnabled, interrupt: true })
 
 	const lastPlayedRef = useRef<Record<string, number>>({})
+	// Suppresses the celebration sound when a completed task is reopened from
+	// history. Rehydration replaces clineMessages with the saved conversation,
+	// whose last message is the original completion_result ask — so the
+	// useDeepCompareEffect below would otherwise replay the celebration sound
+	// on every rehydration. We track the task id and last-message ts observed
+	// on the PREVIOUS effect run: a completion_result is only "new" when the
+	// task didn't just switch AND the last-message ts advanced (i.e. messages
+	// genuinely progressed within the same task, rather than being loaded
+	// wholesale from history).
+	const prevTaskIdRef = useRef<string | undefined>(undefined)
+	const prevLastMessageTsRef = useRef<number | undefined>(undefined)
 
 	const playSound = useCallback(
 		(audioType: AudioType) => {
@@ -279,6 +290,16 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		// if user finished a task, then start a new task with a new conversation history since in this moment that the extension is waiting for user response, the user could close the extension and the conversation history would be lost.
 		// basically as long as a task is active, the conversation history will be persisted
 		if (lastMessage) {
+			// Track whether this effect run is a continuation of the same task
+			// (task id unchanged from the previous run) and whether the last
+			// message advanced. Used below to distinguish a genuinely new
+			// completion_result from one loaded wholesale by rehydration.
+			const taskId = currentTaskItem?.id
+			const taskJustSwitched = taskId !== prevTaskIdRef.current
+			const lastMessageAdvanced = lastMessage.ts !== prevLastMessageTsRef.current
+			prevTaskIdRef.current = taskId
+			prevLastMessageTsRef.current = lastMessage.ts
+
 			switch (lastMessage.type) {
 				case "ask":
 					// Skip button setup when the ask was already resolved by the backend
@@ -390,10 +411,20 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 							setPrimaryButtonText(t("chat:approve.title"))
 							setSecondaryButtonText(t("chat:reject.title"))
 							break
-						case "completion_result":
+						case "completion_result": {
 							// Extension waiting for feedback, but we can just present a new task button.
-							// Only play celebration sound if there are no queued messages.
-							if (!isPartial && messageQueue.length === 0) {
+							// Only play the celebration sound when this completion_result is genuinely
+							// new: the task did not just switch (we were already observing it) AND the
+							// last-message ts advanced within that task (messages progressed rather
+							// than being loaded wholesale from history). When a completed task is
+							// reopened from history, its saved clineMessages already end in the
+							// original completion_result ask; either the task id changes (different
+							// task) or the messages are replaced in one shot (ts jumps from the
+							// previous task's last message to the reopened task's completion_result),
+							// so taskJustSwitched || !lastMessageAdvanced covers both rehydration
+							// shapes and suppresses the spurious sound.
+							const isNewCompletion = !taskJustSwitched && lastMessageAdvanced
+							if (!isPartial && messageQueue.length === 0 && isNewCompletion) {
 								playSound("celebration")
 							}
 							setSendingDisabled(isPartial)
@@ -402,6 +433,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 							setPrimaryButtonText(t("chat:startNewTask.title"))
 							setSecondaryButtonText(undefined)
 							break
+						}
 						case "resume_task":
 							setSendingDisabled(false)
 							setClineAsk("resume_task")
