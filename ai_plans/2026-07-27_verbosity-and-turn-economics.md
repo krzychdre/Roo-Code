@@ -397,6 +397,12 @@ of the goal.
 Consider a diagnostic in the extension: when a `rules-<slug>` directory exists whose slug matches
 no configured mode, log a warning. This trap is silent today and cost real steering effort.
 
+**Outcome.** The diagnostic was implemented; the user's files were **not** touched. `~/.roo` holds
+three orphaned rules directories — `rules-code-reviewer` (39 kB), `rules-mode-writer`,
+`rules-skill-writer` — and the only custom mode, `reviewer`, has no rules directory at all, so its
+steering lives entirely in `customInstructions` (see WS-4). Deleting user data outside the repo is
+theirs to decide; the generalizable warning is what belongs in the codebase.
+
 ### WS-6 — Cut the orchestrator's fixed overhead (medium)
 
 Branch: `perf/orchestrator-payload`
@@ -409,6 +415,44 @@ Branch: `perf/orchestrator-payload`
   the end of a phase, would cut subtask count roughly in half at a modest recall cost.
 - Re-examine `rules.ts` (1,786 tokens, the largest section) for content that is dead under native
   tool calling.
+
+#### Measurements taken during implementation
+
+Where the orchestrator's oversized `environment_details` actually goes (scan of all 555 task
+histories under the extension's `tasks/` directory, bucketing every `<environment_details>` block
+by `<slug>` and by `# Section` header):
+
+| Metric                                                          | Orchestrator | Other modes |
+| --------------------------------------------------------------- | -----------: | ----------: |
+| Share of the block that is the recursive workspace file listing |    **87.4%** |       51.9% |
+| Share of blocks that carry a file listing at all                |    **62.2%** |      ~13.0% |
+
+The 62.2% is the mechanism, not the symptom: `TaskSubtasks#resumeAfterDelegation`
+(`src/core/task/TaskSubtasks.ts:120`) calls `getEnvironmentDetails(true)` after **every** completed
+subtask, and it strips prior `<environment_details>` only from the _last_ user message — so each
+one persists in `apiConversationHistory` and is re-sent on every later turn. An orchestrator with
+26 delegations therefore carries ~26 copies of the same listing by the end.
+
+Fix: a transient per-`Task` `WeakMap` of the last emitted listing; on a byte-identical repeat, emit
+a one-line pointer instead. Content comparison rather than a counter, so a subtask that genuinely
+created files still gets a fresh listing — which is the only reason to re-emit at all. The `WeakMap`
+is deliberately not persisted, so a resumed task or a mid-task mode switch to a different context
+window starts from a full emission.
+
+Delegation counts (same scan, counting `new_task` plus each entry of `run_parallel_tasks`):
+87 → `code`, 57 → `reviewer`, 27 → `ask`, 18 → `architect`. The two largest runs are 26/24 and
+18/14 code/reviewer. Nothing in the prompts asks for this: the built-in orchestrator
+`customInstructions` never mentions reviewing, `~/.roo/rules/behaviour.md` does not either, and
+neither do the repo's `.roo/rules/`. The 1:1 pairing is emergent default behaviour, so the fix is
+to state the batching rule explicitly as a numbered orchestrator rule.
+
+`rules.ts` audit: the dead content is its final bullet — _"It is critical you wait for the user's
+response after each tool use"_, illustrated with a create-file-then-wait-then-create-file example.
+That is XML-tool-call-era text, and it is the most emphatic statement about sequencing anywhere in
+the system prompt, so it overrides WS-2's guidelines section however that section is worded. It is
+replaced by the constraint it was actually protecting (never assume a result; dependent calls
+wait) plus an explicit instruction to batch independent calls. The neighbouring "MCP operations
+should be used one at a time" is narrowed to state-changing operations.
 
 ### WS-7 — Settings (user-side, zero code)
 
@@ -448,3 +492,25 @@ the client makes caching impossible; we do not know what Z.ai would give us if i
 - Would a monotone cleared-set (WS-1 option 2) degrade long-task recall enough to matter? The
   measured alternative is that the model loses and regains the same content every turn, so the
   bar is low — but this needs a real long-task comparison, not an assertion.
+
+## 7. Implementation log
+
+One branch per work stream, none merged. Stacked where the change only makes sense on top of an
+earlier one.
+
+| WS   | Branch                                    | Commit(s)                | State                                               |
+| ---- | ----------------------------------------- | ------------------------ | --------------------------------------------------- |
+| —    | `docs/verbosity-turn-economics`           | `58a8b4a9e`, `ca8615fa4` | this document; WS-7 retraction                      |
+| WS-1 | ↳ `fix/microcompact-oscillation`          | `9c1872993`              | done                                                |
+| WS-5 | ↳ `chore/orphaned-mode-rules-warning`     | `ff3b81ede`              | done (diagnostic only; user files untouched)        |
+| WS-4 | ↳ `docs/reviewer-mode-rewrite`            | `6aa68469a`              | done; also applied to the live `custom_modes.yaml`  |
+| WS-2 | `fix/tool-use-guidelines-contradiction`   | `a43ea8413`              | done                                                |
+| WS-6 | ↳ `fix/rules-serialization-contradiction` | `7e8c4550b`              | done (`rules.ts` bullet — stacked, it neuters WS-2) |
+| WS-3 | `feat/read-file-whole-file-default`       | `3112b14d8`              | done                                                |
+| WS-6 | `perf/orchestrator-payload`               | `f9df69cc7`, `3bb51db9d` | done (file-listing reuse; review-batching rule)     |
+| WS-7 | —                                         | —                        | user-side settings; `alwaysAllowWrite` left alone   |
+| WS-8 | —                                         | —                        | **open** — needs the user to run the cache probe    |
+
+Not yet measured: every acceptance criterion in this document is stated against the pre-change
+baseline. Re-running `scripts/agent-bench` after these land is what turns them from arguments into
+results.
