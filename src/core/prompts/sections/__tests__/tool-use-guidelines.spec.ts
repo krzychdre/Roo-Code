@@ -6,14 +6,27 @@ describe("getToolUseGuidelinesSection", () => {
 
 		expect(guidelines).toContain("1. Assess what information")
 		expect(guidelines).toContain("2. Choose the most appropriate tool")
-		expect(guidelines).toContain("3. If multiple actions are needed")
+		expect(guidelines).toContain("3. Batch by default")
+		expect(guidelines).toContain("4. Use a separate message only when")
 	})
 
-	it("should include multiple-tools-per-message guidance", () => {
+	it("should make batching the default rather than an option", () => {
 		const guidelines = getToolUseGuidelinesSection()
 
-		expect(guidelines).toContain("you may use multiple tools in a single message")
+		expect(guidelines).toContain("call every tool whose input you already know")
 		expect(guidelines).not.toContain("use one tool at a time per message")
+		// "may" reads as "need not" to a weak model, and an absolute "each step must be
+		// informed by the previous step's result" forbids the batching the next line asks
+		// for. Both are why tools/msg sat at 1.30 in code mode.
+		expect(guidelines).not.toContain("you may use multiple tools in a single message")
+		expect(guidelines).not.toContain("Each step must be informed by the previous step's result")
+	})
+
+	it("should keep the genuine dependency constraint", () => {
+		const guidelines = getToolUseGuidelinesSection()
+
+		expect(guidelines).toContain("literally depends on another tool's output")
+		expect(guidelines).toContain("Do not assume the outcome of any tool use")
 	})
 
 	it("should use simplified footer without step-by-step language", () => {
