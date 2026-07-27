@@ -402,6 +402,15 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	// pristine). Transient — recomputed by the context manager on every request that
 	// runs context management, so it stays correct across mid-task mode switches.
 	microcompactedToolUseIds: Set<string> = new Set()
+	// Estimated tokens the send-time microcompaction strip removed from the LAST
+	// request. The provider then reports that DEFLATED size back to us, but the
+	// stored history is still pristine — so the next request's threshold check must
+	// add this back or it compares a full history against a stripped measurement and
+	// oscillates (compact → looks small → don't compact → looks big → compact ...).
+	// Transient, like `microcompactedToolUseIds`: recomputed every request that runs
+	// context management, so a mid-task switch to a wider-context mode simply lands
+	// on 0 instead of carrying a stale correction.
+	microcompactStrippedTokens: number = 0
 	toolUsage: ToolUsage = {}
 
 	// Checkpoints

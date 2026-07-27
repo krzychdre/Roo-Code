@@ -81,6 +81,11 @@ export interface TaskApiLoopAccess {
 	// are cleared on the outgoing request copy (stored history stays pristine).
 	microcompactedToolUseIds: Set<string>
 
+	// Estimated tokens the previous request's send-time strip removed. Added back to
+	// the provider-reported context size before the threshold check so the gate sees
+	// the pristine history size. See Task#microcompactStrippedTokens.
+	microcompactStrippedTokens: number
+
 	// Mistake tracking
 	consecutiveMistakeCount: number
 	consecutiveMistakeLimit: number
@@ -1079,6 +1084,19 @@ export class TaskApiLoop {
 					// Leave contextTokens as 0 → context management skipped (same as today)
 				}
 			}
+		}
+
+		// Un-deflate the reported size. When the previous request was microcompacted,
+		// the provider reported the STRIPPED payload size — but `apiConversationHistory`
+		// still holds the pristine content that was stripped. Comparing the pristine
+		// history against the stripped measurement is what makes the threshold check
+		// oscillate: compact → reported size drops under the threshold → next turn
+		// skips the strip → full history goes out → over threshold → compact again.
+		// Adding back what we stripped makes the gate see the true pristine size, so
+		// once a task is over the threshold it stays compacted and the sent prefix
+		// stops changing every turn (a precondition for any prompt-cache hit).
+		if (contextTokens && this.access.microcompactStrippedTokens > 0) {
+			contextTokens += this.access.microcompactStrippedTokens
 		}
 
 		if (contextTokens) {
