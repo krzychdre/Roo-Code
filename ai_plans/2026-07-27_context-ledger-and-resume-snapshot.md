@@ -132,19 +132,19 @@ checkpoints protect files but not execution state.
         ┌──────────────────────────┼──────────────────────────┐
         ▼                          ▼                          ▼
  adaptive microcompact      condense fact-check         resume snapshot
- (protect + byte budget)    (critical facts survive)    (versioned, hash-bound)
+ (protect + byte budget)    (critical facts survive)    (recomputed, mtime-bound)
 ```
 
 The six fact classes map 1:1 onto the review's list and are all derivable **without a model call**:
 
-| review term         | class         | deterministic source                                                 |
-| ------------------- | ------------- | -------------------------------------------------------------------- |
-| cel                 | `goal`        | first user message (task text)                                       |
-| decyzje             | `decision`    | `Task.todoList` (`update_todo_list` state)                           |
-| zmienione pliki     | `file_change` | `write_to_file` / `apply_diff` / `apply_patch` / `edit*` tool inputs |
-| nierozwiązane błędy | `open_error`  | failed `tool_result` with no later success on the same target        |
-| wyniki walidacji    | `validation`  | `execute_command` results matching test/build/lint shapes            |
-| cytowalne artefakty | `artifact`    | file paths read, checkpoint hash, workspace hash                     |
+| review term         | class         | deterministic source                                                               |
+| ------------------- | ------------- | ---------------------------------------------------------------------------------- |
+| cel                 | `goal`        | first user message (task text)                                                     |
+| decyzje             | `decision`    | `Task.todoList` (`update_todo_list` state)                                         |
+| zmienione pliki     | `file_change` | `write_to_file` / `apply_diff` / `apply_patch` / `edit*` tool inputs               |
+| nierozwiązane błędy | `open_error`  | failed `tool_result` with no later success on the same target                      |
+| wyniki walidacji    | `validation`  | `execute_command` results matching test/build/lint shapes                          |
+| cytowalne artefakty | `artifact`    | file paths read (paths only — the hashes in the first draft went unused, see §2.4) |
 
 ### 2.2 Adaptive microcompaction (replaces keep-5) — as implemented
 
@@ -275,12 +275,91 @@ summary and do not redo or contradict them.
 kondensacji" metric has a cheap leading indicator: a persistently high recovered/checked ratio means
 the condense prompt is losing facts, not that the validator is noisy.
 
-### 2.4 Versioned semantic execution snapshot
+### 2.4 Semantic execution snapshot on resume — as implemented
 
-Written next to the task (`execution_snapshot.json`), bound to `checkpointHash` +
-`workspaceHash`, `version`-tagged. `resumeTaskFromHistory()` prefers it when the binding still
-holds and falls back to today's behaviour when it does not (stale, missing, or version mismatch)
-— the review's "stary snapshot po ręcznych zmianach" risk is handled by invalidation, not by trust.
+`src/core/context-management/executionSnapshot.ts`, wired into `TaskResumption` as Step 7 of
+`resumeTaskFromHistory()` (Step 8 is the existing save). The review asked for a versioned snapshot
+**written at checkpoint time and bound to workspace/checkpoint hashes**. Two of those three parts
+did not survive contact with WS-1, and the reasons are worth recording because they are the whole
+justification for the deviation.
+
+**Why it is recomputed, not persisted.** Writing a snapshot only pays off when producing it is
+expensive. After WS-1 it is not: `buildContextLedger()` is a deterministic function of the history
+that is already on disk, with no model call. Persisting it would buy a few milliseconds and cost a
+second source of truth to keep in sync with `api_conversation_history.json`, a `version` field with
+a migration path behind it, and a trust question on every read. Recomputing at resume has none of
+those: it cannot drift, cannot be stale relative to the history, and cannot need a migration. The
+version constant is still emitted in the rendered header (`## Execution Snapshot (v1)`) so a
+transcript says which format produced it — but nothing reads it back, so there is no compatibility
+surface to own.
+
+**Why per-file mtimes, not a workspace hash.** The review's risk — "stary snapshot po ręcznych
+zmianach" — is real, but it is a property of the _workspace_, not of the snapshot. A repo-wide or
+checkpoint hash can only report that _something_ moved, which on a busy repo is almost always true
+and therefore almost always discards a good snapshot. `detectStaleFileChanges()` instead stats the
+ledger's own `file_change` subjects (deduped, capped at `MAX_STALE_CHECK_FILES = 40`) against the
+task's last activity plus `STALE_MTIME_GRACE_MS = 5,000` of slack for our own write flushes. That
+is strictly more informative — it names _which_ of our files moved — needs no git, and works when
+the checkpoint service is unavailable, which is not an edge case: checkpoints are disabled outright
+when git is missing. `ENOENT` is reported as `removed`, because a file we created that is now gone
+is precisely the case where "already changed, do not redo" would send the agent the wrong way; any
+other stat error stays silent, since a permissions failure says nothing about the content.
+
+**When it applies.** Three gates, each of which returns the input array _by reference_ so that a
+declined snapshot is byte-for-byte today's behaviour:
+
+1. `RESUME_SNAPSHOT_MIN_CHARS = 60,000` of effective history (~15k tokens at the stack's own
+   2.5 chars/token, comfortably under the §1.6 median of 43,953). Measured in characters so the
+   gate stays synchronous and free — no tokenizer, no API handler. Short tasks are never touched.
+2. A safe tail boundary from `computeCondenseKeepBoundary(messages, RESUME_KEEP_RECENT_MESSAGES=4)`
+   — the existing logic that guarantees a kept tail never splits a `tool_use`/`tool_result` pair.
+   Its "no tail" answer (`boundary >= messages.length`) is treated as a **skip, not as more
+   aggressive compression**: the single most common resume is an interrupted tool call, and hiding
+   the assistant message that holds the pending `tool_use` would leave the resumption's
+   `tool_result` with nothing to answer. Four rather than condense's six because the snapshot
+   already carries the state; the tail exists only as that anchor.
+3. A ledger with at least a goal or one fact — otherwise hiding history is a pure loss.
+
+**How it applies.** Non-destructively, reusing the condense tagging: hidden messages get a
+`condenseParent` (an existing parent is never overwritten), the snapshot is a `user` message with
+`isSummary` + `condenseId`, and `getEffectiveApiHistory()` does the filtering at send time. Nothing
+is deleted, so rewind and the UI transcript are unaffected — the full history remains reachable,
+which is the "z możliwością sięgnięcia do pełnej historii" half of the recommendation.
+
+**Shape, for a weak reader** — flat headings, one item per line, and the instruction sitting next
+to the facts it governs rather than in a preamble, so a model that only skims headings still comes
+away with the two things that change its next action:
+
+```
+## Execution Snapshot (v1)
+
+This task was interrupted and has now been resumed. …Continue the task from here; do not start it over.
+
+### Goal
+This is what the user originally asked for. It has not changed.
+Add exponential backoff to the openrouter provider
+
+### Already changed
+These edits are already on disk. Do NOT make them again.
+- src/api/providers/openrouter.ts (write_to_file)
+
+### Still broken
+These failures had no later success. The task is not finished while they stand.
+- execute_command failed on pnpm test: Error: 3 assertions failed in backoff.spec.ts
+
+### Changed outside this task while it was paused
+These files no longer match what this task left on disk, …re-run the validations above rather than trusting their results.
+- src/api/providers/openrouter.ts (modified)
+```
+
+Empty sections are omitted; overflow past `MAX_SNAPSHOT_SECTION_ITEMS = 20` is reported as
+`- (N more, omitted for length)` rather than silently truncated, for the same reason as WS-3.
+
+**Failure modes.** Every one degrades to a full replay, never to lost history. A staleness check
+that throws costs only the warning section — the snapshot still applies (a broken `cwd` must not
+cost the optimisation); anything else throwing inside Step 7 returns the untouched history and the
+resume proceeds exactly as before. Both paths are pinned by tests in
+`core/task/__tests__/TaskResumption.snapshot.spec.ts`.
 
 ---
 
@@ -291,7 +370,7 @@ holds and falls back to today's behaviour when it does not (stale, missing, or v
 | WS-1 | `feat/context-ledger`           | ledger module + tests + this plan (no behaviour change)      | done   |
 | WS-2 | `feat/adaptive-microcompaction` | need-adaptive target + reclaim floor + protection; telemetry | done   |
 | WS-3 | `feat/condense-fact-validation` | critical-fact addendum on condense output                    | done   |
-| WS-4 | `feat/resume-semantic-snapshot` | snapshot write at checkpoint, hash-bound resume              | todo   |
+| WS-4 | `feat/resume-semantic-snapshot` | snapshot recomputed at resume, mtime-bound staleness warning | done   |
 
 Stacked in order (they overlap in `context-management/` and `task/`).
 
@@ -303,7 +382,13 @@ Stacked in order (they overlap in `context-management/` and `task/`).
   the protection cap is set too generously for real workloads.
 - **reread rate** — baseline 44.4% / 11.3% post-gap (§1.4); re-run `ledger_measure2.py` after a
   week of use.
-- **first-turn tokens after resume** — baseline median 43,953 (§1.6).
+- **first-turn tokens after resume** — baseline median 43,953 (§1.6). WS-4 logs the delta it
+  achieved on each applied resume (`hiddenMessages`, `charsBefore -> charsAfter`, and whether any
+  file moved during the pause), so the next re-run of the corpus script has a per-event ground
+  truth to check the aggregate against rather than only the before/after distribution.
+- **resume success rate / necessary re-reads** — no new instrumentation; the §1.4 reread-rate
+  script already measures the behaviour the snapshot could plausibly regress (an agent that
+  re-reads a file the snapshot claimed to have changed), so this rides on the same re-run.
 - **critical facts recovered** — shipped in WS-3 as `factsChecked` / `factsRecovered` on
   `SummarizeResponse`. A persistently high ratio means the condense prompt is losing facts; a ratio
   near zero across many condenses means the addendum is dead weight and the threshold can rise.
