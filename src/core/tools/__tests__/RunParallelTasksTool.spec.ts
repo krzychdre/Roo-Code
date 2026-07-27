@@ -1,9 +1,18 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest"
 
 import { EventEmitter } from "events"
 import * as fs from "fs/promises"
+import { mkdtempSync, rmSync } from "fs"
 import * as path from "path"
 import * as os from "os"
+
+// Storage root for every fake provider in this file. Created eagerly so the
+// synchronous `makeFakeProvider` helper can carve out a subdirectory per
+// provider, and removed once the suite finishes.
+const tmpStorageRoot = mkdtempSync(path.join(os.tmpdir(), "rpt-storage-"))
+afterAll(() => {
+	rmSync(tmpStorageRoot, { recursive: true, force: true })
+})
 
 import { RooCodeEventName } from "@roo-code/types"
 
@@ -118,10 +127,11 @@ function makeFakeProvider(state: Record<string, unknown> = {}) {
 		subagentRegistry,
 		getLiveTaskInstance: vi.fn().mockReturnValue(undefined),
 		atomicReadAndUpdateHistoryItem,
-		// Use a temp dir so the sidecar write tests hit real fs without
-		// polluting the workspace. Tests that don't care about the sidecar
-		// can ignore this; the write is best-effort and swallowed on error.
-		globalStoragePath: "",
+		// A per-provider temp dir, so the best-effort sidecar write that every
+		// fan-out performs hits the real fs without polluting the workspace.
+		// An empty string here would resolve to a *relative* path and create
+		// `src/tasks/<parentTaskId>/subagents.json` in the repo.
+		globalStoragePath: mkdtempSync(path.join(tmpStorageRoot, "provider-")),
 	}
 	return provider as unknown as {
 		children: FakeChild[]

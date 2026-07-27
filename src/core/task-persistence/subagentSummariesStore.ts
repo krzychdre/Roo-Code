@@ -24,8 +24,15 @@ export const SUBAGENTS_SIDECAR_FILENAME = "subagents.json"
  * Resolve the absolute path of the subagent summaries sidecar for a parent
  * task. Ensures the parent task directory exists (mirrors
  * {@link getTaskDirectoryPath} semantics).
+ *
+ * Throws when `globalStoragePath` is empty: `path.join("", "tasks", id)` is a
+ * *relative* path, so the sidecar would silently be created under the current
+ * working directory instead of the extension's storage.
  */
 export async function getSubagentSummariesFilePath(globalStoragePath: string, parentTaskId: string): Promise<string> {
+	if (!globalStoragePath) {
+		throw new Error("getSubagentSummariesFilePath: globalStoragePath is required")
+	}
 	const taskDir = await getTaskDirectoryPath(globalStoragePath, parentTaskId)
 	return path.join(taskDir, SUBAGENTS_SIDECAR_FILENAME)
 }

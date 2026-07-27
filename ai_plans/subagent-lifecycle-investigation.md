@@ -195,3 +195,16 @@ To opcjonalne względem zgłoszonego błędu, ale zalecane, by poprawka była od
     - `handleChatReset` czyści `subagents` przez nowy callback — rozszerzyć testy ChatView.
 - **E2E (`apps/vscode-e2e/`):**
     - Jeden smoke test: start zadania, wywołanie `run_parallel_tasks`, potwierdzenie że panel pokazuje wiersze, start _nowego_ zadania, potwierdzenie że panel jest pusty. To testuje realne boundary extension host + webview messaging i jest jedyną warstwą dowodzącą end-to-end, że user-visible bug jest naprawiony. Utrzymać go skupionym na smoke path; szczegółowe assercje reset/repersist należą do niższych warstw powyżej.
+
+## Poprawka E — sidecar nie może pisać po ścieżce względnej (fix po review)
+
+**Objaw:** gałąź zawierała zacommitowany artefakt `src/tasks/parent-12345678/subagents.json` (pusta tablica `[]`) — plik testowy, który wyciekł do repo.
+
+**Przyczyna źródłowa:** `makeFakeProvider` w [`RunParallelTasksTool.spec.ts`](src/core/tools/__tests__/RunParallelTasksTool.spec.ts) miał domyślnie `globalStoragePath: ""`. Każdy test, który dochodził do `persistSubagentSummariesSidecar`, trafiał w `path.join("", "tasks", parentTaskId)` — ścieżkę **względną** — więc best-effort zapis tworzył `tasks/parent-12345678/subagents.json` względem cwd vitest, czyli w `src/`. Zapis jest opakowany w try/catch, więc udany-ale-w-złym-miejscu zapis przechodził bez śladu.
+
+**Naprawa (dwie warstwy):**
+
+1. Guard w produkcyjnym kodzie: [`getSubagentSummariesFilePath`](src/core/task-persistence/subagentSummariesStore.ts) rzuca przy pustym `globalStoragePath` zamiast rozwijać ścieżkę względną. Oba call-sites są odporne — `saveSubagentSummaries` jest w try/catch w [`RunParallelTasksTool.ts:429`](src/core/tools/RunParallelTasksTool.ts:429), a `loadSubagentSummaries` łapie i zwraca `[]` (używane w [`ClineProvider.rehydrateSubagents`](src/core/webview/ClineProvider.ts:3983)). Zachowanie w realnym runtime bez zmian — `globalStorageUri.fsPath` nigdy nie jest pusty.
+2. Testy: jeden `tmpStorageRoot` na plik spec (`mkdtempSync`, sprzątany w `afterAll`), a każdy fake provider dostaje własny podkatalog. Dzięki temu best-effort zapis dalej uderza w prawdziwy fs (co jest sensem tych testów), ale poza repo.
+
+**Regresja:** nowy test w [`subagentSummariesStore.spec.ts`](src/core/task-persistence/__tests__/subagentSummariesStore.spec.ts) pilnuje, że pusty storage path jest odrzucany przez `getSubagentSummariesFilePath` i `saveSubagentSummaries`, a `loadSubagentSummaries` degraduje się do `[]`.

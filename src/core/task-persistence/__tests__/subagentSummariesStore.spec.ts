@@ -134,5 +134,15 @@ describe("subagentSummariesStore", () => {
 			const stat = await fs.stat(dir)
 			expect(stat.isDirectory()).toBe(true)
 		})
+
+		it("rejects an empty storage path instead of writing a relative path", async () => {
+			// `path.join("", "tasks", id)` is relative, which would create the
+			// sidecar under the process cwd (the repo, when running tests).
+			await expect(getSubagentSummariesFilePath("", "parent-1")).rejects.toThrow(/globalStoragePath is required/)
+			await expect(saveSubagentSummaries("", "parent-1", [makeSummary()])).rejects.toThrow(
+				/globalStoragePath is required/,
+			)
+			expect(await loadSubagentSummaries("", "parent-1")).toEqual([])
+		})
 	})
 })
