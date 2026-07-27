@@ -6,7 +6,13 @@ import * as os from "os"
 import * as yaml from "yaml"
 import stripBom from "strip-bom"
 
-import { type ModeConfig, type PromptComponent, customModesSettingsSchema, modeConfigSchema } from "@roo-code/types"
+import {
+	type ModeConfig,
+	type PromptComponent,
+	customModesSettingsSchema,
+	modeConfigSchema,
+	DEFAULT_MODES,
+} from "@roo-code/types"
 
 import { fileExistsAtPath } from "../../utils/fs"
 import { getWorkspacePath } from "../../utils/path"
@@ -52,6 +58,8 @@ export class CustomModesManager {
 	private writeQueue: Array<() => Promise<void>> = []
 	private cachedModes: ModeConfig[] | null = null
 	private cachedAt: number = 0
+	// One warning per session: getCustomModes runs on a 10s cache, not once.
+	private hasWarnedAboutOrphanedRules = false
 
 	constructor(
 		private readonly context: vscode.ExtensionContext,
@@ -398,7 +406,58 @@ export class CustomModesManager {
 		this.cachedModes = mergedModes
 		this.cachedAt = now
 
+		// Fire-and-forget: never let a diagnostic scan block or fail mode loading.
+		void this.warnAboutOrphanedRuleDirectories(mergedModes)
+
 		return mergedModes
+	}
+
+	/**
+	 * Warn about `.roo/rules-<slug>/` directories whose slug matches no known mode.
+	 *
+	 * Mode rules are keyed on the mode SLUG, not its display name, and nothing ever
+	 * reports a miss: a directory named after the name ("code-reviewer") instead of
+	 * the slug ("reviewer") is silently never loaded, so carefully written rules just
+	 * do nothing. Renaming or deleting a mode leaves the same kind of dead directory
+	 * behind. Log it once per session so the failure is at least discoverable.
+	 */
+	private async warnAboutOrphanedRuleDirectories(customModes: ModeConfig[]): Promise<void> {
+		if (this.hasWarnedAboutOrphanedRules) {
+			return
+		}
+		this.hasWarnedAboutOrphanedRules = true
+
+		try {
+			// DEFAULT_MODES, not `modes` from shared/modes: same list, but importing it
+			// from the types package keeps this diagnostic off the prompt-rendering graph.
+			const knownSlugs = new Set([...DEFAULT_MODES.map((m) => m.slug), ...customModes.map((m) => m.slug)])
+
+			const workspacePath = getWorkspacePath()
+			const rooDirs = [getGlobalRooDirectory(), ...(workspacePath ? [path.join(workspacePath, ".roo")] : [])]
+
+			for (const rooDir of rooDirs) {
+				// No .roo directory here (the common case) — nothing to check.
+				const entries = await fs.readdir(rooDir, { withFileTypes: true }).catch(() => [])
+
+				for (const entry of entries) {
+					if (!entry.isDirectory() || !entry.name.startsWith("rules-")) {
+						continue
+					}
+					const slug = entry.name.slice("rules-".length)
+					if (slug && !knownSlugs.has(slug)) {
+						logger.warn("Mode rules directory matches no mode and is never loaded", {
+							path: path.join(rooDir, entry.name),
+							slug,
+							hint: "Directory names must match the mode SLUG exactly (see the mode's `slug:` field).",
+						})
+					}
+				}
+			}
+		} catch (error) {
+			logger.debug("Orphaned rules directory scan failed", {
+				error: error instanceof Error ? error.message : String(error),
+			})
+		}
 	}
 
 	public async updateCustomMode(slug: string, config: ModeConfig): Promise<void> {
