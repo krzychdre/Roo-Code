@@ -52,6 +52,17 @@ describe("nextMicrocompactStrippedTokens", () => {
 // The sent prefix changes every single turn, which makes prompt caching structurally
 // impossible on top of the wasted input tokens.
 
+const CONTEXT_WINDOW = 30_000
+const MAX_TOKENS = 1_000
+const CONDENSE_PERCENT = 50
+
+/**
+ * The size the gate exists to keep the outgoing payload under. Microcompaction runs
+ * precisely so a turn does not have to be condensed; a request that goes over the wire
+ * ABOVE this line means the gate failed at its one job.
+ */
+const CONDENSE_CEILING_TOKENS = (CONTEXT_WINDOW * CONDENSE_PERCENT) / 100
+
 class MockApiHandler extends BaseProvider {
 	createMessage(): any {
 		return {
@@ -66,8 +77,8 @@ class MockApiHandler extends BaseProvider {
 		return {
 			id: "test-model",
 			info: {
-				contextWindow: 30_000,
-				maxTokens: 1_000,
+				contextWindow: CONTEXT_WINDOW,
+				maxTokens: MAX_TOKENS,
 				supportsPromptCache: true,
 				supportsImages: false,
 				inputPrice: 0,
@@ -157,11 +168,11 @@ async function runTask(turns: number, undeflate: boolean): Promise<TurnRecord[]>
 		const result = await manageContext({
 			messages,
 			totalTokens: contextTokens,
-			contextWindow: 30_000,
-			maxTokens: 1_000,
+			contextWindow: CONTEXT_WINDOW,
+			maxTokens: MAX_TOKENS,
 			apiHandler,
 			autoCondenseContext: true,
-			autoCondenseContextPercent: 50,
+			autoCondenseContextPercent: CONDENSE_PERCENT,
 			systemPrompt: "sys",
 			taskId: "oscillation-task",
 			profileThresholds: {},
@@ -202,15 +213,23 @@ describe("microcompaction feedback loop", () => {
 		const log = await runTask(10, /* undeflate */ false)
 
 		// The task grows quietly for a while, then crosses the threshold. From that
-		// point on the strip decision alternates on/off every single turn.
-		const tail = log.slice(firstStrippedIndex(log))
+		// point on the strip decision keeps flipping back OFF instead of latching:
+		// each strip deflates the reported size below the gate, so the next turn
+		// sends the whole pristine history again.
+		const first = firstStrippedIndex(log)
+		const tail = log.slice(first)
 		expect(tail.length).toBeGreaterThan(2)
-		expect(tail.map((t) => t.stripped)).toEqual(tail.map((_, i) => i % 2 === 0))
+		expect(tail[0].stripped).toBe(true)
 
-		// ...which is a sawtooth in what actually goes over the wire: the compacted
-		// turns send a fraction of what the full turns send.
-		const jumps = log.filter((t, i) => i > 0 && t.sent > log[i - 1].sent * 1.3)
-		expect(jumps.length).toBeGreaterThan(0)
+		const reInflated = tail.filter((t) => !t.stripped)
+		expect(reInflated.length).toBeGreaterThan(0)
+
+		// ...and every one of those flips costs more than the turn that tripped the gate:
+		// the history kept growing underneath, so re-sending it whole now exceeds the last
+		// full turn AND breaches the ceiling the strip had just brought it under.
+		const lastFullBeforeStrip = log[first - 1].sent
+		expect(reInflated.every((t) => t.sent > lastFullBeforeStrip)).toBe(true)
+		expect(reInflated.every((t) => t.sent > CONDENSE_CEILING_TOKENS)).toBe(true)
 	})
 
 	it("stays compacted once over the threshold when the reported size is un-deflated", async () => {
@@ -226,10 +245,9 @@ describe("microcompaction feedback loop", () => {
 		// size, which is monotone in the history, so the decision cannot flip back.
 		expect(log.slice(first).every((t) => t.stripped)).toBe(true)
 
-		// No sawtooth: the sent size only grows with the genuinely new tail, which is
-		// the precondition for a stable prefix (and therefore for any cache hit).
-		const jumps = log.filter((t, i) => i > 0 && t.sent > log[i - 1].sent * 1.3)
-		expect(jumps).toHaveLength(0)
+		// No sawtooth: once the strip latches, every request stays under the ceiling the
+		// gate is there to enforce, instead of bouncing back over it on alternate turns.
+		expect(log.slice(first).every((t) => t.sent <= CONDENSE_CEILING_TOKENS)).toBe(true)
 	})
 
 	it("sends fewer input tokens overall than the oscillating loop", async () => {

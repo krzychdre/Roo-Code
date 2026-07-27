@@ -142,6 +142,26 @@ export class TelemetryService {
 		this.captureEvent(TelemetryEventName.SLIDING_WINDOW_TRUNCATION, { taskId })
 	}
 
+	/**
+	 * Captures a microcompaction pass: the free, non-destructive reclaim that runs before
+	 * condensation is considered. `reclaimRatio` is the share of the pre-pass context it gave
+	 * back, and is the primary signal for whether the selection policy is working.
+	 */
+	public captureContextMicrocompacted(
+		taskId: string,
+		properties: {
+			candidates: number
+			cleared: number
+			protectedResults: number
+			releasedProtected: number
+			tokensCleared: number
+			prevContextTokens: number
+			reclaimRatio: number
+		},
+	): void {
+		this.captureEvent(TelemetryEventName.CONTEXT_MICROCOMPACTED, { taskId, ...properties })
+	}
+
 	public captureCodeActionUsed(actionType: string): void {
 		this.captureEvent(TelemetryEventName.CODE_ACTION_USED, { actionType })
 	}

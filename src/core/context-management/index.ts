@@ -8,7 +8,8 @@ import { MAX_CONDENSE_THRESHOLD, MIN_CONDENSE_THRESHOLD, summarizeConversation, 
 import { ApiMessage } from "../task-persistence/apiMessages"
 import { ANTHROPIC_DEFAULT_MAX_TOKENS } from "@roo-code/types"
 import { RooIgnoreController } from "../ignore/RooIgnoreController"
-import { microcompactToolResults, MICROCOMPACT_KEEP_RECENT } from "./microcompact"
+import { microcompactToolResults, microcompactTargetChars, MICROCOMPACT_PLACEHOLDER_TOKENS } from "./microcompact"
+import { buildContextLedger } from "./ledger"
 
 /**
  * Context Management
@@ -238,6 +239,13 @@ export type ContextManagementOptions = {
 	 * gated by this — only the LLM summary is.
 	 */
 	condenseCircuitOpen?: boolean
+	/**
+	 * `tool_use_id`s the PREVIOUS request's microcompaction stripped at send time.
+	 * Carried forward so the selection can only grow: a set that shrank between turns
+	 * would move the first byte differing from the last request backwards and throw away
+	 * the provider's prompt cache from that point on.
+	 */
+	previouslyClearedToolUseIds?: ReadonlySet<string>
 }
 
 export type ContextManagementResult = SummarizeResponse & {
@@ -286,6 +294,7 @@ export async function manageContext({
 	cwd,
 	rooIgnoreController,
 	condenseCircuitOpen,
+	previouslyClearedToolUseIds,
 }: ContextManagementOptions): Promise<ContextManagementResult> {
 	let error: string | undefined
 	let errorDetails: string | undefined
@@ -333,11 +342,17 @@ export async function manageContext({
 
 	// --- Microcompaction pre-pass (cheap, no-LLM, lossless to the dialogue) ---
 	// Before resorting to the expensive, lossy full summarization, identify OLD
-	// tool results to clear (keeping the most recent N raw). Old tool output is the
-	// dominant, lowest-signal token sink in a coding session, and clearing it often
-	// frees enough to avoid summarizing entirely. This mirrors Claude Code's
-	// `microcompact → autocompact` ordering: the expensive summary is the last
-	// resort, not the first response to any overflow.
+	// tool results to clear. Old tool output is the dominant, lowest-signal token
+	// sink in a coding session, and clearing it often frees enough to avoid
+	// summarizing entirely. This mirrors Claude Code's `microcompact → autocompact`
+	// ordering: the expensive summary is the last resort, not the first response to
+	// any overflow.
+	//
+	// Selection is need-adaptive: we compute how far over the binding ceiling we are
+	// and clear the oldest results until that much is reclaimed, sparing the ones the
+	// context ledger marks critical (unresolved errors, validation outcomes, file
+	// writes). Reclaiming only what is needed keeps the small, high-signal results
+	// the old count-based rule discarded wholesale.
 	//
 	// NON-DESTRUCTIVE: we only SELECT the ids here (for the freed-token estimate and
 	// for the send-time strip). The stored `tool_result` content is left pristine;
@@ -352,14 +367,49 @@ export async function manageContext({
 	let microcompactClearedToolUseIds: string[] = []
 
 	if (overCondenseThreshold || overAllowedTokens) {
-		const mc = microcompactToolResults(messages, { keepRecent: MICROCOMPACT_KEEP_RECENT })
+		// The binding ceiling is whichever limit we are actually being pushed against.
+		// When auto-condense is off, only the hard allowance applies.
+		const condenseCeilingTokens = autoCondenseContext
+			? (contextWindow * effectiveThreshold) / 100
+			: Number.POSITIVE_INFINITY
+		const ceilingTokens = Math.min(condenseCeilingTokens, allowedTokens)
+		const targetChars = microcompactTargetChars(prevContextTokens - ceilingTokens)
+
+		// Deterministic, no model call: one linear pass that marks which results carry
+		// facts the model cannot cheaply re-derive.
+		const ledger = buildContextLedger(messages)
+
+		const mc = microcompactToolResults(messages, {
+			targetChars,
+			criticalToolUseIds: ledger.criticalToolUseIds,
+			alreadyClearedToolUseIds: previouslyClearedToolUseIds,
+		})
 		if (mc.clearedCount > 0) {
 			microcompacted = true
 			microcompactClearedCount = mc.clearedCount
 			microcompactClearedToolUseIds = mc.clearedToolUseIds
-			microcompactTokensCleared = mc.clearedText
+			const grossTokensCleared = mc.clearedText
 				? await estimateTokenCount([{ type: "text", text: mc.clearedText }], apiHandler)
 				: 0
+			// Net of the placeholder written back into each cleared result: that is what the
+			// strip actually removes from the payload, and therefore what the next request has
+			// to add back to recover the pristine size (see nextMicrocompactStrippedTokens).
+			microcompactTokensCleared = Math.max(
+				0,
+				grossTokensCleared - MICROCOMPACT_PLACEHOLDER_TOKENS * mc.clearedCount,
+			)
+
+			TelemetryService.instance.captureContextMicrocompacted(taskId, {
+				candidates: mc.candidateCount,
+				cleared: mc.clearedCount,
+				protectedResults: mc.protectedCount,
+				releasedProtected: mc.releasedProtectedCount,
+				tokensCleared: microcompactTokensCleared,
+				prevContextTokens,
+				// The review's `reclaim ratio`: share of the pre-pass context this cost-free
+				// pass gave back.
+				reclaimRatio: prevContextTokens > 0 ? microcompactTokensCleared / prevContextTokens : 0,
+			})
 
 			// Estimate the post-strip context size. If clearing old tool output at
 			// send time will bring us back under both thresholds, we are done — skip

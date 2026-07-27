@@ -37,6 +37,7 @@ export enum TelemetryEventName {
 	CUSTOM_MODE_CREATED = "Custom Mode Created",
 
 	CONTEXT_CONDENSED = "Context Condensed",
+	CONTEXT_MICROCOMPACTED = "Context Microcompacted",
 	SLIDING_WINDOW_TRUNCATION = "Sliding Window Truncation",
 
 	CODE_ACTION_USED = "Code Action Used",
@@ -200,6 +201,7 @@ export const rooCodeTelemetryEventSchema = z.discriminatedUnion("type", [
 			TelemetryEventName.CODE_INDEX_ERROR,
 			TelemetryEventName.MODEL_CACHE_EMPTY_RESPONSE,
 			TelemetryEventName.CONTEXT_CONDENSED,
+			TelemetryEventName.CONTEXT_MICROCOMPACTED,
 			TelemetryEventName.SLIDING_WINDOW_TRUNCATION,
 			TelemetryEventName.TAB_SHOWN,
 			TelemetryEventName.MODE_SETTINGS_CHANGED,

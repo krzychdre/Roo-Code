@@ -146,28 +146,74 @@ The six fact classes map 1:1 onto the review's list and are all derivable **with
 | wyniki walidacji    | `validation`  | `execute_command` results matching test/build/lint shapes            |
 | cytowalne artefakty | `artifact`    | file paths read, checkpoint hash, workspace hash                     |
 
-### 2.2 Adaptive microcompaction (replaces keep-5)
+### 2.2 Adaptive microcompaction (replaces keep-5) — as implemented
 
-Selection becomes a three-term policy over the same encounter-ordered list, evaluated newest-first:
+The first draft of this section proposed keeping the newest results up to a fixed
+`keepBudgetTokens` cap. That was wrong in a way the implementation exposed: a _fixed_ keep budget
+still clears the same bytes whether the turn is 200 tokens over the line or 80,000, so it pays the
+full quality cost of the biggest possible strip on every trip over the threshold. What shipped is
+**need-adaptive**: the pass computes how far the turn is over the ceiling and clears only enough to
+get under it.
 
-1. **Byte budget, not count.** Keep newest results until a `keepBudgetTokens` cap
-   (default derived from the context window, floor `MICROCOMPACT_MIN_KEEP = 2`). Directly fixes
-   §1.2: the window's cost is bounded instead of its cardinality.
-2. **Reclaim floor.** Never clear a result smaller than `MICROCOMPACT_CLEAR_FLOOR_CHARS`
-   (default 2,000 ≈ the placeholder's own length plus headroom). §1.1 says this exempts 55.2% of
-   items while forfeiting 6.96% of reclaimable bytes — and the placeholder is 108 chars, so
-   clearing a 200-char result reclaims ~0 tokens while destroying a fact.
-3. **Importance protection.** A result the ledger marks `open_error` or `validation` is protected
-   _while it stays under the floor-scaled cap_ (`MICROCOMPACT_PROTECT_MAX_CHARS`, default 8,000),
-   so a 140 KB failing-build log is still clearable but a 123-char failure is not.
+1. **Target derived from the actual overage.** `microcompactTargetChars(over)` converts the token
+   overage against `min(condense ceiling, allowedTokens)` into a char target,
+   `ceil(over × MICROCOMPACT_TARGET_MARGIN × MICROCOMPACT_CHARS_PER_TOKEN)`. `MARGIN = 1.1` buys a
+   turn of headroom so the gate does not re-trip immediately. `CHARS_PER_TOKEN = 2.5` is
+   **measured, not guessed**: 4,638 tool results across 188 tasks tokenize at an aggregate 3.764
+   `o200k_base` chars/token, and the pipeline multiplies raw counts by `TOKEN_FUDGE_FACTOR = 1.5`,
+   so 3.764 / 1.5 = 2.509 is the conversion the rest of the stack actually believes.
+2. **Oldest-first, as a prefix.** Selection walks the encounter-ordered candidate list from the
+   front and stops the moment the target is met, leaving `MICROCOMPACT_MIN_KEEP = 3` newest
+   results untouched. Clearing a _prefix_ is what keeps the first differing byte as late in the
+   conversation as possible, which is the only shape a provider prompt cache can survive.
+3. **Reclaim floor.** Never clear a result smaller than `MICROCOMPACT_CLEAR_FLOOR_CHARS` (2,000).
+   §1.1 says this exempts 55.2% of items while forfeiting 6.96% of reclaimable bytes — and the
+   placeholder is **112 chars**, so clearing a 200-char result reclaims ~0 tokens while destroying
+   a fact. The floor is the one term that is never released.
+4. **Importance protection, with an escape hatch.** Pass 1 skips any candidate the ledger marks
+   critical (`open_error` / `validation`) while it stays under `MICROCOMPACT_PROTECT_MAX_CHARS`
+   (8,000), so a 123-char failure is protected but a 140 KB failing-build log is not. If the target
+   is still unmet after pass 1, pass 2 releases protected candidates oldest-first — protection
+   must not be able to force a condense, which would cost a model call and lose far more.
 
-Failure mode by construction: every term can only move an item from "cleared" to "kept", so the
-worst case is **less reclaim**, never lost data — and storage stays pristine regardless, because
-this only chooses ids for the existing non-destructive send-time strip.
+Two accounting details the implementation forced:
+
+- **Everything is net of the placeholder.** Selection counts `chars - MICROCOMPACT_PLACEHOLDER_CHARS`
+  toward the target, and `microcompactTokensCleared` is `gross - MICROCOMPACT_PLACEHOLDER_TOKENS ×
+cleared` (45 tokens each). That net figure is exactly what `nextMicrocompactStrippedTokens()` adds
+  back to reconstruct the pristine size, so a gross number there would re-introduce the oscillation
+  the previous phase fixed.
+- **The cleared set may only ever grow.** `TaskContextManager` replaces `microcompactedToolUseIds`
+  wholesale each turn, so a _smaller_ target on a later turn could otherwise re-inflate a result
+  that was already stripped — moving the first differing byte backwards and voiding the cache.
+  The previous pass's ids are threaded in as `previouslyClearedToolUseIds` and unioned in before
+  any policy runs: monotonicity outranks policy.
+
+Failure mode by construction: every term can only move an item from "cleared" to "kept" (or, in
+pass 2, back to "cleared" only under budget pressure), so the worst case is **less reclaim**, never
+lost data — and storage stays pristine regardless, because this only chooses ids for the existing
+non-destructive send-time strip.
 
 Simulation on the corpus (§A4 of `ledger_measure.py`): reclaim ratio moves 93.5% → 76.1% while
 **96% of tasks retain more raw working set**. That trade is the point — the residual 17 points
 are the small, cheap, high-signal results the current rule throws away for ~7% of the bytes.
+
+**Measured side effect on the oscillation harness.** `microcompact-oscillation.spec.ts` used to
+document the pre-fix feedback loop as a >1.3× sawtooth in sent tokens, which only held because
+keep-5 dumped everything but five results on every trip. Under the need-adaptive target the strip
+is much shallower, so the sawtooth's _magnitude_ disappears while the bug itself does not. Measured
+over 10 turns against the real `manageContext` (30k window, 50% ceiling = 15,000 tok):
+
+| run                      | sent tokens per turn                                                  |
+| ------------------------ | --------------------------------------------------------------------- |
+| buggy (reported size)    | 12245 12738 13232 13725 14219 14712 **13782↓** 15699 **14769↓** 15262 |
+| fixed (un-deflated size) | 12245 12738 13232 13725 14219 14712 **13782↓** 14275 14769 **13839↓** |
+
+The bug's real signature is therefore not the swing size but the **breach**: the buggy run un-strips
+on turn 8 and puts 15,699 tokens on the wire — above both the last full turn (14,712) and the
+15,000-token ceiling the gate exists to enforce — while the fixed run never crosses it once the
+strip latches. The spec now asserts that, which is a statement about the invariant rather than
+about the old policy's amplitude.
 
 ### 2.3 Condense critical-fact validation
 
@@ -187,19 +233,21 @@ holds and falls back to today's behaviour when it does not (stale, missing, or v
 
 ## 3. Workstreams and branches
 
-| WS   | branch                          | content                                                 |
-| ---- | ------------------------------- | ------------------------------------------------------- |
-| WS-1 | `feat/context-ledger`           | ledger module + tests + this plan (no behaviour change) |
-| WS-2 | `feat/adaptive-microcompaction` | byte budget + reclaim floor + protection; telemetry     |
-| WS-3 | `feat/condense-fact-validation` | critical-fact addendum on condense output               |
-| WS-4 | `feat/resume-semantic-snapshot` | snapshot write at checkpoint, hash-bound resume         |
+| WS   | branch                          | content                                                      | status |
+| ---- | ------------------------------- | ------------------------------------------------------------ | ------ |
+| WS-1 | `feat/context-ledger`           | ledger module + tests + this plan (no behaviour change)      | done   |
+| WS-2 | `feat/adaptive-microcompaction` | need-adaptive target + reclaim floor + protection; telemetry | done   |
+| WS-3 | `feat/condense-fact-validation` | critical-fact addendum on condense output                    | todo   |
+| WS-4 | `feat/resume-semantic-snapshot` | snapshot write at checkpoint, hash-bound resume              | todo   |
 
 Stacked in order (they overlap in `context-management/` and `task/`).
 
 ## 4. Metrics (the review's own list, wired where they are cheap)
 
-- **reclaim ratio** — `microcompactTokensCleared / pristineTokens`, already computable in
-  `TaskContextManager`; expose in the microcompaction telemetry event.
+- **reclaim ratio** — shipped in WS-2 as `Context Microcompacted`
+  (`reclaimRatio = microcompactTokensCleared / prevContextTokens`, alongside `candidates`,
+  `cleared`, `protectedResults`, `releasedProtected`). `releasedProtected > 0` is the signal that
+  the protection cap is set too generously for real workloads.
 - **reread rate** — baseline 44.4% / 11.3% post-gap (§1.4); re-run `ledger_measure2.py` after a
   week of use.
 - **first-turn tokens after resume** — baseline median 43,953 (§1.6).
