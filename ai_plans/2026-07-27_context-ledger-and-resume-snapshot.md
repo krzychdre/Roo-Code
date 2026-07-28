@@ -10,6 +10,9 @@ Predecessor: `ai_plans/2026-07-27_verbosity-and-turn-economics.md` (all workstre
 Measurement scripts: `/tmp/ledger_measure.py`, `/tmp/ledger_measure2.py`, `/tmp/err_probe.py`
 (throwaway, same convention as the predecessor plan).
 
+**Addendum 2026-07-28 (§5):** WS-1..WS-4 re-measured against the full store by replaying the shipped
+code over it. The saving holds; three quality holes found and fixed as WS-5..WS-7.
+
 ---
 
 ## 0. Verdict in one paragraph
@@ -317,8 +320,12 @@ declined snapshot is byte-for-byte today's behaviour:
    aggressive compression**: the single most common resume is an interrupted tool call, and hiding
    the assistant message that holds the pending `tool_use` would leave the resumption's
    `tool_result` with nothing to answer. Four rather than condense's six because the snapshot
-   already carries the state; the tail exists only as that anchor.
-3. A ledger with at least a goal or one fact — otherwise hiding history is a pure loss.
+   already carries the state; the tail exists only as that anchor. **WS-7 (§5.3) makes four a floor
+   rather than the value**: when the snapshot demonstrably does _not_ carry the state, the tail
+   widens under a character budget.
+3. A ledger with at least a goal or one fact — otherwise hiding history is a pure loss. Measured
+   later to be unreachable, since a goal always exists; see §5.3 for what replaced the intent behind
+   it. The gate itself stays as the guard against a history the ledger cannot read at all.
 
 **How it applies.** Non-destructively, reusing the condense tagging: hidden messages get a
 `condenseParent` (an existing parent is never overwritten), the snapshot is a `user` message with
@@ -352,8 +359,10 @@ These files no longer match what this task left on disk, …re-run the validatio
 - src/api/providers/openrouter.ts (modified)
 ```
 
-Empty sections are omitted; overflow past `MAX_SNAPSHOT_SECTION_ITEMS = 20` is reported as
-`- (N more, omitted for length)` rather than silently truncated, for the same reason as WS-3.
+Empty sections are omitted — with one exception added in WS-7 (§5.3): `### Already changed` always
+renders, and says "Nothing" when it is empty. Overflow past `MAX_SNAPSHOT_SECTION_ITEMS = 20` is
+reported as `- (N more, omitted for length)` rather than silently truncated, for the same reason as
+WS-3.
 
 **Failure modes.** Every one degrades to a full replay, never to lost history. A staleness check
 that throws costs only the warning section — the snapshot still applies (a broken `cwd` must not
@@ -365,12 +374,15 @@ resume proceeds exactly as before. Both paths are pinned by tests in
 
 ## 3. Workstreams and branches
 
-| WS   | branch                          | content                                                      | status |
-| ---- | ------------------------------- | ------------------------------------------------------------ | ------ |
-| WS-1 | `feat/context-ledger`           | ledger module + tests + this plan (no behaviour change)      | done   |
-| WS-2 | `feat/adaptive-microcompaction` | need-adaptive target + reclaim floor + protection; telemetry | done   |
-| WS-3 | `feat/condense-fact-validation` | critical-fact addendum on condense output                    | done   |
-| WS-4 | `feat/resume-semantic-snapshot` | snapshot recomputed at resume, mtime-bound staleness warning | done   |
+| WS   | branch                            | content                                                          | status |
+| ---- | --------------------------------- | ---------------------------------------------------------------- | ------ |
+| WS-1 | `feat/context-ledger`             | ledger module + tests + this plan (no behaviour change)          | done   |
+| WS-2 | `feat/adaptive-microcompaction`   | need-adaptive target + reclaim floor + protection; telemetry     | done   |
+| WS-3 | `feat/condense-fact-validation`   | critical-fact addendum on condense output                        | done   |
+| WS-4 | `feat/resume-semantic-snapshot`   | snapshot recomputed at resume, mtime-bound staleness warning     | done   |
+| WS-5 | `fix/ledger-goal-cap`             | head+tail elision and a 2,000-char goal cap (§5.1)               | done   |
+| WS-6 | `feat/ledger-user-instructions`   | `user_instruction` fact class across all three consumers (§5.2)  | done   |
+| WS-7 | `fix/resume-snapshot-thin-ledger` | char-budgeted adaptive tail when the ledger types no work (§5.3) | done   |
 
 Stacked in order (they overlap in `context-management/` and `task/`).
 
@@ -394,3 +406,117 @@ Stacked in order (they overlap in `context-management/` and `task/`).
   near zero across many condenses means the addendum is dead weight and the threshold can rise.
 - **condensation cost vs. saved tokens**, **post-condense regressions** — deferred: at 3.7% task
   reach (§1.5) the sample cannot support a conclusion yet.
+
+---
+
+## 5. Post-ship measurement, and the three holes it found
+
+Date: 2026-07-28. WS-1..WS-4 were re-measured by replaying `applyExecutionSnapshot()` and
+`buildContextLedger()` over the whole store rather than by reasoning about them. The headline holds:
+**389 tasks clear the 60k gate, 375 get a snapshot**, and effective history goes from a median
+**278,315** chars to **20,799** — a median 9% of what would otherwise be re-sent. But replaying the
+real corpus rather than the fixtures exposed three quality holes, each of which is a case where the
+snapshot is _cheap_ and also _wrong_. All three are fixed below, and the numbers quoted in this
+section are the post-fix re-run of the same script.
+
+### 5.1 WS-5 — the goal cap truncated 63% of real task statements
+
+`LEDGER_GOAL_MAX_CHARS` was 400, applied by head truncation. Measured against the store, the raw
+task statement is **median 1,764 chars, p90 8,567, max 132,384**, and **237 of 375** (63%) exceeded
+the cap. The snapshot's own first section — the one headed "This is what the user originally asked
+for" — was therefore usually a fragment of a sentence, and head truncation guarantees the fragment
+is the _opening_: the framing survives and the actual requirements are cut.
+
+Two changes: the cap is **2,000** chars, and the goal is elided **head+tail** (`toBoundedText`)
+instead of head-only. 2,000 keeps the median statement whole and costs ~500 tokens in the worst
+case, which is nothing next to a median 278k-char history. Head+tail matters more than the number:
+a long task statement is usually "context, then the ask", and it is the tail that carries the ask.
+Post-fix, the kept goal is **median 1,530 chars**.
+
+Two things were found while measuring this and fixed with it: `extractGoalText` only recognised
+`<task>`, while this fork emits `<user_message>` (`TaskLifecycle.ts:481`), so on a real history the
+"goal" was the whole wrapper including `<environment_details>`; and the same cap governs the
+condense addendum, where an unbounded goal would have been the largest line.
+
+### 5.2 WS-6 — nothing typed what the user said after the task started
+
+The ledger had a `goal` class for the first message and nothing for anything the user said
+afterwards. That is the wrong shape for the failure it causes: a summary or snapshot that keeps the
+goal and drops the correction to it is **worse than one that drops both**, because the agent then
+proceeds confidently on a superseded plan instead of asking.
+
+Measured reach: **235 `<user_message>` blocks across 112 of 375 tasks (30%)** carry a mid-task
+instruction. **191 of those 235 arrive inside a `tool_result`** — a user reply to `ask_followup`,
+or a message delivered during an `execute_command`. That detail is the reason the naive measurement
+was wrong the first time (counting standalone user turns found 5%, dominated by the synthetic
+`[ERROR] You did not use a tool…` retry) and the reason the fix is not just "scan user turns":
+`execute_command` results are compactable, so the ids of results carrying an instruction have to
+join `criticalToolUseIds` or microcompaction clears the instruction along with the command output.
+
+`user_instruction` is a critical class in all three consumers: protected from microcompaction,
+checked by condense (rendered as `- USER ALSO SAID: …`, ranked second only to the goal in the
+addendum, since a lost correction costs more than a lost file change), and rendered in the snapshot.
+Capped at `MAX_LEDGER_USER_INSTRUCTIONS`, most-recent-first, `LEDGER_USER_INSTRUCTION_MAX_CHARS`
+each. Post-fix the ledger carries **p90 2, max 8** instructions per task.
+
+### 5.3 WS-7 — the `no-facts` gate never fired, so 29% of snapshots said almost nothing
+
+The gate was "a goal **or** one fact". A goal always exists, so the gate is unreachable: `no-facts`
+fired **0 times in 389 eligible tasks**. What actually happens on read-heavy tasks is subtler than
+"no facts" — the ledger fills with `artifact` entries (paths read) and nothing else. **110 of 375
+snapshots (29%)** had no file change, no error, no validation and no plan: they replaced a median
+**105,856** characters with a goal and a list of paths. All the work — what was read, what was
+concluded from it — lived in the raw turns that were being hidden.
+
+Tightening the gate would have been the wrong fix: it forfeits the saving entirely on a shape that
+is 29% of all resumes. Instead `isLedgerThin()` detects "the ledger recorded no _effect_" (no
+`file_change`, `open_error`, `validation` or `decision` — `goal`, `user_instruction` and `artifact`
+are deliberately excluded, since knowing where the agent has been is not knowing what it concluded)
+and buys back raw turns: `RESUME_THIN_KEEP_RECENT_MESSAGES = 16` messages **or**
+`RESUME_THIN_TAIL_MAX_CHARS = 60,000` characters, whichever binds first.
+
+**The character budget is the whole design, and it is what the measurement decided.** Message count
+is a terrible proxy for size on exactly these tasks, because one `read_file` result can be 200k
+chars on its own. Over the 110 thin tasks:
+
+| tail policy          | median after |   p90 after |   max after | degraded to full replay |
+| -------------------- | -----------: | ----------: | ----------: | ----------------------: |
+| flat 4 (WS-4)        |       26,438 |      91,913 |     225,353 |                       0 |
+| flat 12              |       57,171 | **185,214** | **557,270** |                  **32** |
+| adaptive, 60k budget |   **51,841** |      91,913 |     225,353 |                       0 |
+
+The budget doubles what a thin resume retains while leaving p90 and max exactly where they were,
+and degrades nothing. 60,000 is not a tuned number: it is `RESUME_SNAPSHOT_MIN_CHARS`, i.e. a tail
+that size is one this module would not have bothered compressing in the first place, which is the
+natural point for widening to stop paying.
+
+`widenTail()` grows from the `keepRecent` floor upward, running every candidate through
+`computeCondenseKeepBoundary` so no candidate can split a `tool_use`/`tool_result` pair. A larger
+`keepRecent` can come back _worse_ (pair snapping holds the boundary in place, or the whole-tail
+gate trips and it returns `messages.length`); those candidates are skipped rather than accepted or
+thrown on, and a candidate that would hide zero messages is rejected outright. So the change is
+neutral-or-better than WS-4 by construction, never worse. Post-fix the applied tail is **median 5,
+p90 11, max 17** messages, and the median chars dropped on thin tasks falls from 105,856 to 88,669.
+
+Shipped with it: `### Already changed` now always renders, saying _"Nothing. No file edit was
+recorded before the interruption. If you expected one to exist already, check the file instead of
+assuming."_ An omitted section is ambiguous, and the ambiguity runs the wrong way for a weak reader
+— "no edits listed" reads as "the edits are done", which is exactly the wrong inference on a
+snapshot that is thin _because nothing has been written yet_. The wording is deliberately a claim
+about the record, not about the disk: a shell command can have written a file with no edit tool
+seeing it.
+
+### 5.4 What is still not carried, and why it is being left alone
+
+Summed over the 375 applied snapshots, the hidden history still contains **2.1 MB of assistant
+prose** — the model's own reasoning — and **19 of 375 tasks** hide a second standalone user turn
+beyond the first (down from before WS-6/WS-7, but not zero). Neither is addressed here, and both
+would need the thing this module exists to avoid: a model call to summarise. The widened tail in
+§5.3 is the cheap partial answer; whether the remainder is worth a summarisation pass is a question
+for the reread-rate re-run in §4, not for guesswork.
+
+Also unchanged: **72 of 375** tasks hit `MAX_LEDGER_ARTIFACTS = 24`, versus 2 hitting the
+file-change cap and 0 hitting the error cap. The artifact cap is the only one under real pressure.
+It is left as-is because artifacts are the _least_ load-bearing class — a truncated list of read
+paths costs a re-read, while a truncated list of edits costs a duplicated edit — but it is the
+number to watch if the reread rate moves the wrong way.
