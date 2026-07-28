@@ -162,6 +162,13 @@ export function renderExecutionSnapshot(ledger: ContextLedger, stale: readonly S
 		lines.push("### Goal", "This is what the user originally asked for. It has not changed.", ledger.goal.text, "")
 	}
 
+	lines.push(
+		...renderSection(
+			"What the user said after that",
+			"The user sent these while the task was running, oldest first. They correct or add to the goal above, and the last line is the most recent thing you were told. Follow them.",
+			ledger.userInstructions,
+		),
+	)
 	lines.push(...renderSection("Plan", "The current todo list and its state.", ledger.decisions))
 	lines.push(
 		...renderSection(

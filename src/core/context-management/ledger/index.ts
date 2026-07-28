@@ -14,8 +14,11 @@ export {
 
 export type { BuildLedgerOptions } from "./buildLedger"
 export {
+	LEDGER_GOAL_MAX_CHARS,
+	LEDGER_USER_INSTRUCTION_MAX_CHARS,
 	MAX_LEDGER_ARTIFACTS,
 	MAX_LEDGER_FILE_CHANGES,
 	MAX_LEDGER_OPEN_ERRORS,
+	MAX_LEDGER_USER_INSTRUCTIONS,
 	buildContextLedger,
 } from "./buildLedger"

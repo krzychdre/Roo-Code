@@ -100,6 +100,7 @@ const STOPWORDS: ReadonlySet<string> = new Set([
 /** Human labels for the addendum. Explicit nouns beat class slugs for a weak reader. */
 const FACT_LABELS: Record<LedgerFactClass, string> = {
 	goal: "GOAL",
+	user_instruction: "USER ALSO SAID",
 	decision: "PLAN",
 	file_change: "ALREADY CHANGED",
 	open_error: "STILL BROKEN",
@@ -203,10 +204,19 @@ export interface RetainedContext {
 }
 
 /**
- * Orders the addendum by how expensive the fact is to lose: the task statement first, then
- * unresolved failures (a wrong conclusion), then completed changes (duplicated work).
+ * Orders the addendum by how expensive the fact is to lose: the task statement and the corrections
+ * to it first, then unresolved failures (a wrong conclusion), then completed changes (duplicated
+ * work).
  */
-const CLASS_ORDER: LedgerFactClass[] = ["goal", "open_error", "file_change", "validation", "decision", "artifact"]
+const CLASS_ORDER: LedgerFactClass[] = [
+	"goal",
+	"user_instruction",
+	"open_error",
+	"file_change",
+	"validation",
+	"decision",
+	"artifact",
+]
 
 /**
  * Checks a condense summary against the ledger's critical facts.

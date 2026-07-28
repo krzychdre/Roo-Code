@@ -93,6 +93,7 @@ function fact(partial: Partial<LedgerFact> & Pick<LedgerFact, "class" | "text">)
 function ledgerOf(...facts: LedgerFact[]): ContextLedger {
 	return {
 		goal: facts.find((f) => f.class === "goal"),
+		userInstructions: facts.filter((f) => f.class === "user_instruction"),
 		decisions: facts.filter((f) => f.class === "decision"),
 		fileChanges: facts.filter((f) => f.class === "file_change"),
 		openErrors: facts.filter((f) => f.class === "open_error"),
@@ -128,12 +129,29 @@ describe("renderExecutionSnapshot", () => {
 		expect(snapshot).toContain("Do NOT make them again.")
 	})
 
+	it("carries what the user said later, directly under the goal", () => {
+		const snapshot = renderExecutionSnapshot(
+			ledgerOf(
+				fact({ class: "goal", text: "Migrate the cluster to k3s" }),
+				fact({ class: "user_instruction", text: "actually, target RKE2 not k3s" }),
+				fact({ class: "user_instruction", text: "and do not touch the ingress" }),
+			),
+		)
+
+		expect(snapshot).toContain("### What the user said after that")
+		expect(snapshot).toContain("- actually, target RKE2 not k3s")
+		// A correction that lands after the goal is worthless unless it is read as overriding it.
+		expect(snapshot.indexOf("### Goal")).toBeLessThan(snapshot.indexOf("### What the user said after that"))
+		expect(snapshot).toContain("the last line is the most recent thing you were told")
+	})
+
 	it("omits sections that have nothing in them", () => {
 		const snapshot = renderExecutionSnapshot(ledgerOf(fact({ class: "goal", text: "Ship the thing" })))
 
 		expect(snapshot).not.toContain("### Still broken")
 		expect(snapshot).not.toContain("### Already changed")
 		expect(snapshot).not.toContain("### Plan")
+		expect(snapshot).not.toContain("### What the user said after that")
 	})
 
 	it("warns about files that moved while the task was paused", () => {

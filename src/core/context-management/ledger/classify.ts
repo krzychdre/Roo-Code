@@ -219,3 +219,117 @@ export function toBoundedText(value: string, maxChars: number): string {
 	const omitted = collapsed.length - head - tail
 	return `${collapsed.slice(0, head)}${elisionMarker(omitted)}${collapsed.slice(collapsed.length - tail)}`
 }
+
+/**
+ * The wrapper every piece of user prose in this fork travels in.
+ *
+ * Measured over the on-disk store, mid-task user text reaches the model through exactly two shapes,
+ * and `<user_message>` is by far the larger: 235 occurrences across 112 of the 375 tasks a resume
+ * snapshot applies to. Most of them (191) arrive *inside a tool result* — the user's answer to
+ * `ask_followup_question` / `attempt_completion`, or text typed at a running `execute_command` —
+ * which is why looking only at standalone user turns finds almost nothing.
+ */
+const USER_MESSAGE_RE = /<user_message>([\s\S]*?)<\/user_message>/g
+
+/**
+ * Wrappers the runtime staples around user text, none of which the user wrote.
+ *
+ * `[TASK RESUMPTION]` is the preamble on a resumed turn; the other two are the standing context
+ * blocks. Removing them keeps an instruction fact about what was asked rather than about the state
+ * of the editor.
+ */
+const INSTRUCTION_NOISE_RE = [
+	/<environment_details>[\s\S]*?<\/environment_details>/g,
+	/<system-reminder>[\s\S]*?<\/system-reminder>/g,
+	/\[TASK RESUMPTION\][\s\S]*?(?=<user_message>|$)/g,
+]
+
+/**
+ * Replies that acknowledge without instructing.
+ *
+ * They are real user messages but carry no state, so restating them in a snapshot spends a line to
+ * say nothing. Matched only against the WHOLE normalised message, so "continue with the migration"
+ * and "no, use pnpm" are kept; both languages this workspace is driven in are listed.
+ */
+const ACKNOWLEDGEMENTS: ReadonlySet<string> = new Set<string>([
+	"continue",
+	"continue please",
+	"go",
+	"go ahead",
+	"go on",
+	"k",
+	"n",
+	"next",
+	"no",
+	"ok",
+	"okay",
+	"proceed",
+	"resume",
+	"thanks",
+	"thank you",
+	"y",
+	"yes",
+	// Polish
+	"dalej",
+	"dobra",
+	"kontynuuj",
+	"nie",
+	"ok dalej",
+	"tak",
+	"zgoda",
+])
+
+function isAcknowledgement(text: string): boolean {
+	const normalized = text
+		.toLowerCase()
+		.replace(/[^\p{L}\p{N}\s]/gu, "")
+		.replace(/\s+/g, " ")
+		.trim()
+	return normalized.length === 0 || ACKNOWLEDGEMENTS.has(normalized)
+}
+
+/**
+ * Pulls every `<user_message>` body out of a text or tool-result payload.
+ *
+ * Returns them in the order they appear; a payload with no user prose returns an empty array, which
+ * is the overwhelmingly common case, so this stays cheap to call on everything.
+ */
+export function extractUserInstructions(text: string): string[] {
+	if (!text.includes("<user_message>")) {
+		return []
+	}
+
+	const found: string[] = []
+	for (const match of text.matchAll(USER_MESSAGE_RE)) {
+		let body = match[1] ?? ""
+		for (const pattern of INSTRUCTION_NOISE_RE) {
+			body = body.replace(pattern, "")
+		}
+		body = body.trim()
+		if (body && !isAcknowledgement(body)) {
+			found.push(body)
+		}
+	}
+	return found
+}
+
+/**
+ * Pulls the user's note out of a denied / approved / guidance envelope.
+ *
+ * The second shape user text arrives in, and a much rarer one — 13 occurrences across 9 tasks — but
+ * the ones it catches are disproportionately constraints ("do not take 1024 as a default"), and it
+ * is the only record of an approval that came with a correction attached.
+ */
+export function extractEnvelopeFeedback(text: string): string | undefined {
+	const trimmed = text.trim()
+	if (!looksLikeStatusEnvelope(trimmed) || !trimmed.includes('"feedback"')) {
+		return undefined
+	}
+	try {
+		const parsed = JSON.parse(trimmed) as { feedback?: unknown }
+		const feedback = typeof parsed?.feedback === "string" ? parsed.feedback.trim() : ""
+		return feedback && !isAcknowledgement(feedback) ? feedback : undefined
+	} catch {
+		return undefined
+	}
+}

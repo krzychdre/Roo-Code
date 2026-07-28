@@ -19,6 +19,7 @@ function fact(partial: Partial<LedgerFact> & Pick<LedgerFact, "class" | "text">)
 function ledgerOf(...facts: LedgerFact[]): ContextLedger {
 	return {
 		goal: facts.find((f) => f.class === "goal"),
+		userInstructions: facts.filter((f) => f.class === "user_instruction"),
 		decisions: facts.filter((f) => f.class === "decision"),
 		fileChanges: facts.filter((f) => f.class === "file_change"),
 		openErrors: facts.filter((f) => f.class === "open_error"),
@@ -228,10 +229,24 @@ describe("validateSummaryFacts", () => {
 				subject: "src/bravo.ts",
 			}),
 			fact({ class: "goal", text: "Rebuild the charlie pipeline end to end" }),
+			fact({ class: "user_instruction", text: "leave the delta migrations alone" }),
 		)
 
 		const classes = validateSummaryFacts("nothing relevant here", ledger).missing.map((m) => m.fact.class)
-		expect(classes).toEqual(["goal", "open_error", "file_change"])
+		expect(classes).toEqual(["goal", "user_instruction", "open_error", "file_change"])
+	})
+
+	it("restores a mid-task instruction the summary dropped", () => {
+		// The class exists because a summary that keeps the goal and loses the correction to it is
+		// worse than one that loses both: the agent proceeds confidently on the superseded plan.
+		const ledger = ledgerOf(
+			fact({ class: "goal", text: "Migrate the cluster to k3s" }),
+			fact({ class: "user_instruction", text: "actually target RKE2, not k3s" }),
+		)
+
+		const result = validateSummaryFacts("The user asked to migrate the cluster to k3s.", ledger)
+		expect(result.missing.map((m) => m.fact.class)).toEqual(["user_instruction"])
+		expect(result.addendum).toContain("- USER ALSO SAID: actually target RKE2, not k3s")
 	})
 })
 

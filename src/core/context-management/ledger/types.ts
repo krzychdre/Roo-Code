@@ -8,14 +8,16 @@
  *  2. condense validation      — checks the LLM summary retained the critical facts
  *  3. resume                   — serialises it as a semantic execution snapshot
  *
- * The six classes map onto the six things a coding agent must not silently lose when its
- * context is compressed: what it was asked to do, what it decided, what it changed, what is
- * still broken, what it proved, and what it can cite without re-reading.
+ * The classes map onto the things a coding agent must not silently lose when its context is
+ * compressed: what it was asked to do, what it was told afterwards, what it decided, what it
+ * changed, what is still broken, what it proved, and what it can cite without re-reading.
  */
 
 export type LedgerFactClass =
 	/** The task goal — the first user request. */
 	| "goal"
+	/** Something the user said after the task started — a correction, a constraint, an answer. */
+	| "user_instruction"
 	/** A planning decision — an entry of the current todo list. */
 	| "decision"
 	/** A file the agent created or modified. */
@@ -49,6 +51,8 @@ export interface LedgerFact {
 export interface ContextLedger {
 	/** The task goal, when a first user message exists. */
 	goal?: LedgerFact
+	/** What the user said after the task started, oldest first — the last one is the most binding. */
+	userInstructions: LedgerFact[]
 	/** Current plan entries, from the todo list. */
 	decisions: LedgerFact[]
 	/** Files created or modified, most recent last. */
@@ -73,6 +77,7 @@ export interface ContextLedger {
 /** Classes whose loss is not recoverable by re-reading a file or re-running a command. */
 export const CRITICAL_FACT_CLASSES: ReadonlySet<LedgerFactClass> = new Set<LedgerFactClass>([
 	"goal",
+	"user_instruction",
 	"open_error",
 	"file_change",
 ])

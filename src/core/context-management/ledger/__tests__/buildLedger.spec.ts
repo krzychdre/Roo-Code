@@ -5,7 +5,12 @@ import type { TodoItem } from "@roo-code/types"
 import { ApiMessage } from "../../../task-persistence/apiMessages"
 import { formatResponse } from "../../../prompts/responses"
 
-import { buildContextLedger, LEDGER_GOAL_MAX_CHARS, MAX_LEDGER_OPEN_ERRORS } from "../buildLedger"
+import {
+	buildContextLedger,
+	LEDGER_GOAL_MAX_CHARS,
+	MAX_LEDGER_OPEN_ERRORS,
+	MAX_LEDGER_USER_INSTRUCTIONS,
+} from "../buildLedger"
 
 let counter = 0
 
@@ -92,6 +97,92 @@ describe("buildContextLedger", () => {
 		const [assistant, result] = toolPair("read_file", { path: "a.ts" }, "contents")
 		const ledger = buildContextLedger([result, assistant, task("The real goal")])
 		expect(ledger.goal?.text).toBe("The real goal")
+	})
+
+	it("records what the user said after the task started", () => {
+		// The dominant real shape: the answer to ask_followup_question comes back inside a
+		// tool_result, not as a turn of its own.
+		const [ask, answer] = toolPair(
+			"ask_followup_question",
+			{ question: "which package manager?" },
+			"<user_message>\nuse pnpm, never npm\n</user_message>",
+		)
+		const ledger = buildContextLedger([task("<user_message>Set up CI</user_message>"), ask, answer])
+
+		expect(ledger.goal?.text).toBe("Set up CI")
+		expect(ledger.userInstructions.map((f) => f.text)).toEqual(["use pnpm, never npm"])
+		// The result carrying it must survive microcompaction along with the fact.
+		expect(ledger.criticalToolUseIds.has(toolUseIdOf(answer))).toBe(true)
+	})
+
+	it("does not repeat the task statement as an instruction", () => {
+		const ledger = buildContextLedger([task("<user_message>Set up CI</user_message>")])
+		expect(ledger.goal?.text).toBe("Set up CI")
+		expect(ledger.userInstructions).toEqual([])
+	})
+
+	it("records a mid-task instruction typed as its own turn", () => {
+		const messages: ApiMessage[] = [
+			task("First, the request"),
+			{ role: "assistant", content: [{ type: "text", text: "working" }], ts: 1 },
+			{
+				role: "user",
+				content: [
+					{
+						type: "text",
+						text: "[TASK RESUMPTION] The user has sent a message:\n<user_message>\nactually, target RKE2 not k3s\n</user_message>",
+					},
+				],
+				ts: 2,
+			},
+		]
+		expect(buildContextLedger(messages).userInstructions.map((f) => f.text)).toEqual([
+			"actually, target RKE2 not k3s",
+		])
+	})
+
+	it("records the note attached to a denial", () => {
+		const messages: ApiMessage[] = [
+			task(),
+			...toolPair(
+				"execute_command",
+				{ command: "pip install ruff" },
+				formatResponse.toolDeniedWithFeedback("no system-wide python packages"),
+			),
+		]
+		const ledger = buildContextLedger(messages)
+		expect(ledger.userInstructions.map((f) => f.text)).toEqual(["no system-wide python packages"])
+		// It is still a denial, so it stays an open error too — the two facts say different things.
+		expect(ledger.openErrors).toHaveLength(1)
+	})
+
+	it("collapses a repeated instruction onto its latest occurrence", () => {
+		const messages: ApiMessage[] = [task()]
+		for (let i = 0; i < 3; i++) {
+			messages.push(
+				...toolPair("ask_followup_question", { question: `q${i}` }, "<user_message>use pnpm</user_message>"),
+			)
+		}
+		messages.push(
+			...toolPair("ask_followup_question", { question: "last" }, "<user_message>and skip e2e</user_message>"),
+		)
+
+		expect(buildContextLedger(messages).userInstructions.map((f) => f.text)).toEqual(["use pnpm", "and skip e2e"])
+	})
+
+	it("keeps the newest instructions but renders them in the order they were said", () => {
+		const messages: ApiMessage[] = [task()]
+		for (let i = 0; i < MAX_LEDGER_USER_INSTRUCTIONS + 3; i++) {
+			messages.push(
+				...toolPair("ask_followup_question", { question: `q${i}` }, `<user_message>rule ${i}</user_message>`),
+			)
+		}
+		const texts = buildContextLedger(messages).userInstructions.map((f) => f.text)
+
+		expect(texts).toHaveLength(MAX_LEDGER_USER_INSTRUCTIONS)
+		// Oldest dropped, and the last thing the user said reads last.
+		expect(texts[0]).toBe("rule 3")
+		expect(texts[texts.length - 1]).toBe(`rule ${MAX_LEDGER_USER_INSTRUCTIONS + 2}`)
 	})
 
 	it("records the todo list as decisions", () => {

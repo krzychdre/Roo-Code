@@ -5,7 +5,9 @@ import { formatResponse } from "../../../prompts/responses"
 import {
 	MAX_TEXTUAL_ERROR_CHARS,
 	classifyToolResultOutcome,
+	extractEnvelopeFeedback,
 	extractToolSubject,
+	extractUserInstructions,
 	isValidationCommand,
 	toBoundedText,
 	toSingleLine,
@@ -157,5 +159,67 @@ describe("toBoundedText", () => {
 
 	it("falls back to head truncation when the budget is too small to split", () => {
 		expect(toBoundedText("q".repeat(400), 40)).toBe(`${"q".repeat(39)}…`)
+	})
+})
+
+describe("extractUserInstructions", () => {
+	it("returns nothing for a payload with no user prose", () => {
+		expect(extractUserInstructions("")).toEqual([])
+		expect(extractUserInstructions("The content was successfully saved.")).toEqual([])
+	})
+
+	it("pulls out every message, in order", () => {
+		const text =
+			"<user_message>\nuse pnpm, not npm\n</user_message>\nnoise\n<user_message>and skip the e2e run</user_message>"
+		expect(extractUserInstructions(text)).toEqual(["use pnpm, not npm", "and skip the e2e run"])
+	})
+
+	it("strips the resumption preamble and the standing context blocks", () => {
+		// The exact shape `TaskResumption` emits: a preamble, then what the user actually typed.
+		const text = [
+			"[TASK RESUMPTION] This task was interrupted 3 minutes ago. The user has sent a message:",
+			"<user_message>",
+			"drop the retry, it made it worse",
+			"<environment_details># VSCode Visible Files\nsrc/a.ts</environment_details>",
+			"</user_message>",
+		].join("\n")
+		expect(extractUserInstructions(text)).toEqual(["drop the retry, it made it worse"])
+	})
+
+	it("drops replies that only acknowledge", () => {
+		// These are real user messages, but a snapshot line saying "the user said: continue" is a
+		// line spent on nothing.
+		for (const reply of ["continue", "OK!", " yes ", "Dalej", "thanks"]) {
+			expect(extractUserInstructions(`<user_message>${reply}</user_message>`)).toEqual([])
+		}
+	})
+
+	it("keeps an instruction that merely starts with an acknowledgement", () => {
+		expect(extractUserInstructions("<user_message>no, use pnpm</user_message>")).toEqual(["no, use pnpm"])
+		expect(extractUserInstructions("<user_message>continue with the migration</user_message>")).toEqual([
+			"continue with the migration",
+		])
+	})
+})
+
+describe("extractEnvelopeFeedback", () => {
+	it("reads the note attached to a denial or an approval", () => {
+		expect(extractEnvelopeFeedback(formatResponse.toolDeniedWithFeedback("no system-wide python packages"))).toBe(
+			"no system-wide python packages",
+		)
+		expect(extractEnvelopeFeedback(formatResponse.toolApprovedWithFeedback("do not take 1024 as a default"))).toBe(
+			"do not take 1024 as a default",
+		)
+	})
+
+	it("ignores envelopes that carry no note, and bare acknowledgements", () => {
+		expect(extractEnvelopeFeedback(formatResponse.toolDenied())).toBeUndefined()
+		expect(extractEnvelopeFeedback(formatResponse.toolError("boom"))).toBeUndefined()
+		expect(extractEnvelopeFeedback(formatResponse.toolApprovedWithFeedback("continue"))).toBeUndefined()
+	})
+
+	it("ignores anything that is not an envelope", () => {
+		expect(extractEnvelopeFeedback("plain output mentioning feedback")).toBeUndefined()
+		expect(extractEnvelopeFeedback('{"status":"denied","feedback":"trunc')).toBeUndefined()
 	})
 })

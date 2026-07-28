@@ -9,7 +9,9 @@ import {
 	FILE_MUTATION_TOOLS,
 	FILE_READ_TOOLS,
 	classifyToolResultOutcome,
+	extractEnvelopeFeedback,
 	extractToolSubject,
+	extractUserInstructions,
 	isValidationCommand,
 	toBoundedText,
 	toSingleLine,
@@ -28,6 +30,23 @@ import type { ContextLedger, LedgerFact } from "./types"
  * already approximates, at double the worst case.
  */
 export const LEDGER_GOAL_MAX_CHARS = 2000
+
+/**
+ * Upper bound on one `user_instruction`.
+ *
+ * Mid-task instructions run median 83 chars and p90 317 over the task store, so 400 keeps ~90% of
+ * them whole; the p100 is a 118 KB paste, which is precisely what the bound exists for. Same
+ * head+tail treatment as the goal — a correction's trailing clause is the part that binds.
+ */
+export const LEDGER_USER_INSTRUCTION_MAX_CHARS = 400
+
+/**
+ * Upper bound on `userInstructions`, newest kept.
+ *
+ * Per task the count is median 0 / p90 2 / max 12, so 8 covers all but the outliers, and the
+ * outliers are the tasks where the oldest corrections have long since been superseded anyway.
+ */
+export const MAX_LEDGER_USER_INSTRUCTIONS = 8
 
 /** Upper bound on `artifacts`; the ledger is a checklist, not a file index. */
 export const MAX_LEDGER_ARTIFACTS = 24
@@ -62,13 +81,21 @@ function toolResultText(content: Anthropic.Messages.ToolResultBlockParam["conten
 	return ""
 }
 
-function firstUserText(messages: ApiMessage[]): string | undefined {
-	for (const message of messages) {
+/**
+ * The first user turn that actually says something, with its position.
+ *
+ * The position matters as much as the text: that message is the goal, and it is also the one turn
+ * whose `<user_message>` must NOT become a `user_instruction`, or every task would open with its
+ * own request restated as a mid-task correction.
+ */
+function firstUserText(messages: ApiMessage[]): { text: string; messageIndex: number } | undefined {
+	for (let messageIndex = 0; messageIndex < messages.length; messageIndex++) {
+		const message = messages[messageIndex]
 		if (message.role !== "user") {
 			continue
 		}
 		if (typeof message.content === "string") {
-			return message.content
+			return { text: message.content, messageIndex }
 		}
 		if (Array.isArray(message.content)) {
 			// Skip turns that only carry tool results — those are not the task statement.
@@ -77,7 +104,7 @@ function firstUserText(messages: ApiMessage[]): string | undefined {
 				.map((block) => (block as Anthropic.Messages.TextBlockParam).text)
 				.join("\n")
 			if (text.trim()) {
-				return text
+				return { text, messageIndex }
 			}
 		}
 	}
@@ -122,22 +149,69 @@ export function buildContextLedger(messages: ApiMessage[], options: BuildLedgerO
 		}
 	}
 
+	// ── goal ────────────────────────────────────────────────────────────────────────────────
+	const rawGoal = firstUserText(effective)
+	const goalText = rawGoal ? extractGoalText(rawGoal.text) : ""
+	const goal: LedgerFact | undefined = goalText
+		? { class: "goal", text: toBoundedText(goalText, LEDGER_GOAL_MAX_CHARS), index: 0 }
+		: undefined
+
 	const records: ToolResultRecord[] = []
+	// ── user instructions ───────────────────────────────────────────────────────────────────
+	// Keyed by the rendered text so a repeated instruction collapses onto its latest occurrence
+	// instead of filling the cap with copies of itself.
+	const instructionByText = new Map<string, LedgerFact>()
 	let index = 0
-	for (const message of effective) {
-		if (message.role !== "user" || !Array.isArray(message.content)) {
+
+	const recordInstruction = (body: string, toolUseId?: string) => {
+		const text = toBoundedText(body, LEDGER_USER_INSTRUCTION_MAX_CHARS)
+		instructionByText.set(text, { class: "user_instruction", text, toolUseId, index: index++ })
+	}
+
+	for (let messageIndex = 0; messageIndex < effective.length; messageIndex++) {
+		const message = effective[messageIndex]
+		if (message.role !== "user") {
 			continue
 		}
+		// The task statement is already the goal fact; recording it again would open every
+		// snapshot with the request restated as a correction to itself.
+		const isGoalMessage = messageIndex === rawGoal?.messageIndex
+
+		if (typeof message.content === "string") {
+			if (!isGoalMessage) {
+				extractUserInstructions(message.content).forEach((body) => recordInstruction(body))
+			}
+			continue
+		}
+		if (!Array.isArray(message.content)) {
+			continue
+		}
+
 		for (const block of message.content) {
+			if (block.type === "text") {
+				if (!isGoalMessage) {
+					extractUserInstructions(block.text).forEach((body) => recordInstruction(body))
+				}
+				continue
+			}
 			if (block.type !== "tool_result") {
 				continue
 			}
 			const tr = block as Anthropic.Messages.ToolResultBlockParam
+			const text = toolResultText(tr.content)
+
+			// Attributed to the tool_use so the result carrying it earns compaction protection —
+			// `execute_command` is compactable, and it is one of the tools user text arrives through.
+			extractUserInstructions(text).forEach((body) => recordInstruction(body, tr.tool_use_id))
+			const feedback = extractEnvelopeFeedback(text)
+			if (feedback) {
+				recordInstruction(feedback, tr.tool_use_id)
+			}
+
 			const use = toolUseById.get(tr.tool_use_id)
 			if (!use) {
 				continue
 			}
-			const text = toolResultText(tr.content)
 			records.push({
 				toolUseId: tr.tool_use_id,
 				toolName: use.name,
@@ -148,13 +222,6 @@ export function buildContextLedger(messages: ApiMessage[], options: BuildLedgerO
 			})
 		}
 	}
-
-	// ── goal ────────────────────────────────────────────────────────────────────────────────
-	const rawGoal = firstUserText(effective)
-	const goalText = rawGoal ? extractGoalText(rawGoal) : ""
-	const goal: LedgerFact | undefined = goalText
-		? { class: "goal", text: toBoundedText(goalText, LEDGER_GOAL_MAX_CHARS), index: 0 }
-		: undefined
 
 	// ── decisions (the plan) ────────────────────────────────────────────────────────────────
 	const decisions: LedgerFact[] = (options.todos ?? []).map((todo, i) => ({
@@ -228,6 +295,13 @@ export function buildContextLedger(messages: ApiMessage[], options: BuildLedgerO
 
 	const byIndexDesc = (a: LedgerFact, b: LedgerFact) => b.index - a.index
 
+	// Newest kept, then put back in the order they were said: a later instruction supersedes an
+	// earlier one, and that only reads correctly if the last line is the last thing the user said.
+	const userInstructions = [...instructionByText.values()]
+		.sort(byIndexDesc)
+		.slice(0, MAX_LEDGER_USER_INSTRUCTIONS)
+		.reverse()
+
 	const fileChanges = [...fileChangeByPath.values()].sort(byIndexDesc).slice(0, MAX_LEDGER_FILE_CHANGES).reverse()
 
 	const openErrors = [...errorBySubject.values()]
@@ -242,7 +316,7 @@ export function buildContextLedger(messages: ApiMessage[], options: BuildLedgerO
 	// Only classes that cannot be re-derived cheaply earn protection. A file read is excluded on
 	// purpose: re-reading it costs one tool call, while a lost failure costs a wrong conclusion.
 	const criticalToolUseIds = new Set<string>()
-	for (const fact of [...openErrors, ...validations, ...fileChanges]) {
+	for (const fact of [...openErrors, ...validations, ...fileChanges, ...userInstructions]) {
 		if (fact.toolUseId) {
 			criticalToolUseIds.add(fact.toolUseId)
 		}
@@ -250,6 +324,7 @@ export function buildContextLedger(messages: ApiMessage[], options: BuildLedgerO
 
 	const facts: LedgerFact[] = [
 		...(goal ? [goal] : []),
+		...userInstructions,
 		...decisions,
 		...fileChanges,
 		...openErrors,
@@ -257,5 +332,15 @@ export function buildContextLedger(messages: ApiMessage[], options: BuildLedgerO
 		...artifacts,
 	]
 
-	return { goal, decisions, fileChanges, openErrors, validations, artifacts, facts, criticalToolUseIds }
+	return {
+		goal,
+		userInstructions,
+		decisions,
+		fileChanges,
+		openErrors,
+		validations,
+		artifacts,
+		facts,
+		criticalToolUseIds,
+	}
 }
