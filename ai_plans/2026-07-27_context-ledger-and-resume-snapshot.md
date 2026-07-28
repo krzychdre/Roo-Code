@@ -138,16 +138,19 @@ checkpoints protect files but not execution state.
  (protect + byte budget)    (critical facts survive)    (recomputed, mtime-bound)
 ```
 
-The six fact classes map 1:1 onto the review's list and are all derivable **without a model call**:
+The fact classes map 1:1 onto the review's list and are all derivable **without a model call**
+(`user_instruction` is the one addition the review did not name; see §5.2 for why it earned a class
+of its own rather than being folded into `goal`):
 
-| review term         | class         | deterministic source                                                               |
-| ------------------- | ------------- | ---------------------------------------------------------------------------------- |
-| cel                 | `goal`        | first user message (task text)                                                     |
-| decyzje             | `decision`    | `Task.todoList` (`update_todo_list` state)                                         |
-| zmienione pliki     | `file_change` | `write_to_file` / `apply_diff` / `apply_patch` / `edit*` tool inputs               |
-| nierozwiązane błędy | `open_error`  | failed `tool_result` with no later success on the same target                      |
-| wyniki walidacji    | `validation`  | `execute_command` results matching test/build/lint shapes                          |
-| cytowalne artefakty | `artifact`    | file paths read (paths only — the hashes in the first draft went unused, see §2.4) |
+| review term         | class              | deterministic source                                                               |
+| ------------------- | ------------------ | ---------------------------------------------------------------------------------- |
+| cel                 | `goal`             | first user message (task text)                                                     |
+| —                   | `user_instruction` | `<user_message>` blocks after the first, including those inside `tool_result`      |
+| decyzje             | `decision`         | `Task.todoList` (`update_todo_list` state)                                         |
+| zmienione pliki     | `file_change`      | `write_to_file` / `apply_diff` / `apply_patch` / `edit*` tool inputs               |
+| nierozwiązane błędy | `open_error`       | failed `tool_result` with no later success on the same target                      |
+| wyniki walidacji    | `validation`       | `execute_command` results matching test/build/lint shapes                          |
+| cytowalne artefakty | `artifact`         | file paths read (paths only — the hashes in the first draft went unused, see §2.4) |
 
 ### 2.2 Adaptive microcompaction (replaces keep-5) — as implemented
 
