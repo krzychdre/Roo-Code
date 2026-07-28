@@ -314,7 +314,8 @@ export class TaskResumption {
 			if (result.applied) {
 				console.log(
 					`[TaskResumption#${this.access.taskId}] execution snapshot applied: ` +
-						`${result.hiddenMessages} messages hidden, ${result.charsBefore} -> ${result.charsAfter} chars` +
+						`${result.hiddenMessages} messages hidden, ${result.tailMessages} kept, ` +
+						`${result.charsBefore} -> ${result.charsAfter} chars` +
 						(stale.length > 0 ? `, ${stale.length} file(s) changed while paused` : ""),
 				)
 			}

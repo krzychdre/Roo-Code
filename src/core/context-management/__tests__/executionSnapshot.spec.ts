@@ -10,7 +10,9 @@ import {
 	renderExecutionSnapshot,
 	EXECUTION_SNAPSHOT_VERSION,
 	MAX_SNAPSHOT_SECTION_ITEMS,
+	RESUME_KEEP_RECENT_MESSAGES,
 	RESUME_SNAPSHOT_MIN_CHARS,
+	RESUME_THIN_KEEP_RECENT_MESSAGES,
 	STALE_MTIME_GRACE_MS,
 } from "../executionSnapshot"
 
@@ -84,6 +86,33 @@ function interruptedHistory(): ApiMessage[] {
 	return messages
 }
 
+/**
+ * A history the ledger cannot type: nothing but reading. There is no edit, no failure, no check
+ * and no plan, so a snapshot of it can only say what was asked and which paths were opened —
+ * everything the agent worked out from those files lives in the raw turns.
+ */
+function readOnlyHistory(pairs: number, filler: string = FILLER): ApiMessage[] {
+	let ts = 1_000
+	const messages: ApiMessage[] = [
+		{ role: "user", ts: ts++, content: [{ type: "text", text: "<task>Explain how condensing works</task>" }] },
+	]
+
+	for (let i = 0; i < pairs; i++) {
+		messages.push({
+			role: "assistant",
+			ts: ts++,
+			content: [{ type: "tool_use", id: `use-read-${i}`, name: "read_file", input: { path: `src/m${i}.ts` } }],
+		})
+		messages.push({
+			role: "user",
+			ts: ts++,
+			content: [{ type: "tool_result", tool_use_id: `use-read-${i}`, content: filler }],
+		})
+	}
+
+	return messages
+}
+
 let nextIndex = 0
 
 function fact(partial: Partial<LedgerFact> & Pick<LedgerFact, "class" | "text">): LedgerFact {
@@ -149,9 +178,17 @@ describe("renderExecutionSnapshot", () => {
 		const snapshot = renderExecutionSnapshot(ledgerOf(fact({ class: "goal", text: "Ship the thing" })))
 
 		expect(snapshot).not.toContain("### Still broken")
-		expect(snapshot).not.toContain("### Already changed")
 		expect(snapshot).not.toContain("### Plan")
 		expect(snapshot).not.toContain("### What the user said after that")
+	})
+
+	it("says so explicitly when no edit was recorded", () => {
+		// The one absence worth spending lines on: a reader who takes a missing section as "the
+		// edits are done" skips ahead and leaves the task half-finished.
+		const snapshot = renderExecutionSnapshot(ledgerOf(fact({ class: "goal", text: "Ship the thing" })))
+
+		expect(snapshot).toContain("### Already changed")
+		expect(snapshot).toContain("Nothing. No file edit was recorded before the interruption.")
 	})
 
 	it("warns about files that moved while the task was paused", () => {
@@ -391,6 +428,55 @@ describe("applyExecutionSnapshot", () => {
 		// The cap plus the fixed boilerplate (headings and their instruction lines), which is the
 		// only other thing in a snapshot with no tool calls behind it.
 		expect(snapshot.length).toBeLessThan(LEDGER_GOAL_MAX_CHARS + 1_000)
+	})
+
+	it("keeps more raw turns when the ledger recorded no work", () => {
+		// 29% of real resumes look like this. The snapshot alone would be a goal and a list of
+		// paths, so the recent turns are the only place the actual state still exists.
+		const messages = readOnlyHistory(15)
+		const result = applyExecutionSnapshot({ messages })
+
+		expect(result.applied).toBe(true)
+		expect(result.tailMessages).toBeGreaterThan(RESUME_KEEP_RECENT_MESSAGES)
+		expect(result.tailMessages).toBeLessThanOrEqual(RESUME_THIN_KEEP_RECENT_MESSAGES)
+		// Widening is not surrender: most of the history is still behind the snapshot.
+		expect(result.hiddenMessages).toBeGreaterThan(0)
+		expect(result.charsAfter).toBeLessThan(result.charsBefore)
+	})
+
+	it("does not widen a ledger that recorded work", () => {
+		// The snapshot carries this task's state, so the extra turns would be paid for nothing.
+		const messages = interruptedHistory()
+		expect(applyExecutionSnapshot({ messages }).tailMessages).toBe(RESUME_KEEP_RECENT_MESSAGES)
+	})
+
+	it("stops widening at the character budget, not at the message count", () => {
+		// Message count is the wrong unit here: on a read-heavy task a single result can be worth
+		// more than a dozen ordinary turns, which is how a flat tail quietly restores the replay.
+		const messages = readOnlyHistory(8, "z".repeat(40_000))
+		const result = applyExecutionSnapshot({ messages })
+
+		expect(result.applied).toBe(true)
+		expect(result.tailMessages).toBe(RESUME_KEEP_RECENT_MESSAGES)
+	})
+
+	it("respects an explicit budget of zero by keeping the default tail", () => {
+		const messages = readOnlyHistory(15)
+		const result = applyExecutionSnapshot({ messages, maxThinTailChars: 0 })
+
+		expect(result.applied).toBe(true)
+		expect(result.tailMessages).toBe(RESUME_KEEP_RECENT_MESSAGES)
+	})
+
+	it("never widens the tail until there is nothing left to hide", () => {
+		// A candidate that would hide zero messages is worse than no snapshot at all, so it must be
+		// rejected rather than accepted for being under budget.
+		// Short enough that the widest tail would swallow the whole history, but still over the gate.
+		const messages = readOnlyHistory(6, "y".repeat(11_000))
+		const result = applyExecutionSnapshot({ messages, maxThinTailChars: Number.MAX_SAFE_INTEGER })
+
+		expect(result.applied).toBe(true)
+		expect(result.hiddenMessages).toBeGreaterThan(0)
 	})
 
 	it("does nothing when the history carries no facts at all", () => {
