@@ -7,6 +7,7 @@ import {
 	classifyToolResultOutcome,
 	extractToolSubject,
 	isValidationCommand,
+	toBoundedText,
 	toSingleLine,
 } from "../classify"
 
@@ -120,5 +121,41 @@ describe("toSingleLine", () => {
 		expect(toSingleLine("a\n\n  b\tc")).toBe("a b c")
 		expect(toSingleLine("abcdef", 4)).toBe("abc…")
 		expect(toSingleLine("abcd", 4)).toBe("abcd")
+	})
+})
+
+describe("toBoundedText", () => {
+	it("returns text that fits unchanged, whitespace collapsed", () => {
+		expect(toBoundedText("a\n\n  b\tc", 100)).toBe("a b c")
+	})
+
+	it("keeps both ends when the text does not fit", () => {
+		const text = `START ${"x".repeat(2000)} END`
+		const bounded = toBoundedText(text, 500)
+
+		expect(bounded.startsWith("START ")).toBe(true)
+		expect(bounded.endsWith(" END")).toBe(true)
+		expect(bounded).toContain("chars omitted")
+	})
+
+	it("never exceeds the budget", () => {
+		// The marker is sized for the worst case, so substituting the real (smaller) omitted count
+		// must not be able to push the result over.
+		for (const length of [201, 500, 1234, 100_000]) {
+			for (const max of [200, 201, 400, 2000]) {
+				expect(toBoundedText("y".repeat(length), max).length).toBeLessThanOrEqual(max)
+			}
+		}
+	})
+
+	it("reports the exact number of omitted characters", () => {
+		const bounded = toBoundedText("z".repeat(5000), 1000)
+		const omitted = Number(/\[…(\d+) chars omitted…\]/.exec(bounded)?.[1])
+
+		expect(omitted).toBe(5000 - (bounded.length - `[…${omitted} chars omitted…]`.length - 2))
+	})
+
+	it("falls back to head truncation when the budget is too small to split", () => {
+		expect(toBoundedText("q".repeat(400), 40)).toBe(`${"q".repeat(39)}…`)
 	})
 })

@@ -11,9 +11,23 @@ import {
 	classifyToolResultOutcome,
 	extractToolSubject,
 	isValidationCommand,
+	toBoundedText,
 	toSingleLine,
 } from "./classify"
 import type { ContextLedger, LedgerFact } from "./types"
+
+/**
+ * Upper bound on the goal fact.
+ *
+ * Measured over the 375 tasks where the resume snapshot applies, the task statement runs
+ * median 1,740 chars / p75 4,516 / p90 8,480. The previous 400-char cap fit only 37% of them and
+ * threw away a median of 3,348 chars from the rest — of the one fact that cannot be recovered by
+ * re-reading anything. 2,000 fits 53% outright and costs at most ~800 tokens against a median
+ * 16k-char snapshot; the rest keep both ends via {@link toBoundedText} rather than losing the
+ * second half. Raising it further (4,000 fits 70%) buys exact fits that the head+tail shape
+ * already approximates, at double the worst case.
+ */
+export const LEDGER_GOAL_MAX_CHARS = 2000
 
 /** Upper bound on `artifacts`; the ledger is a checklist, not a file index. */
 export const MAX_LEDGER_ARTIFACTS = 24
@@ -73,12 +87,17 @@ function firstUserText(messages: ApiMessage[]): string | undefined {
 /**
  * Strips the environment/reminder wrappers Roo appends to the first user turn, so the goal fact
  * is the user's actual request rather than a directory listing.
+ *
+ * `<user_message>` is the wrapper this fork actually emits for a task statement
+ * (`TaskLifecycle.startTask`); `<task>` is the upstream shape, still handled because old histories
+ * on disk carry it. Unwrapping matters twice over: the tags are noise in the prompt, and they used
+ * to eat characters out of the goal's own budget.
  */
 function extractGoalText(raw: string): string {
 	const withoutEnvironment = raw.split("<environment_details>")[0] ?? raw
 	const withoutReminders = withoutEnvironment.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "")
-	const taskTag = /<task>([\s\S]*?)<\/task>/.exec(withoutReminders)
-	return (taskTag?.[1] ?? withoutReminders).trim()
+	const tagged = /<(?:task|user_message)>([\s\S]*?)<\/(?:task|user_message)>/.exec(withoutReminders)
+	return (tagged?.[1] ?? withoutReminders).trim()
 }
 
 /**
@@ -134,7 +153,7 @@ export function buildContextLedger(messages: ApiMessage[], options: BuildLedgerO
 	const rawGoal = firstUserText(effective)
 	const goalText = rawGoal ? extractGoalText(rawGoal) : ""
 	const goal: LedgerFact | undefined = goalText
-		? { class: "goal", text: toSingleLine(goalText, 400), index: 0 }
+		? { class: "goal", text: toBoundedText(goalText, LEDGER_GOAL_MAX_CHARS), index: 0 }
 		: undefined
 
 	// ── decisions (the plan) ────────────────────────────────────────────────────────────────

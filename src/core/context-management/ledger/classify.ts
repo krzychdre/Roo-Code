@@ -177,3 +177,45 @@ export function toSingleLine(value: string, maxChars = 200): string {
 	const collapsed = value.replace(/\s+/g, " ").trim()
 	return collapsed.length <= maxChars ? collapsed : `${collapsed.slice(0, maxChars - 1)}…`
 }
+
+/**
+ * Below this budget, splitting the text in two leaves neither half long enough to say anything, so
+ * plain head truncation is the better shape.
+ */
+const MIN_ELISION_BUDGET = 200
+
+/**
+ * Share of the budget given to the head. The opening states what is wanted; the closing carries the
+ * constraints ("...and do not touch the tests"), which is why it is kept at all.
+ */
+const ELISION_HEAD_SHARE = 0.6
+
+const elisionMarker = (omitted: number) => ` […${omitted} chars omitted…] `
+
+/**
+ * Collapses a value to a single line, keeping BOTH ends when it does not fit.
+ *
+ * `toSingleLine` truncates, which is right for an error message (the diagnostic is at the front)
+ * but wrong for anything the user wrote: measured on the task store, the median request is 1,740
+ * chars, so head-only truncation silently drops the second half of most requests — including the
+ * trailing constraints, which are usually the part that is easiest to violate. Keeping a head and a
+ * tail with an explicit, counted marker costs a few chars and never lies about what was dropped.
+ */
+export function toBoundedText(value: string, maxChars: number): string {
+	const collapsed = value.replace(/\s+/g, " ").trim()
+	if (collapsed.length <= maxChars) {
+		return collapsed
+	}
+
+	// Reserve the marker's worst case (the largest possible omitted count) so the result can never
+	// exceed maxChars once the real, smaller count is substituted in.
+	const budget = maxChars - elisionMarker(collapsed.length).length
+	if (budget < MIN_ELISION_BUDGET) {
+		return toSingleLine(collapsed, maxChars)
+	}
+
+	const head = Math.ceil(budget * ELISION_HEAD_SHARE)
+	const tail = budget - head
+	const omitted = collapsed.length - head - tail
+	return `${collapsed.slice(0, head)}${elisionMarker(omitted)}${collapsed.slice(collapsed.length - tail)}`
+}

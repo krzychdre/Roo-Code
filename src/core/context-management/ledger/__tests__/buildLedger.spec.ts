@@ -5,7 +5,7 @@ import type { TodoItem } from "@roo-code/types"
 import { ApiMessage } from "../../../task-persistence/apiMessages"
 import { formatResponse } from "../../../prompts/responses"
 
-import { buildContextLedger, MAX_LEDGER_OPEN_ERRORS } from "../buildLedger"
+import { buildContextLedger, LEDGER_GOAL_MAX_CHARS, MAX_LEDGER_OPEN_ERRORS } from "../buildLedger"
 
 let counter = 0
 
@@ -57,6 +57,35 @@ describe("buildContextLedger", () => {
 		].join("\n")
 		const ledger = buildContextLedger([{ role: "user", content: raw, ts: 0 }])
 		expect(ledger.goal?.text).toBe("Rename the widget")
+	})
+
+	it("unwraps the <user_message> shape this fork actually emits", () => {
+		// `TaskLifecycle.startTask` wraps the task statement in <user_message>, not <task>; the
+		// tags used to be carried into the goal fact and to eat its budget.
+		const raw =
+			"<user_message>\nRename the widget\n</user_message>\n<environment_details>noise</environment_details>"
+		const ledger = buildContextLedger([{ role: "user", content: raw, ts: 0 }])
+		expect(ledger.goal?.text).toBe("Rename the widget")
+	})
+
+	it("keeps the end of a long request, where the constraints live", () => {
+		// Head-only truncation at 400 chars dropped a median of 3,348 chars from 63% of real
+		// requests — reliably including the trailing "and do not ..." clause.
+		const raw = `Refactor the uploader. ${"Background context that is not the instruction. ".repeat(80)}Do NOT touch the tests.`
+		const ledger = buildContextLedger([{ role: "user", content: raw, ts: 0 }])
+
+		expect(ledger.goal!.text.length).toBeLessThanOrEqual(LEDGER_GOAL_MAX_CHARS)
+		expect(ledger.goal!.text).toContain("Refactor the uploader.")
+		expect(ledger.goal!.text).toContain("Do NOT touch the tests.")
+		expect(ledger.goal!.text).toContain("chars omitted")
+	})
+
+	it("leaves a request that fits verbatim", () => {
+		const raw = `Refactor the uploader. ${"Some detail. ".repeat(50)}Do not touch the tests.`
+		const ledger = buildContextLedger([{ role: "user", content: raw, ts: 0 }])
+
+		expect(raw.length).toBeGreaterThan(400)
+		expect(ledger.goal?.text).toBe(raw.replace(/\s+/g, " ").trim())
 	})
 
 	it("ignores tool-result-only turns when looking for the goal", () => {

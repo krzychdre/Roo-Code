@@ -2,7 +2,7 @@
 
 import type { ApiMessage } from "../../task-persistence/apiMessages"
 import type { ContextLedger, LedgerFact } from "../ledger/types"
-import { buildContextLedger } from "../ledger/buildLedger"
+import { buildContextLedger, LEDGER_GOAL_MAX_CHARS } from "../ledger/buildLedger"
 import { getEffectiveApiHistory } from "../../condense"
 import {
 	applyExecutionSnapshot,
@@ -359,8 +359,8 @@ describe("applyExecutionSnapshot", () => {
 	})
 
 	it("treats a long first user message as the goal rather than skipping", () => {
-		// Any real history has at least one fact, because the first user turn is the goal — and
-		// the ledger caps it at 400 chars, so a wall-of-text request cannot bloat the snapshot.
+		// Any real history has at least one fact, because the first user turn is the goal — and the
+		// ledger bounds it, so a wall-of-text request cannot bloat the snapshot without limit.
 		const messages: ApiMessage[] = Array.from({ length: 20 }, (_, i) => ({
 			role: i % 2 === 0 ? "user" : "assistant",
 			ts: 1_000 + i,
@@ -370,7 +370,9 @@ describe("applyExecutionSnapshot", () => {
 		const result = applyExecutionSnapshot({ messages })
 		expect(result.applied).toBe(true)
 		const snapshot = JSON.stringify(getEffectiveApiHistory(result.messages)[0].content)
-		expect(snapshot.length).toBeLessThan(2_000)
+		// The cap plus the fixed boilerplate (headings and their instruction lines), which is the
+		// only other thing in a snapshot with no tool calls behind it.
+		expect(snapshot.length).toBeLessThan(LEDGER_GOAL_MAX_CHARS + 1_000)
 	})
 
 	it("does nothing when the history carries no facts at all", () => {
