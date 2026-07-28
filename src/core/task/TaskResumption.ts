@@ -11,6 +11,7 @@
 import Anthropic from "@anthropic-ai/sdk"
 import { type ClineMessage, type ClineApiReqInfo, type ClineAskResponse, RooCodeEventName } from "@roo-code/types"
 import { findLastIndex } from "../../shared/array"
+import { getLatestTodo } from "../../shared/todo"
 import { formatResponse } from "../prompts/responses"
 import { type ApiMessage } from "../task-persistence"
 import { buildContextLedger } from "../context-management/ledger/buildLedger"
@@ -288,7 +289,13 @@ export class TaskResumption {
 	 */
 	private async applyExecutionSnapshot(history: ApiMessage[], lastActivityTs?: number): Promise<ApiMessage[]> {
 		try {
-			const ledger = buildContextLedger(history)
+			// The todo list must come from the UI messages, not from `Task.todoList`: nothing
+			// rehydrates that field on resume (only `UpdateTodoListTool` and `initialTodos` ever
+			// write it), so the reminder section is empty until the tool runs again. Without this
+			// the plan would survive a resume only via the replayed `update_todo_list` calls —
+			// which are exactly what the snapshot hides.
+			const todos = getLatestTodo(this.access.clineMessages)
+			const ledger = buildContextLedger(history, { todos })
 
 			// Files the ledger says we changed may have been edited by hand during the pause. That
 			// is the one thing a recomputed snapshot cannot know from the conversation alone, so it

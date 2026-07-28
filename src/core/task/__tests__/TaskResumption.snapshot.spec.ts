@@ -66,10 +66,19 @@ interface Harness {
 	userContent: () => Anthropic.Messages.ContentBlockParam[]
 }
 
-function harness(apiHistory: ApiMessage[], cwd: string, lastActivityTs: number): Harness {
+function harness(apiHistory: ApiMessage[], cwd: string, lastActivityTs: number, todos?: unknown[]): Harness {
 	const clineMessages: ClineMessage[] = [
 		{ ts: lastActivityTs, type: "say", say: "text", text: "working" } as ClineMessage,
 	]
+	if (todos) {
+		// Shape `getLatestTodo` reads: an `ask: "tool"` message whose text is the tool payload.
+		clineMessages.push({
+			ts: lastActivityTs,
+			type: "ask",
+			ask: "tool",
+			text: JSON.stringify({ tool: "updateTodoList", todos }),
+		} as ClineMessage)
+	}
 
 	let persisted = apiHistory
 	let userContent: Anthropic.Messages.ContentBlockParam[] = []
@@ -151,6 +160,23 @@ describe("TaskResumption execution snapshot", () => {
 		expect(h.persisted().length).toBeGreaterThanOrEqual(messages.length)
 		// The resume still starts a request.
 		expect(h.userContent().length).toBeGreaterThan(0)
+	})
+
+	it("carries the plan over, which nothing else restores on resume", async () => {
+		// `Task.todoList` is only ever written by UpdateTodoListTool and initialTodos, so after a
+		// resume the reminder section is empty and the plan would otherwise live only in the
+		// replayed `update_todo_list` calls the snapshot hides.
+		const h = harness(interruptedHistory(), workspace, Date.now(), [
+			{ id: "1", content: "Add the backoff helper", status: "completed" },
+			{ id: "2", content: "Cover it with a spec", status: "in_progress" },
+		])
+
+		await h.resumption.resumeTaskFromHistory()
+
+		const snapshot = firstEffectiveText(h.persisted())
+		expect(snapshot).toContain("### Plan")
+		expect(snapshot).toContain("[completed] Add the backoff helper")
+		expect(snapshot).toContain("[in_progress] Cover it with a spec")
 	})
 
 	it("warns about a file that was edited while the task was paused", async () => {
