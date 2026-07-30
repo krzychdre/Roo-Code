@@ -28,14 +28,22 @@ describe("MessageEnhancer", () => {
 		// Reset all mocks
 		vi.clearAllMocks()
 
-		// Mock provider settings manager
+		// Mock provider settings manager.
+		//
+		// `activateProfile` is what the enhancer actually calls; a mock carrying
+		// only `getProfile` made every enhancement-config assertion pass through
+		// the catch instead of the path under test, so the two tests that select
+		// a profile were asserting on a TypeError. Both are stubbed, and both
+		// resolve the same profile.
+		const enhancementProfile = {
+			name: "Enhancement Config",
+			apiProvider: "anthropic",
+			apiKey: "enhancement-key",
+			apiModelId: "claude-3",
+		}
 		mockProviderSettingsManager = {
-			getProfile: vi.fn().mockResolvedValue({
-				name: "Enhancement Config",
-				apiProvider: "anthropic",
-				apiKey: "enhancement-key",
-				apiModelId: "claude-3",
-			}),
+			getProfile: vi.fn().mockResolvedValue(enhancementProfile),
+			activateProfile: vi.fn().mockResolvedValue(enhancementProfile),
 		} as any
 
 		// Mock single completion handler
@@ -88,7 +96,7 @@ describe("MessageEnhancer", () => {
 			})
 
 			expect(result.success).toBe(true)
-			expect(mockProviderSettingsManager.getProfile).toHaveBeenCalledWith({ id: "config2" })
+			expect(mockProviderSettingsManager.activateProfile).toHaveBeenCalledWith({ id: "config2" })
 
 			// Verify the enhancement config was used instead of default
 			const expectedConfig = {
@@ -221,7 +229,7 @@ describe("MessageEnhancer", () => {
 		})
 
 		it("should fall back to default config if enhancement config is invalid", async () => {
-			mockProviderSettingsManager.getProfile = vi.fn().mockResolvedValue({
+			mockProviderSettingsManager.activateProfile = vi.fn().mockResolvedValue({
 				name: "Invalid Config",
 				// Missing apiProvider
 			})

@@ -94,13 +94,24 @@ describe("CloudSettingsService - Response Parsing", () => {
 						},
 					},
 				},
+				// A provider profile as `organizationSettingsSchema` has declared it
+				// since the provider-simplification refactor (#126): the settings
+				// live under a nested `provider`, not flat on the profile. The
+				// payload here was left on the pre-#126 flat shape, so the whole
+				// organization blob failed validation and `getSettings()` returned
+				// undefined — which is exactly what the assertions below caught,
+				// for the wrong reason.
 				providerProfiles: {
 					default: {
 						id: "default",
-						apiProvider: "anthropic",
-						apiModelId: "claude-3-opus-20240229",
-						apiKey: "test-key",
-						modelTemperature: 0.7,
+						provider: {
+							providerId: "anthropic",
+							opaqueLegacyPayload: {
+								apiModelId: "claude-3-opus-20240229",
+								apiKey: "test-key",
+								modelTemperature: 0.7,
+							},
+						},
 					},
 				},
 			},
