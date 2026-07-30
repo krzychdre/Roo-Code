@@ -111,7 +111,6 @@
 					role: "assistant",
 					label: "Assistant",
 					body: userContentHtml(m.text) + images(m),
-					fold: true,
 					activity: "Responding…",
 				}
 
@@ -121,7 +120,6 @@
 					role: "reasoning",
 					label: "Reasoning",
 					body: md(m.text || m.reasoning),
-					fold: true,
 					activity: "Thinking…",
 				}
 
@@ -137,13 +135,12 @@
 					label: "Command",
 					detail: firstLine(m.text, 80),
 					body: codeBlock(m.text || ""),
-					fold: true,
 					activity: "Running command…",
 				}
 
 			case "command_output":
 				if (!m.text) return null
-				return { role: "output", label: "Output", body: codeBlock(m.text), fold: true }
+				return { role: "output", label: "Output", body: codeBlock(m.text) }
 
 			case "error":
 			case "diff_error":
@@ -165,7 +162,7 @@
 			case "mcp_server_request_started":
 			case "mcp_server_response":
 				if (!m.text) return null
-				return { role: "mcp", label: "MCP", body: renderMaybeJson(m.text), fold: true }
+				return { role: "mcp", label: "MCP", body: renderMaybeJson(m.text) }
 
 			case "checkpoint_saved":
 				return {
@@ -231,7 +228,6 @@
 			label: "API",
 			detail: bits.join("  "),
 			body: body,
-			fold: !!body,
 			active: active,
 			activity: "Calling API…",
 		}
@@ -244,7 +240,6 @@
 				role: "tool",
 				label: "Tool",
 				body: md(m.text),
-				fold: true,
 				activity: "Running tool…",
 			}
 		const name = obj.tool || "tool"
@@ -259,7 +254,6 @@
 			label: name,
 			detail: obj.path || "",
 			body: inner,
-			fold: true,
 			activity: "Running tool…",
 		}
 	}
@@ -287,9 +281,44 @@
 		return { role: "assistant", label: "Question", body: body }
 	}
 
-	function rowEl(info, ts, active) {
+	// Which roles start expanded.
+	//
+	// The rule is the reader's job, not the message kind: a first pass through a
+	// conversation follows the narrative — what you asked, what the assistant
+	// answered, what came out, and what broke. Everything else is machinery
+	// (reasoning traces, tool payloads, command output, API envelopes) and is
+	// there to be opened on demand, not to be scrolled past.
+	const OPEN_BY_DEFAULT = {
+		user: true,
+		assistant: true,
+		completion: true,
+		error: true,
+	}
+
+	// Every role classify() can return. Fixed set, so the stylesheet can carry
+	// static per-role visibility rules and the toolbar can label its filters.
+	const ROLE_LABELS = {
+		user: "You",
+		assistant: "Assistant",
+		reasoning: "Reasoning",
+		completion: "Result",
+		command: "Commands",
+		output: "Output",
+		tool: "Tools",
+		mcp: "MCP",
+		api: "API",
+		error: "Errors",
+		system: "System",
+	}
+
+	function rowEl(info, ts, active, openState) {
 		const el = document.createElement("div")
-		el.className = "msg role-" + info.role + (active ? " running" : "") + (info.fold ? " foldable" : "")
+		// EVERY row that has a body folds. This used to be a per-kind flag that
+		// only some branches set, so a user message, a result, an error, a
+		// condensed-context summary or a subtask result could never be collapsed
+		// no matter how long it ran.
+		const foldable = !!info.body
+		el.className = "msg role-" + info.role + (active ? " running" : "") + (foldable ? " foldable" : "")
 		if (ts != null) el.setAttribute("data-ts", String(ts))
 		const spinner = active ? '<span class="spinner" aria-hidden="true"></span>' : ""
 		// Right-aligned meta: absolute time (+ step duration, backfilled later).
@@ -300,22 +329,30 @@
 		// second, which is a verbatim command, path or figure.
 		const detail = info.detail ? '<span class="msg-detail">' + escapeHtml(info.detail) + "</span>" : ""
 		const headInner = '<span class="msg-role">' + escapeHtml(info.label) + "</span>" + detail + spinner + meta
-		if (info.fold && info.body) {
+
+		if (foldable) {
+			const open = openState == null ? !!OPEN_BY_DEFAULT[info.role] : openState
 			// The summary IS the header — one collapsible line that expands in place,
 			// instead of a header row stacked on a redundant "Show…" summary.
 			el.innerHTML =
-				'<details><summary class="msg-head">' +
+				"<details" +
+				(open ? " open" : "") +
+				'><summary class="msg-head">' +
 				headInner +
 				"</summary>" +
 				'<div class="msg-body">' +
 				info.body +
 				"</div></details>"
 		} else {
-			// A true one-liner when there is no body (e.g. an in-flight API request).
-			const bodyHtml = info.body ? '<div class="msg-body">' + info.body + "</div>" : ""
-			el.innerHTML = '<div class="msg-head">' + headInner + "</div>" + bodyHtml
+			// A true one-liner: nothing to reveal (e.g. an in-flight API request).
+			el.innerHTML = '<div class="msg-head">' + headInner + "</div>"
 		}
 		return el
+	}
+
+	function foldStateOf(el) {
+		const d = el && el.querySelector(":scope > details")
+		return d ? d.open : null
 	}
 
 	// Badge an answered ask row so the reader can see the decision after the fact.
@@ -334,10 +371,16 @@
 		const rawByTs = {} // key -> latest raw message, for token/cost metrics
 		const activeByTs = {} // key -> { ts, label }, for the "executing now" indicator
 		const resolvedByTs = {} // key -> "approved"|"denied", survives row replacement
+		const foldByTs = {} // key -> bool: a fold the reader set, kept across upserts
+		const rolesSeen = {} // role -> true, for building the filter chips
 		let activeAsk = null // { ts, onApprove, onDeny, ... } — the pending approval
 		let tail = null // { ts, key, el } — last row in document order, for step duration
 		let count = 0
 		let lastCommandTs = null // owning command for trailing command_output rows
+		// Set by "expand all" / "collapse all". While set it also decides how rows
+		// arriving *afterwards* open, so a live task keeps obeying the choice
+		// instead of reverting to the per-role default on the next message.
+		let foldOverride = null
 
 		// Row-identity key. Normally the message ts, but every `command_output` that
 		// follows one `command` is ONE logical output block: the streaming tool emits
@@ -448,8 +491,18 @@
 				if (active) activeByTs[key] = { ts: ts, label: info.activity || info.label }
 				else delete activeByTs[key]
 			}
-			const fresh = rowEl(info, ts, active)
+			rolesSeen[info.role] = true
 			const existing = key != null ? byTs[key] : null
+			// Fold state belongs to the reader, not to the message. A streaming
+			// message is re-rendered on every partial, so without carrying the
+			// current state across the swap a row the reader opened would slam
+			// shut on the next chunk. Precedence: what this row is showing right
+			// now, then a fold the reader set on it earlier, then any global
+			// expand/collapse, then the per-role default.
+			const carried = existing ? foldStateOf(existing) : null
+			const remembered = key != null && key in foldByTs ? foldByTs[key] : null
+			const openState = carried != null ? carried : remembered != null ? remembered : foldOverride
+			const fresh = rowEl(info, ts, active, openState)
 			if (existing && existing.parentNode) {
 				copyDuration(existing, fresh)
 				existing.parentNode.replaceChild(fresh, existing)
@@ -467,7 +520,31 @@
 				byTs[key] = fresh
 				if (resolvedByTs[key]) applyResolution(fresh, resolvedByTs[key])
 				else if (activeAsk && activeAsk.ts === key) decorateAsk(fresh)
+				// Remember a fold the reader sets, so it survives the next upsert.
+				const details = fresh.querySelector(":scope > details")
+				if (details) {
+					details.addEventListener("toggle", function () {
+						foldByTs[key] = details.open
+					})
+				}
 			}
+		}
+
+		// Open or close every foldable row at once, and make the choice stick for
+		// rows that arrive later (a live task keeps streaming while you read).
+		function setAllFolds(open) {
+			foldOverride = open
+			Object.keys(byTs).forEach(function (key) {
+				const details = byTs[key].querySelector(":scope > details")
+				if (details) {
+					details.open = open
+					foldByTs[key] = open
+				}
+			})
+		}
+
+		function roles() {
+			return Object.keys(rolesSeen)
 		}
 
 		// Show inline Approve/Deny on the ask row. `spec` carries the handlers.
@@ -569,6 +646,8 @@
 			clearActiveAsk: clearActiveAsk,
 			getActivity: getActivity,
 			getMetrics: getMetrics,
+			setAllFolds: setAllFolds,
+			roles: roles,
 			get count() {
 				return count
 			},
@@ -579,10 +658,60 @@
 	window.TumbleConversation = { mount: mountConversation }
 
 	function localizeDates() {
-		document.querySelectorAll(".task-date[data-ts]").forEach(function (el) {
+		document.querySelectorAll(".task-date[data-ts], .cell-date[data-ts]").forEach(function (el) {
 			const d = new Date(el.getAttribute("data-ts"))
 			if (!isNaN(d)) el.textContent = d.toLocaleString()
 		})
+	}
+
+	// Controls above the conversation: expand/collapse everything, and mute a
+	// whole kind of row. Built here rather than in the template because the
+	// filter chips should only offer the kinds this particular task actually
+	// contains — a conversation with no MCP calls should not advertise an MCP
+	// filter. Order follows ROLE_LABELS so the strip reads the same everywhere.
+	function mountToolbar(host, container, convo) {
+		const present = convo.roles()
+		if (!present.length) return
+
+		const bar = document.createElement("div")
+		bar.className = "convo-toolbar"
+
+		const filters = document.createElement("div")
+		filters.className = "convo-filters"
+		Object.keys(ROLE_LABELS).forEach(function (role) {
+			if (present.indexOf(role) === -1) return
+			const chip = document.createElement("button")
+			chip.type = "button"
+			chip.className = "chip role-" + role + " on"
+			chip.textContent = ROLE_LABELS[role]
+			chip.setAttribute("aria-pressed", "true")
+			chip.addEventListener("click", function () {
+				const showing = chip.classList.toggle("on")
+				chip.setAttribute("aria-pressed", String(showing))
+				container.classList.toggle("hide-" + role, !showing)
+			})
+			filters.appendChild(chip)
+		})
+
+		const folds = document.createElement("div")
+		folds.className = "convo-folds"
+		;[
+			["Expand all", true],
+			["Collapse all", false],
+		].forEach(function (spec) {
+			const b = document.createElement("button")
+			b.type = "button"
+			b.className = "btn ghost btn-fold"
+			b.textContent = spec[0]
+			b.addEventListener("click", function () {
+				convo.setAllFolds(spec[1])
+			})
+			folds.appendChild(b)
+		})
+
+		bar.appendChild(filters)
+		bar.appendChild(folds)
+		host.insertBefore(bar, container)
 	}
 
 	function init() {
@@ -602,6 +731,9 @@
 		container.innerHTML = ""
 		const convo = mountConversation(container)
 		convo.renderAll(messages)
+		if (convo.count > 0 && container.parentNode) {
+			mountToolbar(container.parentNode, container, convo)
+		}
 
 		// Hand the live controller (if loaded) the same conversation instance so
 		// relayed events append to the history already on screen.

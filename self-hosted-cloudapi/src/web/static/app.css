@@ -627,6 +627,105 @@ textarea::placeholder {
 	padding: var(--s5) 0;
 }
 
+/* Controls above the conversation. Filters on the left (what to show), fold
+   actions on the right (how much of it). */
+.convo-toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: var(--s2) var(--s4);
+	padding-bottom: var(--s3);
+	margin-bottom: var(--s3);
+	border-bottom: 1px solid var(--line);
+}
+.convo-filters {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--s1);
+}
+.convo-folds {
+	display: flex;
+	gap: var(--s1);
+}
+.btn-fold {
+	font-family: var(--mono);
+	font-size: var(--t-label);
+	text-transform: uppercase;
+	letter-spacing: 0.09em;
+	min-height: 26px;
+}
+
+/* A filter chip. Its dot carries the same hue as that role's tick on the spine,
+   so the strip doubles as the legend for the conversation below it. */
+.chip {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--s1);
+	padding: 2px var(--s2);
+	background: transparent;
+	border: 1px solid var(--line);
+	border-radius: var(--r-pill);
+	color: var(--text-faint);
+	font-family: var(--mono);
+	font-size: var(--t-label);
+	letter-spacing: 0.04em;
+	cursor: pointer;
+	opacity: 0.45;
+	transition:
+		opacity 0.12s,
+		border-color 0.12s;
+}
+.chip.on {
+	opacity: 1;
+	border-color: var(--line-strong);
+	color: var(--text-dim);
+}
+.chip:hover {
+	border-color: var(--signal);
+}
+.chip::before {
+	content: "";
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: currentColor;
+}
+.chip.role-user::before {
+	background: var(--d-you);
+}
+.chip.role-reasoning::before {
+	background: var(--d-out);
+}
+.chip.role-completion::before,
+.chip.role-command::before,
+.chip.role-output::before {
+	background: var(--d-cache);
+}
+.chip.role-error::before {
+	background: var(--d-error);
+}
+.chip.role-tool::before,
+.chip.role-mcp::before {
+	background: var(--d-in);
+}
+
+/* Filtering a role out. One static rule per role: the set classify() can
+   return is closed, so this needs no generated CSS. */
+.conversation.hide-user .msg.role-user,
+.conversation.hide-assistant .msg.role-assistant,
+.conversation.hide-reasoning .msg.role-reasoning,
+.conversation.hide-completion .msg.role-completion,
+.conversation.hide-command .msg.role-command,
+.conversation.hide-output .msg.role-output,
+.conversation.hide-tool .msg.role-tool,
+.conversation.hide-mcp .msg.role-mcp,
+.conversation.hide-api .msg.role-api,
+.conversation.hide-error .msg.role-error,
+.conversation.hide-system .msg.role-system {
+	display: none;
+}
+
 /* The conversation reads as a trace down a single spine: one hairline runs the
    full height, and each row hangs off it. */
 .conversation {
@@ -915,6 +1014,15 @@ pre {
 	overflow-x: auto;
 	font-size: var(--t-micro);
 	line-height: 1.55;
+}
+/* Machine output has no upper bound — a single test run or file dump can be
+   thousands of lines and would bury the rest of the conversation once its row
+   is opened. Cap it and let it scroll in place. Prose is deliberately NOT
+   capped: an assistant answer is meant to be read straight through. */
+.msg-body > pre,
+.msg-body > .path + pre {
+	max-height: 26rem;
+	overflow: auto;
 }
 code {
 	font-family: var(--mono);
