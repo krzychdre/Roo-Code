@@ -203,6 +203,11 @@ function makeProvider(overrides: Record<string, any> = {}) {
 		},
 		clineStack: [],
 		taskEventListeners: new Map(),
+		// The real method rather than a stub. The history items these tests use
+		// carry no `parallelChildIds`, so it returns at its first guard and
+		// touches nothing — while a double that has drifted from the class
+		// still fails here loudly instead of at "is not a function".
+		rehydrateSubagents: (ClineProvider.prototype as any).rehydrateSubagents,
 		postMessageToWebview: vi.fn().mockResolvedValue(undefined),
 		...overrides,
 	} as unknown as ClineProvider
