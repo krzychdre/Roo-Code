@@ -10,8 +10,13 @@
  {"ts":7,"type":"say","say":"condense_context","contextCondense":{"summary":"A long summary","cost":0.002}},
  {"ts":8,"type":"say","say":"subtask_result","text":"Child finished"},
  {"ts":9,"type":"say","say":"user_feedback","text":"No, do it differently"},
- {"ts":10,"type":"say","say":"completion_result","text":"Done"}
+ {"ts":10,"type":"say","say":"completion_result","text":"Done"},
+ {"ts":11,"type":"say","say":"api_req_started","text":"{\"tokensIn\":900,\"tokensOut\":90,\"cost\":0.09}"}
 ]</script>
+<!-- Which model answered each request. Derived server-side and shipped apart
+     from the messages; ts 11 is deliberately absent — an unattributed request
+     shows no badge rather than a guessed one. -->
+<script id="request-models" type="application/json">{"3":{"model":"GLM-5.2","mode":"code"}}</script>
 <script src="../../src/web/static/vendor/marked.min.js"></script>
 <script src="../../src/web/static/vendor/purify.min.js"></script>
 <script src="../../src/web/static/render.js"></script>
@@ -21,7 +26,7 @@ window.addEventListener("load", function () {
   function check(name, cond) { out.push((cond ? "PASS " : "FAIL ") + name); if (!cond) fail++ }
 
   var rows = document.querySelectorAll("#conversation .msg")
-  check("rendered all 10 rows", rows.length === 10)
+  check("rendered all 11 rows", rows.length === 11)
 
   // D3: every row with a body must be collapsible. Before the fix, user
   // feedback, result, error, condensed context and subtask result never were.
@@ -88,6 +93,21 @@ window.addEventListener("load", function () {
   errChip.click()
   check("filter toggles back off",
         !document.getElementById("conversation").classList.contains("hide-error"))
+
+  // Model attribution: the one thing the stored conversation cannot say.
+  var apiRows = document.querySelectorAll("#conversation .msg.role-api")
+  check("both API rows rendered", apiRows.length === 2)
+  var badges = document.querySelectorAll("#conversation .msg-model")
+  check("only the attributed request is badged", badges.length === 1)
+  check("the badge names the model", badges[0] && badges[0].textContent === "GLM-5.2")
+  check("the mode rides in the tooltip",
+        badges[0] && badges[0].getAttribute("title") === "GLM-5.2 · code")
+  check("the unattributed request keeps its figures",
+        apiRows[1] && /900/.test(apiRows[1].querySelector(".msg-detail").textContent))
+  check("the model reads before the figures",
+        apiRows[0] &&
+          apiRows[0].querySelector(".msg-head").innerHTML.indexOf("msg-model") <
+            apiRows[0].querySelector(".msg-head").innerHTML.indexOf("msg-detail"))
 
   var pre = document.createElement("pre")
   pre.id = "results"

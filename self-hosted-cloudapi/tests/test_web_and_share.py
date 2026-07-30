@@ -847,6 +847,9 @@ def _llm_event(
         user_id=user_id,
         organization_id=None,
         event_type="LLM Completion",
+        # Stamped exactly as services/telemetry_service.record_event does: the
+        # column is the indexed join key, the blob stays authoritative.
+        task_id=task_id,
         properties=json.dumps(props),
         created_at=created_at or datetime.now(timezone.utc),
     )

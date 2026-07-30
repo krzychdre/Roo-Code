@@ -31,6 +31,13 @@ from src.models.retention import (
     SUGGESTED_MAX_TASKS,
     SUGGESTED_TELEMETRY_MAX_AGE_DAYS,
 )
+from src.services.model_attribution import (
+    attribute_requests,
+    completions_for_task,
+    models_badge,
+    models_label,
+    models_summary,
+)
 from src.services.retention_service import apply_sweep, get_policy, plan_sweep
 from src.services.share_service import delete_shared_task, delete_tasks
 from src.services.metrics_service import (
@@ -206,6 +213,24 @@ def _parse_messages(rows: list[TaskMessage]) -> list[dict]:
     return parsed
 
 
+async def _model_context(db: AsyncSession, task_id: str, messages: list[dict]) -> dict:
+    """What answered, for one conversation: the rollup and the per-request map.
+
+    Both come from the same indexed read of the task's ``LLM Completion``
+    events, because the stored conversation cannot say it — see
+    services/model_attribution. The map goes to the browser as its own JSON
+    island keyed by message ``ts``: the ``api_req_started`` payload is a
+    verbatim copy of what the client sent, and derived data is not written back
+    into it.
+    """
+    completions = await completions_for_task(db, task_id)
+    return {
+        "models": models_summary(completions),
+        "models_label": models_label(completions),
+        "request_models_json": json.dumps(attribute_requests(messages, completions)),
+    }
+
+
 async def _load_task_messages(db: AsyncSession, task_id: str) -> list[dict]:
     result = await db.execute(
         select(TaskMessage).where(TaskMessage.task_id == task_id)
@@ -279,6 +304,9 @@ async def task_list(
                 "metrics_title": _metrics_tooltip(task) if has_metrics else None,
                 "workspace": task.workspace_path,
                 "workspace_label": _workspace_label(task.workspace_path),
+                # Read straight off the row: the list must never parse an event
+                # payload per task (see services/model_attribution).
+                "models": models_badge(task.models),
                 "child_count": counts.get(task.id, 0),
                 "is_subtask": task.parent_task_id is not None,
                 **_quality_fields(task),
@@ -454,6 +482,7 @@ async def task_detail(
             "workspace": task.workspace_path,
             "workspace_label": _workspace_label(task.workspace_path),
             "messages_json": json.dumps(messages),
+            **await _model_context(db, task_id, messages),
             "share_url": None,
             "live": live,
             "can_delete": True,
@@ -713,6 +742,9 @@ async def shared_task(
             "task": {"id": task_id},
             "title": (task.title if task is not None else None) or derive_title(messages),
             "messages_json": json.dumps(messages),
+            # Provenance travels with the transcript: a reader of a shared run
+            # should be able to see what produced it, not just what it said.
+            **await _model_context(db, task_id, messages),
             "share_url": share.share_url,
             "live": live,
             "can_delete": is_owner,

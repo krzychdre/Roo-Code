@@ -27,6 +27,18 @@
     {% endif %}
   </div>
   {% if workspace %}<div class="detail-workspace" title="{{ workspace }}">📁 {{ workspace }}</div>{% endif %}
+  {% if models %}
+  {# What answered. A run is not necessarily one model, so each is named with
+     the modes it ran in and how many requests it took — the same figures the
+     per-request badges in the conversation add up to. #}
+  <div class="detail-models">
+    {% for m in models %}
+    <span class="badge badge-model" title="{{ m.count }} request{{ '' if m.count == 1 else 's' }}{% if m.modes %} · {{ m.modes | join(', ') }}{% endif %}">
+      {{ m.name }}<span class="badge-count">{{ m.count }}</span>
+    </span>
+    {% endfor %}
+  </div>
+  {% endif %}
   {% if share_url and not live %}<div class="share-note">Shared link · read-only</div>{% endif %}
 </div>
 
@@ -120,6 +132,10 @@
 {% endif %}
 
 <script id="messages-data" type="application/json">{{ messages_json | safe }}</script>
+{# Derived, not stored: message ts -> the model that answered that request.
+   Kept apart from the messages so the stored payload stays a verbatim copy of
+   what the client sent. #}
+<script id="request-models" type="application/json">{{ request_models_json | default('{}') | safe }}</script>
 {% endblock %}
 {% block scripts %}
 <script src="/static/vendor/marked.min.js"></script>

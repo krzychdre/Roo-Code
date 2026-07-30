@@ -59,6 +59,11 @@ class Task(Base, TimestampMixin):
     # span without re-reading the conversation.
     first_ts = Column(BigInteger, nullable=True)
     last_ts = Column(BigInteger, nullable=True)
+    # Distinct model ids this task ran on, most-used first, comma-joined — the
+    # one thing the stored conversation cannot say (`api_req_started` carries no
+    # model). Derived from LLM Completion telemetry; see
+    # services/model_attribution. NULL when no completion event is known.
+    models = Column(String, nullable=True)
 
     # --- session quality ---------------------------------------------------
     # Counts of deterministic markers in the conversation (services/

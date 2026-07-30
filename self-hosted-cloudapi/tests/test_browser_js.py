@@ -31,7 +31,7 @@ _CANDIDATES = ("google-chrome", "chromium", "chromium-browser", "google-chrome-s
 # A harness that silently stopped asserting would otherwise "pass", so each
 # declares the number of checks it is expected to run at minimum.
 _MIN_CHECKS = {
-    "render_checks.html": 20,
+    "render_checks.html": 26,
     "tasklist_checks.html": 18,
 }
 

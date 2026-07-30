@@ -4,6 +4,7 @@ import json
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.event import TelemetryEvent
+from src.services.model_attribution import LLM_COMPLETION_EVENT
 
 
 async def _live_quality_kind(db, task_id: str, message: dict, ts) -> str | None:
@@ -88,10 +89,15 @@ async def record_event(
     properties: dict,
 ) -> None:
     """Record a telemetry event."""
+    task_id = properties.get("taskId") if isinstance(properties, dict) else None
     event = TelemetryEvent(
         user_id=user_id,
         organization_id=org_id,
         event_type=event_type,
+        # Lifted out of the blob at write time: every reader that asks "what
+        # happened in this task" then does an indexed lookup instead of parsing
+        # JSON across the whole event corpus.
+        task_id=task_id if isinstance(task_id, str) and task_id else None,
         properties=json.dumps(properties),
     )
     db.add(event)
@@ -103,6 +109,16 @@ async def record_event(
     from src.services.task_tree import record_relation
 
     await record_relation(db, properties, user_id=user_id)
+
+    # …and the only place that says which model answered: a stored
+    # `api_req_started` carries tokens and cost but no model. See
+    # services/model_attribution.
+    if event_type == LLM_COMPLETION_EVENT and event.task_id:
+        from src.services.model_attribution import note_completion_model
+
+        model = properties.get("modelId")
+        if isinstance(model, str) and model:
+            await note_completion_model(db, event.task_id, model)
 
 
 async def backfill_messages(

@@ -212,6 +212,20 @@
 		return md(text)
 	}
 
+	// message ts -> {model, mode}: which model answered each request. The stored
+	// api_req_started payload carries tokens and cost but no model, so the server
+	// joins it against LLM Completion telemetry and hands the result over
+	// separately (see services/model_attribution). Empty for a live row whose
+	// completion event has not landed yet — a request with no known model shows
+	// no badge rather than a guessed one.
+	let requestModels = {}
+
+	function modelOf(m) {
+		if (m == null || m.ts == null) return null
+		const hit = requestModels[String(m.ts)]
+		return hit && hit.model ? hit : null
+	}
+
 	function apiReq(m) {
 		const obj = tryParse(m.text) || {}
 		const bits = []
@@ -223,9 +237,14 @@
 		// optional folded request prompt. No cost yet → the request is in flight.
 		const body = obj.request ? md(obj.request) : ""
 		const active = obj.cost == null && obj.cancelReason == null && obj.streamingFailedMessage == null
+		const attribution = modelOf(m)
 		return {
 			role: "api",
 			label: "API",
+			// The model reads before the figures: on a run that switched models
+			// mid-task, *what* answered is what the eye is scanning the column for.
+			badge: attribution ? attribution.model : "",
+			badgeTitle: attribution && attribution.mode ? attribution.model + " · " + attribution.mode : "",
 			detail: bits.join("  "),
 			body: body,
 			active: active,
@@ -328,7 +347,17 @@
 		// the first as a panel label (uppercase, tracked) without mangling the
 		// second, which is a verbatim command, path or figure.
 		const detail = info.detail ? '<span class="msg-detail">' + escapeHtml(info.detail) + "</span>" : ""
-		const headInner = '<span class="msg-role">' + escapeHtml(info.label) + "</span>" + detail + spinner + meta
+		// Provenance, not content: styled as a badge so it never reads as part of
+		// the verbatim command/path/figure the detail carries.
+		const badge = info.badge
+			? '<span class="msg-model"' +
+				(info.badgeTitle ? ' title="' + escapeHtml(info.badgeTitle) + '"' : "") +
+				">" +
+				escapeHtml(info.badge) +
+				"</span>"
+			: ""
+		const headInner =
+			'<span class="msg-role">' + escapeHtml(info.label) + "</span>" + badge + detail + spinner + meta
 
 		if (foldable) {
 			const open = openState == null ? !!OPEN_BY_DEFAULT[info.role] : openState
@@ -726,6 +755,18 @@
 		} catch (e) {
 			container.innerHTML = '<div class="empty">Could not load this conversation.</div>'
 			return
+		}
+
+		// Attribution is optional decoration — a conversation still renders in
+		// full without it, so a missing or malformed island is not an error.
+		const modelsEl = document.getElementById("request-models")
+		if (modelsEl) {
+			try {
+				const parsed = JSON.parse(modelsEl.textContent || "{}")
+				if (parsed && typeof parsed === "object") requestModels = parsed
+			} catch (e) {
+				/* leave it empty */
+			}
 		}
 
 		container.innerHTML = ""

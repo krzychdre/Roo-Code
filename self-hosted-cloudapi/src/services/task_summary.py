@@ -44,6 +44,7 @@ from sqlalchemy import case, distinct, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.task import Task, TaskMessage
+from src.services.model_attribution import refresh_task_models
 from src.services.session_quality import (
     KIND_COMPLETION,
     KIND_CONDENSE,
@@ -255,6 +256,12 @@ async def refresh_task_summary(
                 values["title"] = title
 
     await db.execute(update(Task).where(Task.id == task_id).values(**values))
+
+    # Which model answered is the one thing the messages cannot say, so it is
+    # rolled up from the task's completion telemetry instead. Done here as well
+    # as at ingest because the two arrive in either order — a task is often
+    # shared long after the events that describe it landed.
+    await refresh_task_models(db, task_id)
 
 
 def duration_ms(first_ts: Optional[int], last_ts: Optional[int]) -> int:
