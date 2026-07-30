@@ -611,6 +611,13 @@ export class TaskContextManager {
 				cwd: this.access.cwd,
 				rooIgnoreController: this.access.rooIgnoreController,
 				condenseCircuitOpen,
+				// Everything the previous pass cleared, so the need-adaptive selector can
+				// carry those decisions forward unconditionally. A smaller reclaim target
+				// this turn must never RE-inflate a result: that would move the first
+				// differing byte backwards and void the provider's prompt cache. Safe to
+				// pass the live set — manageContext only reads it, and it is rewritten
+				// from the result below.
+				previouslyClearedToolUseIds: this.access.microcompactedToolUseIds,
 			})
 
 			// Update the auto-condense circuit breaker from the condense outcome

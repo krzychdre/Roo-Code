@@ -11,8 +11,11 @@
 import Anthropic from "@anthropic-ai/sdk"
 import { type ClineMessage, type ClineApiReqInfo, type ClineAskResponse, RooCodeEventName } from "@roo-code/types"
 import { findLastIndex } from "../../shared/array"
+import { getLatestTodo } from "../../shared/todo"
 import { formatResponse } from "../prompts/responses"
 import { type ApiMessage } from "../task-persistence"
+import { buildContextLedger } from "../context-management/ledger/buildLedger"
+import { applyExecutionSnapshot, detectStaleFileChanges, type StaleFile } from "../context-management/executionSnapshot"
 import { type TaskHistory } from "./TaskHistory"
 import { type TaskAskSay } from "./TaskAskSay"
 
@@ -24,6 +27,9 @@ export interface TaskResumptionAccess {
 	// Core identifiers
 	taskId: string
 	instanceId: string
+
+	/** Workspace root, used to resolve the ledger's file paths for the staleness check. */
+	cwd: string
 
 	// State flags
 	isInitialized: boolean
@@ -68,6 +74,7 @@ export class TaskResumption {
 	 * - Handling interrupted tool calls
 	 * - Preserving summary messages
 	 * - Building proper user content for resumption
+	 * - Replacing the conversation replay with an execution snapshot when the history is large
 	 */
 	async resumeTaskFromHistory(): Promise<void> {
 		try {
@@ -108,8 +115,14 @@ export class TaskResumption {
 				responseImages,
 			)
 
-			// Step 7: Save and resume
-			await this.access.history.overwriteApiConversationHistory(modifiedApiConversationHistory)
+			// Step 7: Replace the replay with an execution snapshot when it is worth it
+			const resumeHistory = await this.applyExecutionSnapshot(
+				modifiedApiConversationHistory,
+				lastClineMessage?.ts,
+			)
+
+			// Step 8: Save and resume
+			await this.access.history.overwriteApiConversationHistory(resumeHistory)
 
 			await this.access.initiateTaskLoop(newUserContent)
 		} catch (error) {
@@ -261,6 +274,57 @@ export class TaskResumption {
 		}
 
 		return { modifiedApiConversationHistory, newUserContent }
+	}
+
+	/**
+	 * Starts the resumed task from a semantic execution snapshot instead of a full replay of the
+	 * conversation.
+	 *
+	 * The snapshot is derived from the typed ledger, so building it costs no model call and cannot
+	 * invent a fact. Older messages are hidden with the same `condenseParent` tagging condense
+	 * uses — they stay on disk, so rewind and the UI transcript are untouched.
+	 *
+	 * Anything unexpected here returns the history unchanged, which is exactly today's behaviour:
+	 * a resume must never fail because an optimisation did.
+	 */
+	private async applyExecutionSnapshot(history: ApiMessage[], lastActivityTs?: number): Promise<ApiMessage[]> {
+		try {
+			// The todo list must come from the UI messages, not from `Task.todoList`: nothing
+			// rehydrates that field on resume (only `UpdateTodoListTool` and `initialTodos` ever
+			// write it), so the reminder section is empty until the tool runs again. Without this
+			// the plan would survive a resume only via the replayed `update_todo_list` calls —
+			// which are exactly what the snapshot hides.
+			const todos = getLatestTodo(this.access.clineMessages)
+			const ledger = buildContextLedger(history, { todos })
+
+			// Files the ledger says we changed may have been edited by hand during the pause. That
+			// is the one thing a recomputed snapshot cannot know from the conversation alone, so it
+			// is measured against the disk and rendered as an explicit warning.
+			let stale: StaleFile[] = []
+			try {
+				stale = await detectStaleFileChanges(ledger, this.access.cwd, lastActivityTs ?? Date.now())
+			} catch (error) {
+				// A snapshot without the warning is still better than a full replay; only the
+				// staleness annotation is lost.
+				console.warn(`[TaskResumption#${this.access.taskId}] staleness check failed:`, error)
+			}
+
+			const result = applyExecutionSnapshot({ messages: history, ledger, stale })
+
+			if (result.applied) {
+				console.log(
+					`[TaskResumption#${this.access.taskId}] execution snapshot applied: ` +
+						`${result.hiddenMessages} messages hidden, ${result.tailMessages} kept, ` +
+						`${result.charsBefore} -> ${result.charsAfter} chars` +
+						(stale.length > 0 ? `, ${stale.length} file(s) changed while paused` : ""),
+				)
+			}
+
+			return result.messages
+		} catch (error) {
+			console.warn(`[TaskResumption#${this.access.taskId}] execution snapshot skipped:`, error)
+			return history
+		}
 	}
 
 	/**

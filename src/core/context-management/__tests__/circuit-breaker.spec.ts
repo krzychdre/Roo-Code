@@ -7,6 +7,7 @@ import { BaseProvider } from "../../../api/providers/base-provider"
 import { ApiMessage } from "../../task-persistence/apiMessages"
 
 import { manageContext } from "../index"
+import { MICROCOMPACT_MIN_KEEP } from "../microcompact"
 
 let counter = 0
 
@@ -142,8 +143,9 @@ describe("manageContext auto-condense circuit breaker", () => {
 	})
 
 	it("when OPEN, microcompaction still runs (condense skipped, truncation handles the rest)", async () => {
-		// 10 large read results: microcompaction clears the oldest 5; still over the
-		// hard limit (totalTokens 29000), so truncation runs. Condense never attempted.
+		// 10 large read results: microcompaction clears every eligible one (all but the
+		// newest MICROCOMPACT_MIN_KEEP); still over the hard limit (totalTokens 29000),
+		// so truncation runs. Condense never attempted.
 		const big: ApiMessage[] = [{ role: "user", content: "Initial task", ts: 0 }]
 		for (let i = 0; i < 10; i++) {
 			big.push(...toolPair("read_file", "x".repeat(6000), `big-${i}`))
@@ -158,7 +160,7 @@ describe("manageContext auto-condense circuit breaker", () => {
 		})
 
 		expect(result.microcompacted).toBe(true)
-		expect(result.microcompactClearedCount).toBe(5)
+		expect(result.microcompactClearedCount).toBe(10 - MICROCOMPACT_MIN_KEEP)
 		expect(createSpy).not.toHaveBeenCalled()
 		expect(result.summary).toBe("")
 		expect(result.truncationId).toBeDefined()
