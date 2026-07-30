@@ -1,32 +1,115 @@
 {% extends "base.html" %}
 {% block title %}Your tasks · Tumble Code{% endblock %}
 {% block content %}
-<h1 class="page-title">Your tasks</h1>
-{% if tasks %}
-<ul class="task-list">
-  {% for t in tasks %}
-  <li class="task-item">
-    <a class="task-link" href="/app/tasks/{{ t.id }}">
-      <span class="task-title">{{ t.title }}</span>
-      <span class="task-meta">
-        {% if t.workspace_label %}<span class="badge badge-workspace" title="{{ t.workspace }}">{{ t.workspace_label }}</span>{% endif %}
-        <span class="badge">{{ t.message_count }} message{{ '' if t.message_count == 1 else 's' }}</span>
-        {% if t.tokens %}<span class="badge badge-muted" title="{{ t.metrics_title }}">{{ t.tokens }} tokens</span>{% endif %}
-        {% if t.cost %}<span class="badge badge-muted" title="{{ t.metrics_title }}">{{ t.cost }}</span>{% endif %}
-        {% if t.updated_at %}<span class="task-date" data-ts="{{ t.updated_at.isoformat() }}">{{ t.updated_at.strftime('%Y-%m-%d %H:%M') }}</span>{% endif %}
-      </span>
-    </a>
-    <form class="task-delete" method="post" action="/app/tasks/{{ t.id }}/delete"
-          onsubmit="return confirm('Delete “{{ t.title }}” and its conversation permanently? This cannot be undone.');">
-      <button class="btn-delete" type="submit" title="Delete task" aria-label="Delete task">Delete</button>
+<div class="list-head">
+  <h1 class="page-title">Your tasks{% if total %} <span class="count-pill">{{ total }}</span>{% endif %}</h1>
+  <div class="list-tools">
+    {# Subtasks are reached by opening the run that spawned them, so they are
+       hidden by default; the flat list is one click away. #}
+    <nav class="scope-control" aria-label="Which tasks to list">
+      <a class="scope-opt{{ ' active' if scope == 'roots' else '' }}"
+         href="/app?scope=roots{% if query %}&q={{ query }}{% endif %}">Runs</a>
+      <a class="scope-opt{{ ' active' if scope == 'all' else '' }}"
+         href="/app?scope=all{% if query %}&q={{ query }}{% endif %}">All {{ all_total }}</a>
+    </nav>
+    <form class="search" method="get" action="/app" role="search">
+      <input type="hidden" name="scope" value="{{ scope }}">
+      <input type="search" name="q" value="{{ query }}" placeholder="Search title or project…" aria-label="Search tasks">
+      {% if query %}<a class="search-clear" href="/app?scope={{ scope }}" title="Clear search">✕</a>{% endif %}
     </form>
-  </li>
-  {% endfor %}
-</ul>
+  </div>
+</div>
+
+{% if tasks %}
+{# One form wraps the whole list, so the checkboxes, the per-row delete and the
+   bulk action are all the same submission and nothing has to be mirrored into
+   hidden fields by script. The per-row button uses formaction to post to its
+   own endpoint. #}
+<form id="bulk-form" method="post" action="/app/tasks/bulk-delete">
+  <input type="hidden" name="scope" value="{{ scope }}">
+  <input type="hidden" name="q" value="{{ query }}">
+
+  <div class="select-head">
+    <label class="select-all">
+      <input type="checkbox" id="select-all" aria-label="Select every task on this page">
+      <span>Select page</span>
+    </label>
+  </div>
+
+  <ul class="task-list">
+    {% for t in tasks %}
+    <li class="task-item{{ ' is-subtask' if t.is_subtask else '' }}">
+      <label class="task-check">
+        <input type="checkbox" name="task_ids" value="{{ t.id }}"
+               data-child-count="{{ t.child_count }}"
+               aria-label="Select “{{ t.title }}”">
+      </label>
+      {#
+        Fixed grid, not a flex row: every cell is emitted even when empty, so the
+        numbers line up into scannable columns down the whole page. A row that
+        simply omits an absent value would shift every figure after it.
+      #}
+      <a class="task-link" href="/app/tasks/{{ t.id }}" title="{{ t.metrics_title }}">
+        <span class="cell-title">{% if t.is_subtask %}<span class="subtask-mark" title="Subtask of another run">↳</span>{% endif %}{{ t.title }}{% if t.child_count %}<span class="child-count" title="{{ t.child_count }} subtask{{ '' if t.child_count == 1 else 's' }}">{{ t.child_count }}</span>{% endif %}</span>
+        <span class="cell-workspace">{% if t.workspace_label %}<span class="badge badge-workspace" title="{{ t.workspace }}">{{ t.workspace_label }}</span>{% endif %}</span>
+        <span class="cell-model">{% if t.models %}<span class="badge badge-model" title="{{ t.models.title }}"><span class="badge-name">{{ t.models.name }}</span>{% if t.models.more %}<span class="badge-more">{{ t.models.more }}</span>{% endif %}</span>{% endif %}</span>
+        <span class="cell-num">{{ t.message_count }}<span class="unit">msg</span></span>
+        <span class="cell-num">{{ t.duration or '' }}</span>
+        <span class="cell-num">{{ t.tokens or '' }}{% if t.tokens %}<span class="unit">tok</span>{% endif %}</span>
+        <span class="cell-num cell-cost">{{ t.cost or '' }}</span>
+        <span class="cell-grade"><span class="grade grade-{{ t.grade }}" title="{{ t.grade_title }}">{{ t.grade_label }}</span></span>
+        <span class="cell-date"{% if t.updated_at %} data-ts="{{ t.updated_at.isoformat() }}"{% endif %}>{{ t.updated_at.strftime('%Y-%m-%d %H:%M') if t.updated_at else '' }}</span>
+      </a>
+      <div class="task-delete">
+        <button class="btn-delete" type="submit" formaction="/app/tasks/{{ t.id }}/delete"
+                title="Delete task" aria-label="Delete “{{ t.title }}”"
+                data-confirm="Delete “{{ t.title }}” and its conversation permanently? This cannot be undone.">Delete</button>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+
+  {# Appears only once something is selected, and states exactly what will go. #}
+  <div id="bulk-bar" class="bulk-bar" hidden>
+    <span class="bulk-count"><b id="bulk-n">0</b> selected</span>
+    <label class="bulk-subtasks" id="bulk-subtasks-wrap" hidden>
+      <input type="checkbox" name="include_subtasks" value="1" id="include-subtasks">
+      <span>Include their subtasks (<b id="bulk-children">0</b>)</span>
+    </label>
+    <span class="spacer"></span>
+    <button type="button" class="btn ghost" id="bulk-clear">Clear</button>
+    <button type="submit" class="btn btn-danger" id="bulk-delete">Delete selected</button>
+  </div>
+</form>
+
+{% if page_count > 1 %}
+<nav class="pager" aria-label="Pagination">
+  {% if has_prev %}
+  <a class="pager-btn" href="/app?scope={{ scope }}&page={{ page - 1 }}{% if query %}&q={{ query }}{% endif %}">← Newer</a>
+  {% else %}
+  <span class="pager-btn disabled">← Newer</span>
+  {% endif %}
+  <span class="pager-status">Page {{ page }} of {{ page_count }}</span>
+  {% if has_next %}
+  <a class="pager-btn" href="/app?scope={{ scope }}&page={{ page + 1 }}{% if query %}&q={{ query }}{% endif %}">Older →</a>
+  {% else %}
+  <span class="pager-btn disabled">Older →</span>
+  {% endif %}
+</nav>
+{% endif %}
+
+{% elif query %}
+<div class="empty">
+  <p>Nothing matches “{{ query }}”.</p>
+  <p class="empty-hint"><a href="/app?scope={{ scope }}">Clear the search</a> to see all tasks.</p>
+</div>
 {% else %}
 <div class="empty">
   <p>No shared tasks yet.</p>
   <p class="empty-hint">In VS Code, open a task and click <strong>Share</strong> to make it appear here.</p>
 </div>
 {% endif %}
+{% endblock %}
+{% block scripts %}
+<script src="/static/tasklist.js?v={{ asset_v }}"></script>
 {% endblock %}

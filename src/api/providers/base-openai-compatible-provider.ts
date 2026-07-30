@@ -8,10 +8,11 @@ import { TagMatcher } from "../../utils/tag-matcher"
 import { ApiStream, ApiStreamUsageChunk } from "../transform/stream"
 import { convertToOpenAiMessages } from "../transform/openai-format"
 
-import type { SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import type { CompletionResult, SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
 import { DEFAULT_HEADERS } from "./constants"
 import { BaseProvider } from "./base-provider"
 import { handleOpenAIError } from "./utils/openai-error-handler"
+import { openAiCompletionUsage } from "./utils/completion-usage"
 import { calculateApiCostOpenAI } from "../../shared/cost"
 import { extractReasoningFromDelta } from "./utils/extract-reasoning"
 import { emitToolCallChunks, emitFinishReasonChunk } from "./utils/openai-stream-chunks"
@@ -233,6 +234,10 @@ export abstract class BaseOpenAiCompatibleProvider<ModelName extends string>
 	}
 
 	async completePrompt(prompt: string): Promise<string> {
+		return (await this.completePromptWithUsage(prompt)).text
+	}
+
+	async completePromptWithUsage(prompt: string): Promise<CompletionResult> {
 		const { id: modelId, info: modelInfo } = this.getModel()
 
 		const params: OpenAI.Chat.Completions.ChatCompletionCreateParams = {
@@ -259,7 +264,10 @@ export abstract class BaseOpenAiCompatibleProvider<ModelName extends string>
 				)
 			}
 
-			return response.choices?.[0]?.message.content || ""
+			return {
+				text: response.choices?.[0]?.message.content || "",
+				usage: openAiCompletionUsage(response.usage),
+			}
 		} catch (error) {
 			throw handleOpenAIError(error, this.providerName)
 		} finally {

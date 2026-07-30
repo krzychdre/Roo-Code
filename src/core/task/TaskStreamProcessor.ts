@@ -940,6 +940,12 @@ export class TaskStreamProcessor {
 						ttftMs,
 						reasoningChars,
 						toolCount,
+						// Stated rather than left to default, so a reader never has
+						// to tell "a turn of the conversation" from "written before
+						// the kind existed" — both are task turns, but only this one
+						// is a claim.
+						completionKind: "task",
+						usageReported: true,
 					})
 				}
 			}

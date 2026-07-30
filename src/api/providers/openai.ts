@@ -21,8 +21,9 @@ import { getModelParams } from "../transform/model-params"
 
 import { DEFAULT_HEADERS } from "./constants"
 import { BaseProvider } from "./base-provider"
-import type { SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import type { CompletionResult, SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
 import { handleOpenAIError } from "./utils/openai-error-handler"
+import { openAiCompletionUsage } from "./utils/completion-usage"
 import { extractReasoningFromDelta } from "./utils/extract-reasoning"
 
 /**
@@ -402,6 +403,10 @@ export class OpenAiHandler extends BaseProvider implements SingleCompletionHandl
 	}
 
 	async completePrompt(prompt: string): Promise<string> {
+		return (await this.completePromptWithUsage(prompt)).text
+	}
+
+	async completePromptWithUsage(prompt: string): Promise<CompletionResult> {
 		try {
 			const isAzureAiInference = this._isAzureAiInference(this.options.openAiBaseUrl)
 			const model = this.getModel()
@@ -428,7 +433,10 @@ export class OpenAiHandler extends BaseProvider implements SingleCompletionHandl
 				this.abortController = undefined
 			}
 
-			return response.choices?.[0]?.message.content || ""
+			return {
+				text: response.choices?.[0]?.message.content || "",
+				usage: openAiCompletionUsage(response.usage),
+			}
 		} catch (error) {
 			if (error instanceof Error) {
 				throw new Error(`${this.providerName} completion error: ${error.message}`)

@@ -14,7 +14,8 @@ import { ApiStream } from "../transform/stream"
 import { convertToOpenAiMessages } from "../transform/openai-format"
 import { addCacheBreakpoints } from "../transform/caching/vercel-ai-gateway"
 
-import type { SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import type { CompletionResult, SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import { openAiCompletionUsage } from "./utils/completion-usage"
 import { RouterProvider } from "./router-provider"
 
 // Extend OpenAI's CompletionUsage to include Vercel AI Gateway specific fields
@@ -107,6 +108,10 @@ export class VercelAiGatewayHandler extends RouterProvider implements SingleComp
 	}
 
 	async completePrompt(prompt: string): Promise<string> {
+		return (await this.completePromptWithUsage(prompt)).text
+	}
+
+	async completePromptWithUsage(prompt: string): Promise<CompletionResult> {
 		const { id: modelId, info } = await this.fetchModel()
 
 		try {
@@ -123,7 +128,10 @@ export class VercelAiGatewayHandler extends RouterProvider implements SingleComp
 			requestOptions.max_completion_tokens = info.maxTokens
 
 			const response = await this.client.chat.completions.create(requestOptions)
-			return response.choices[0]?.message.content || ""
+			return {
+				text: response.choices[0]?.message.content || "",
+				usage: openAiCompletionUsage(response.usage),
+			}
 		} catch (error) {
 			if (error instanceof Error) {
 				throw new Error(`Vercel AI Gateway completion error: ${error.message}`)

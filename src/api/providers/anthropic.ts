@@ -22,7 +22,8 @@ import { getAnthropicProviderReasoning } from "../transform/reasoning"
 import { handleProviderError } from "./utils/error-handler"
 
 import { BaseProvider } from "./base-provider"
-import type { SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import type { CompletionResult, SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import { anthropicCompletionUsage } from "./utils/completion-usage"
 import { calculateApiCostAnthropic } from "../../shared/cost"
 import {
 	convertOpenAIToolsToAnthropic,
@@ -399,7 +400,11 @@ export class AnthropicHandler extends BaseProvider implements SingleCompletionHa
 		}
 	}
 
-	async completePrompt(prompt: string) {
+	async completePrompt(prompt: string): Promise<string> {
+		return (await this.completePromptWithUsage(prompt)).text
+	}
+
+	async completePromptWithUsage(prompt: string): Promise<CompletionResult> {
 		let { id: model, temperature } = this.getModel()
 
 		let message
@@ -425,6 +430,9 @@ export class AnthropicHandler extends BaseProvider implements SingleCompletionHa
 		}
 
 		const content = message.content.find(({ type }) => type === "text")
-		return content?.type === "text" ? content.text : ""
+		return {
+			text: content?.type === "text" ? content.text : "",
+			usage: anthropicCompletionUsage(message.usage),
+		}
 	}
 }

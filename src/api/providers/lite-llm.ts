@@ -11,7 +11,8 @@ import { ApiStream, ApiStreamUsageChunk } from "../transform/stream"
 import { convertToOpenAiMessages } from "../transform/openai-format"
 import { sanitizeOpenAiCallId } from "../../utils/tool-id"
 
-import type { SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import type { CompletionResult, SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import { openAiCompletionUsage } from "./utils/completion-usage"
 import { RouterProvider } from "./router-provider"
 import { extractReasoningFromDelta } from "./utils/extract-reasoning"
 
@@ -298,6 +299,10 @@ export class LiteLLMHandler extends RouterProvider implements SingleCompletionHa
 	}
 
 	async completePrompt(prompt: string): Promise<string> {
+		return (await this.completePromptWithUsage(prompt)).text
+	}
+
+	async completePromptWithUsage(prompt: string): Promise<CompletionResult> {
 		const { id: modelId, info } = await this.fetchModel()
 
 		// Check if this is a GPT-5 model that requires max_completion_tokens instead of max_tokens
@@ -321,7 +326,10 @@ export class LiteLLMHandler extends RouterProvider implements SingleCompletionHa
 			}
 
 			const response = await this.client.chat.completions.create(requestOptions)
-			return response.choices[0]?.message.content || ""
+			return {
+				text: response.choices[0]?.message.content || "",
+				usage: openAiCompletionUsage(response.usage),
+			}
 		} catch (error) {
 			if (error instanceof Error) {
 				throw new Error(`LiteLLM completion error: ${error.message}`)

@@ -23,7 +23,8 @@ import { t } from "i18next"
 import type { ApiStream, GroundingSource } from "../transform/stream"
 import { getModelParams } from "../transform/model-params"
 
-import type { SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import type { CompletionResult, SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import { geminiCompletionUsage } from "./utils/completion-usage"
 import { BaseProvider } from "./base-provider"
 import { parseVertexJsonCredentials } from "./utils/vertex-credentials"
 
@@ -577,6 +578,10 @@ export class GeminiHandler extends BaseProvider implements SingleCompletionHandl
 	}
 
 	async completePrompt(prompt: string): Promise<string> {
+		return (await this.completePromptWithUsage(prompt)).text
+	}
+
+	async completePromptWithUsage(prompt: string): Promise<CompletionResult> {
 		const { id: model, info } = this.getModel()
 
 		try {
@@ -610,7 +615,7 @@ export class GeminiHandler extends BaseProvider implements SingleCompletionHandl
 				}
 			}
 
-			return text
+			return { text, usage: geminiCompletionUsage(result.usageMetadata) }
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : String(error)
 			const apiError = new ApiProviderError(errorMessage, this.providerName, model, "completePrompt")

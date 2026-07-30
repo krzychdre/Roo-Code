@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Settings · Tumble Code{% endblock %}
+{% block content %}
+<h1 class="page-title">Settings</h1>
+
+{% if ran %}
+<div class="notice">Retention ran. {{ ran }} task{{ '' if ran == '1' else 's' }} removed.</div>
+{% endif %}
+
+<section class="panel settings-panel">
+  <h2 class="chart-title">Data retention</h2>
+  <p class="settings-lead">
+    Tasks are kept forever unless you say otherwise. Retention deletes whole
+    tasks — the conversation goes with them, permanently.
+  </p>
+
+  <form method="post" action="/app/settings" class="settings-form">
+    <label class="switch-row">
+      <input type="checkbox" name="enabled" value="1" {{ 'checked' if policy.enabled }}>
+      <span><b>Run automatically</b> — apply the rules below on a schedule.</span>
+    </label>
+
+    <div class="field-grid">
+      <label class="field">
+        <span class="field-label">Delete tasks older than</span>
+        <span class="field-input">
+          <input type="number" name="max_age_days" min="1" max="3650"
+                 value="{{ policy.max_age_days or '' }}" placeholder="{{ suggest.age }}">
+          <span class="field-unit">days</span>
+        </span>
+      </label>
+      <label class="field">
+        <span class="field-label">Keep at most</span>
+        <span class="field-input">
+          <input type="number" name="max_tasks" min="1" max="100000"
+                 value="{{ policy.max_tasks or '' }}" placeholder="{{ suggest.tasks }}">
+          <span class="field-unit">tasks</span>
+        </span>
+      </label>
+    </div>
+    <p class="field-hint">Empty means the rule is off — that is how a new policy starts, so nothing is ever selected until you fill something in. The greyed-out numbers are suggestions. A task goes if either rule matches.</p>
+
+    <label class="switch-row">
+      <input type="checkbox" name="keep_shared" value="1" {{ 'checked' if policy.keep_shared }}>
+      <span><b>Never delete shared tasks</b> — a share link you handed out keeps working.</span>
+    </label>
+
+    <hr class="settings-rule">
+
+    <label class="switch-row">
+      <input type="checkbox" name="purge_telemetry" value="1" {{ 'checked' if policy.purge_telemetry }}>
+      <span><b>Also purge raw telemetry</b> — the per-message events that duplicate stored conversations.</span>
+    </label>
+    <label class="field field-inline">
+      <span class="field-label">Telemetry older than</span>
+      <span class="field-input">
+        <input type="number" name="telemetry_max_age_days" min="1" max="3650"
+               value="{{ policy.telemetry_max_age_days or '' }}" placeholder="{{ suggest.telemetry }}">
+        <span class="field-unit">days</span>
+      </span>
+    </label>
+    <p class="field-hint">
+      Usage data is never purged: the metrics page is built entirely from it, and
+      nothing else can reconstruct your cost history.
+    </p>
+
+    <div class="settings-actions">
+      <button class="btn" type="submit">Save</button>
+      {% if policy.last_run_at %}
+      <span class="settings-meta">
+        Last run <span class="task-date" data-ts="{{ policy.last_run_at.isoformat() }}">{{ policy.last_run_at.strftime('%Y-%m-%d %H:%M') }}</span>
+        · {{ policy.last_deleted_tasks }} task{{ '' if policy.last_deleted_tasks == 1 else 's' }},
+        {{ policy.last_deleted_events }} event{{ '' if policy.last_deleted_events == 1 else 's' }}
+      </span>
+      {% else %}
+      <span class="settings-meta">Never run.</span>
+      {% endif %}
+    </div>
+  </form>
+</section>
+
+{# The preview is produced by the same function the sweep acts on, so what is
+   listed here and what would actually go cannot drift apart. #}
+<section class="panel settings-panel">
+  <h2 class="chart-title">What would be deleted right now</h2>
+  {% if plan.is_empty %}
+  <p class="settings-lead">Nothing. No task or event matches the rules above.</p>
+  {% else %}
+  <div class="quality-signals preview-signals">
+    <div class="signal{{ ' tone-bad' if plan.task_count else ' is-zero' }}">
+      <span class="signal-value">{{ plan.task_count }}</span><span class="signal-label">Tasks</span>
+    </div>
+    <div class="signal{{ ' tone-bad' if plan.message_count else ' is-zero' }}">
+      <span class="signal-value">{{ plan.message_count }}</span><span class="signal-label">Messages</span>
+    </div>
+    <div class="signal{{ ' tone-warn' if plan.event_count else ' is-zero' }}">
+      <span class="signal-value">{{ plan.event_count }}</span><span class="signal-label">Telemetry events</span>
+    </div>
+    <div class="signal">
+      <span class="signal-value">{{ plan.size }}</span><span class="signal-label">Freed (approx.)</span>
+    </div>
+  </div>
+  <p class="field-hint">
+    {% if plan.reasons %}Selected because: {{ plan.reasons | join('; ') }}.{% endif %}
+    {% if plan.exempt_shared %}{{ plan.exempt_shared }} matching task{{ '' if plan.exempt_shared == 1 else 's' }} kept because {{ 'it is' if plan.exempt_shared == 1 else 'they are' }} shared.{% endif %}
+  </p>
+  {% endif %}
+
+  <form method="post" action="/app/settings/run" class="settings-actions"
+        onsubmit="return confirm('Delete {{ plan.task_count }} task(s) and {{ plan.event_count }} telemetry event(s) permanently? This cannot be undone.');">
+    <button class="btn btn-danger" type="submit" {{ 'disabled' if plan.is_empty }}>Run now</button>
+    <span class="settings-meta">Runs the saved rules immediately, whether or not the schedule is on.</span>
+  </form>
+</section>
+{% endblock %}

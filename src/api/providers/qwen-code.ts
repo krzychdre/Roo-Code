@@ -14,7 +14,8 @@ import { ApiStream } from "../transform/stream"
 import { BaseProvider } from "./base-provider"
 import { extractReasoningFromDelta } from "./utils/extract-reasoning"
 import { emitToolCallChunks, emitFinishReasonChunk } from "./utils/openai-stream-chunks"
-import type { SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import type { CompletionResult, SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import { openAiCompletionUsage } from "./utils/completion-usage"
 
 const QWEN_OAUTH_BASE_URL = "https://chat.qwen.ai"
 const QWEN_OAUTH_TOKEN_ENDPOINT = `${QWEN_OAUTH_BASE_URL}/api/v1/oauth2/token`
@@ -312,6 +313,10 @@ export class QwenCodeHandler extends BaseProvider implements SingleCompletionHan
 	}
 
 	async completePrompt(prompt: string): Promise<string> {
+		return (await this.completePromptWithUsage(prompt)).text
+	}
+
+	async completePromptWithUsage(prompt: string): Promise<CompletionResult> {
 		await this.ensureAuthenticated()
 		const client = this.ensureClient()
 		const model = this.getModel()
@@ -324,6 +329,9 @@ export class QwenCodeHandler extends BaseProvider implements SingleCompletionHan
 
 		const response = await this.callApiWithRetry(() => client.chat.completions.create(requestOptions))
 
-		return response.choices[0]?.message.content || ""
+		return {
+			text: response.choices[0]?.message.content || "",
+			usage: openAiCompletionUsage(response.usage),
+		}
 	}
 }

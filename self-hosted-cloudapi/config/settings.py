@@ -95,5 +95,12 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_requests_per_minute: int = 60
 
+    # Data retention. The background sweep only ever acts on policies a user has
+    # explicitly switched on in the web settings, so leaving this enabled costs
+    # nothing on a deployment where nobody has configured retention. Set to
+    # false to guarantee no automatic deletion at all, whatever is saved.
+    retention_sweep_enabled: bool = True
+    retention_sweep_hours: int = 6
+
 
 settings = Settings()

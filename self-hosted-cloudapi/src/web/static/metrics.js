@@ -21,27 +21,33 @@
 		return
 	}
 
-	// VS Code dark palette (mirrors app.css custom properties).
-	var ACCENT = "#4ec9b0"
-	var BLUE = "#0078d4"
+	// Mirrors the data hues in app.css. Tokens are "in" (cold cyan) and cost is
+	// the signal amber, so the daily chart uses the same encoding as the stat
+	// cards above it — a reader learns the colour once.
+	var TOKENS = "#6cc4f5"
+	var COST = "#e9a33a"
 	var GRID = "rgba(255,255,255,0.06)"
-	var TEXT = "#9a9a9a"
-	// Distinct hues for categorical doughnuts (model / mode share).
+	var TEXT = "#6b7885"
+	var PANEL = "#141a22"
+	// Categorical hues for the model/mode doughnuts. Ordered so adjacent
+	// segments never sit on neighbouring hues, which keeps small slices legible.
 	var PALETTE = [
-		"#4ec9b0",
-		"#0078d4",
-		"#c586c0",
-		"#dcdcaa",
-		"#ce9178",
-		"#569cd6",
-		"#d16969",
-		"#b5cea8",
-		"#9cdcfe",
-		"#d7ba7d",
+		"#6cc4f5",
+		"#a78bfa",
+		"#4ec9a0",
+		"#e9a33a",
+		"#f2777a",
+		"#6a9bf4",
+		"#d6b4fc",
+		"#8fd6bd",
+		"#f5b855",
+		"#93b7f7",
 	]
 
 	Chart.defaults.color = TEXT
-	Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+	Chart.defaults.font.family =
+		'ui-monospace, "JetBrains Mono", "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace'
+	Chart.defaults.font.size = 11
 
 	function fmtTokens(n) {
 		var num = Number(n) || 0
@@ -73,7 +79,7 @@
 						type: "bar",
 						label: "Tokens",
 						data: data.day_tokens,
-						backgroundColor: ACCENT,
+						backgroundColor: TOKENS,
 						borderRadius: 3,
 						yAxisID: "y",
 						order: 2,
@@ -82,8 +88,8 @@
 						type: "line",
 						label: "Cost ($)",
 						data: data.day_cost,
-						borderColor: BLUE,
-						backgroundColor: BLUE,
+						borderColor: COST,
+						backgroundColor: COST,
 						tension: 0.3,
 						pointRadius: 3,
 						yAxisID: "yCost",
@@ -142,7 +148,7 @@
 						backgroundColor: labels.map(function (_, i) {
 							return PALETTE[i % PALETTE.length]
 						}),
-						borderColor: "#252526",
+						borderColor: PANEL,
 						borderWidth: 2,
 					},
 				],

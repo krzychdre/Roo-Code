@@ -2,7 +2,21 @@
 {% block title %}{{ title }} · Tumble Code{% endblock %}
 {% block content %}
 <div class="detail-header">
+  {% if ancestors %}
+  {# The run this task belongs to. Reads root → … → here, so the chain of
+     delegation is visible and every step is one click away. #}
+  <nav class="trail" aria-label="Parent tasks">
+    <a href="/app">All tasks</a>
+    {% for a in ancestors %}
+    <span class="trail-sep">/</span>
+    <a href="/app/tasks/{{ a.id }}" title="{{ a.title }}">{{ a.title }}</a>
+    {% endfor %}
+    <span class="trail-sep">/</span>
+    <span class="trail-here">this subtask</span>
+  </nav>
+  {% else %}
   <a class="back" href="/app">← All tasks</a>
+  {% endif %}
   <div class="detail-title-row">
     <h1 class="page-title">{{ title }}</h1>
     {% if can_delete %}
@@ -13,6 +27,29 @@
     {% endif %}
   </div>
   {% if workspace %}<div class="detail-workspace" title="{{ workspace }}">📁 {{ workspace }}</div>{% endif %}
+  {% if models %}
+  {# What answered. A run is not necessarily one model, so each is named with
+     the modes it ran in and how many requests it took — the same figures the
+     per-request badges in the conversation add up to. #}
+  <div class="detail-models">
+    {% for m in models %}
+    <span class="badge badge-model" title="{{ m.count }} request{{ '' if m.count == 1 else 's' }}{% if m.modes %} · {{ m.modes | join(', ') }}{% endif %}">
+      {{ m.name }}<span class="badge-count">{{ m.count }}</span>
+    </span>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if side_calls %}
+  {# Not turns of the conversation, so not in the model list above and never on
+     a request row: this is what the machinery around the run cost. #}
+  <div class="detail-side-calls">
+    {% for c in side_calls %}
+    <span class="side-call" title="{{ c.models | join(', ') }}">
+      {{ c.label }} <b>{{ c.count }}</b> · {{ c.tokens_fmt }} tok{% if c.cost %} · ${{ "%.4f"|format(c.cost) }}{% endif %}
+    </span>
+    {% endfor %}
+  </div>
+  {% endif %}
   {% if share_url and not live %}<div class="share-note">Shared link · read-only</div>{% endif %}
 </div>
 
@@ -21,10 +58,52 @@
   <span id="live-status" class="live-status">Connecting…</span>
   <span id="live-activity" class="live-activity" style="display:none"></span>
   <span class="live-stat">mode <b id="hdr-mode">—</b></span>
-  <span class="live-stat">tokens <b id="hdr-tokens-in">—</b> in / <b id="hdr-tokens-out">—</b> out</span>
+  <span class="live-stat">in <b id="hdr-tokens-in">—</b> / out <b id="hdr-tokens-out">—</b></span>
   <span class="live-stat">context <b id="hdr-context">—</b></span>
   <span class="live-stat" id="hdr-cost-wrap">cost <b id="hdr-cost">—</b></span>
 </div>
+{% endif %}
+
+{% if quality %}
+<section class="quality panel">
+  <div class="quality-head">
+    <span class="grade grade-{{ quality.grade }}">{{ quality.grade_label }}</span>
+    <span class="quality-why">{{ quality.reasons | join(' · ') }}</span>
+  </div>
+  <div class="quality-signals">
+    {% for s in quality.signals %}
+    <div class="signal{{ ' is-zero' if not s.value else ' tone-' ~ s.tone }}">
+      <span class="signal-value">{{ s.value }}</span>
+      <span class="signal-label">{{ s.label }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="quality-efficiency">
+    {% for e in quality.efficiency %}
+    <span class="eff"><span class="eff-label">{{ e.label }}</span> <b>{{ e.value }}</b></span>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if subtasks %}
+<section class="subtasks panel">
+  <h2 class="chart-title">Subtasks <span class="count-pill">{{ subtasks|length }}</span></h2>
+  <ul class="subtask-list">
+    {% for s in subtasks %}
+    <li>
+      <a class="subtask-link" href="/app/tasks/{{ s.id }}">
+        <span class="cell-title">{{ s.title }}</span>
+        <span class="cell-num">{{ s.message_count }}<span class="unit">msg</span></span>
+        <span class="cell-num">{{ s.duration or '' }}</span>
+        <span class="cell-num">{{ s.tokens or '' }}{% if s.tokens %}<span class="unit">tok</span>{% endif %}</span>
+        <span class="cell-num cell-cost">{{ s.cost or '' }}</span>
+        <span class="cell-grade"><span class="grade grade-{{ s.grade }}" title="{{ s.grade_title }}">{{ s.grade_label }}</span></span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
 {% endif %}
 
 <div id="conversation" class="conversation" aria-busy="true">
@@ -64,6 +143,10 @@
 {% endif %}
 
 <script id="messages-data" type="application/json">{{ messages_json | safe }}</script>
+{# Derived, not stored: message ts -> the model that answered that request.
+   Kept apart from the messages so the stored payload stays a verbatim copy of
+   what the client sent. #}
+<script id="request-models" type="application/json">{{ request_models_json | default('{}') | safe }}</script>
 {% endblock %}
 {% block scripts %}
 <script src="/static/vendor/marked.min.js"></script>

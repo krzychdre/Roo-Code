@@ -30,6 +30,7 @@ import { TelemetryService } from "@roo-code/telemetry"
 import { TelemetryEventName } from "@roo-code/types"
 import { sanitizeErrorMessage } from "../shared/validation-helpers"
 import { Package } from "../../../shared/package"
+import { reportEmbeddingUsage } from "../embedding-usage"
 
 export class DirectoryScanner implements IDirectoryScanner {
 	private readonly batchSegmentThreshold: number
@@ -443,7 +444,9 @@ export class DirectoryScanner implements IDirectoryScanner {
 				// --- End Deletion Step ---
 
 				// Create embeddings for batch
-				const { embeddings } = await this.embedder.createEmbeddings(batchTexts)
+				const embeddingResponse = await this.embedder.createEmbeddings(batchTexts)
+				const { embeddings } = embeddingResponse
+				reportEmbeddingUsage(this.embedder, embeddingResponse, "index-scan")
 
 				// Prepare points for Qdrant
 				const points = batchBlocks.map((block, index) => {

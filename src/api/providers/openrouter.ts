@@ -33,7 +33,8 @@ import { getModelEndpoints } from "./fetchers/modelEndpointCache"
 
 import { DEFAULT_HEADERS } from "./constants"
 import { BaseProvider } from "./base-provider"
-import type { ApiHandlerCreateMessageMetadata, SingleCompletionHandler } from "../index"
+import type { ApiHandlerCreateMessageMetadata, CompletionResult, SingleCompletionHandler } from "../index"
+import { openAiCompletionUsage } from "./utils/completion-usage"
 import { handleOpenAIError } from "./utils/openai-error-handler"
 import { generateImageWithProvider, ImageGenerationResult } from "./utils/image-generation"
 import { applyRouterToolPreferences } from "./utils/router-tool-preferences"
@@ -558,7 +559,11 @@ export class OpenRouterHandler extends BaseProvider implements SingleCompletionH
 		return { id, info, topP: isDeepSeekR1 ? 0.95 : undefined, ...params }
 	}
 
-	async completePrompt(prompt: string) {
+	async completePrompt(prompt: string): Promise<string> {
+		return (await this.completePromptWithUsage(prompt)).text
+	}
+
+	async completePromptWithUsage(prompt: string): Promise<CompletionResult> {
 		let { id: modelId, maxTokens, temperature, reasoning } = await this.fetchModel()
 
 		const completionParams: OpenRouterChatCompletionParams = {
@@ -628,7 +633,10 @@ export class OpenRouterHandler extends BaseProvider implements SingleCompletionH
 		}
 
 		const completion = response as OpenAI.Chat.ChatCompletion
-		return completion.choices[0]?.message?.content || ""
+		return {
+			text: completion.choices[0]?.message?.content || "",
+			usage: openAiCompletionUsage(completion.usage),
+		}
 	}
 
 	/**

@@ -18,8 +18,13 @@ vi.mock("../../../api/transform/image-cleaning", () => ({
 
 vi.mock("@roo-code/telemetry", () => ({
 	TelemetryService: {
+		// Condensing now reports what the call cost (services/model_attribution
+		// on the backend groups it under completionKind "condense"), so the mock
+		// has to answer `hasInstance` as well.
+		hasInstance: vi.fn().mockReturnValue(true),
 		instance: {
 			captureContextCondensed: vi.fn(),
+			captureLlmCompletion: vi.fn(),
 		},
 	},
 }))

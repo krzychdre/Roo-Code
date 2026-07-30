@@ -1,0 +1,118 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
+<div id="page"><div id="conversation"></div></div>
+<script id="messages-data" type="application/json">[
+ {"ts":1,"type":"say","say":"text","text":"Please refactor the parser"},
+ {"ts":2,"type":"say","say":"reasoning","text":"Considering the options"},
+ {"ts":3,"type":"say","say":"api_req_started","text":"{\"tokensIn\":100,\"tokensOut\":20,\"cost\":0.01}"},
+ {"ts":4,"type":"say","say":"command","text":"uv run pytest -q"},
+ {"ts":5,"type":"say","say":"command_output","text":"97 passed"},
+ {"ts":6,"type":"say","say":"error","text":"Diff application failed"},
+ {"ts":7,"type":"say","say":"condense_context","contextCondense":{"summary":"A long summary","cost":0.002}},
+ {"ts":8,"type":"say","say":"subtask_result","text":"Child finished"},
+ {"ts":9,"type":"say","say":"user_feedback","text":"No, do it differently"},
+ {"ts":10,"type":"say","say":"completion_result","text":"Done"},
+ {"ts":11,"type":"say","say":"api_req_started","text":"{\"tokensIn\":900,\"tokensOut\":90,\"cost\":0.09}"}
+]</script>
+<!-- Which model answered each request. Derived server-side and shipped apart
+     from the messages; ts 11 is deliberately absent — an unattributed request
+     shows no badge rather than a guessed one. -->
+<script id="request-models" type="application/json">{"3":{"model":"GLM-5.2","mode":"code"}}</script>
+<script src="../../src/web/static/vendor/marked.min.js"></script>
+<script src="../../src/web/static/vendor/purify.min.js"></script>
+<script src="../../src/web/static/render.js"></script>
+<script>
+window.addEventListener("load", function () {
+  var out = [], fail = 0
+  function check(name, cond) { out.push((cond ? "PASS " : "FAIL ") + name); if (!cond) fail++ }
+
+  var rows = document.querySelectorAll("#conversation .msg")
+  check("rendered all 11 rows", rows.length === 11)
+
+  // D3: every row with a body must be collapsible. Before the fix, user
+  // feedback, result, error, condensed context and subtask result never were.
+  var withBody = 0, foldable = 0, notFoldable = []
+  rows.forEach(function (r) {
+    var hasBody = !!r.querySelector(".msg-body")
+    if (hasBody) {
+      withBody++
+      if (r.querySelector(":scope > details")) foldable++
+      else notFoldable.push(r.className)
+    }
+  })
+  check("every row with a body is foldable (" + foldable + "/" + withBody + ")" +
+        (notFoldable.length ? " missing: " + notFoldable.join(", ") : ""),
+        withBody > 0 && foldable === withBody)
+
+  ;["user", "completion", "error", "system"].forEach(function (role) {
+    var r = document.querySelector("#conversation .msg.role-" + role)
+    check("role-" + role + " is foldable", !!(r && r.querySelector(":scope > details")))
+  })
+
+  // Narrative roles open, machinery closed.
+  function isOpen(role) {
+    var d = document.querySelector("#conversation .msg.role-" + role + " > details")
+    return d ? d.open : null
+  }
+  check("user opens by default", isOpen("user") === true)
+  check("assistant opens by default", isOpen("assistant") === true)
+  check("result opens by default", isOpen("completion") === true)
+  check("error opens by default", isOpen("error") === true)
+  check("reasoning is closed by default", isOpen("reasoning") === false)
+  check("command is closed by default", isOpen("command") === false)
+  check("output is closed by default", isOpen("output") === false)
+
+  var convo = window.__tumbleConversation
+  check("conversation exposes setAllFolds", typeof convo.setAllFolds === "function")
+
+  convo.setAllFolds(false)
+  var anyOpen = Array.prototype.some.call(
+    document.querySelectorAll("#conversation .msg > details"), function (d) { return d.open })
+  check("collapse all closes everything", !anyOpen)
+
+  convo.setAllFolds(true)
+  var allOpen = Array.prototype.every.call(
+    document.querySelectorAll("#conversation .msg > details"), function (d) { return d.open })
+  check("expand all opens everything", allOpen)
+
+  // A fold the reader set must survive the re-render a live update causes.
+  var d = document.querySelector("#conversation .msg.role-reasoning > details")
+  d.open = false
+  d.dispatchEvent(new Event("toggle"))
+  convo.upsert({ts:2,type:"say",say:"reasoning",text:"Considering the options, at length"})
+  check("reader's fold survives a live upsert",
+        document.querySelector("#conversation .msg.role-reasoning > details").open === false)
+
+  // Toolbar
+  check("toolbar rendered", !!document.querySelector(".convo-toolbar"))
+  var chips = document.querySelectorAll(".convo-toolbar .chip")
+  check("filter chips only for roles present (" + chips.length + ")", chips.length > 0 && chips.length <= 11)
+  var errChip = Array.prototype.find.call(chips, function (c) { return c.classList.contains("role-error") })
+  errChip.click()
+  check("filtering a role marks the container",
+        document.getElementById("conversation").classList.contains("hide-error"))
+  errChip.click()
+  check("filter toggles back off",
+        !document.getElementById("conversation").classList.contains("hide-error"))
+
+  // Model attribution: the one thing the stored conversation cannot say.
+  var apiRows = document.querySelectorAll("#conversation .msg.role-api")
+  check("both API rows rendered", apiRows.length === 2)
+  var badges = document.querySelectorAll("#conversation .msg-model")
+  check("only the attributed request is badged", badges.length === 1)
+  check("the badge names the model", badges[0] && badges[0].textContent === "GLM-5.2")
+  check("the mode rides in the tooltip",
+        badges[0] && badges[0].getAttribute("title") === "GLM-5.2 · code")
+  check("the unattributed request keeps its figures",
+        apiRows[1] && /900/.test(apiRows[1].querySelector(".msg-detail").textContent))
+  check("the model reads before the figures",
+        apiRows[0] &&
+          apiRows[0].querySelector(".msg-head").innerHTML.indexOf("msg-model") <
+            apiRows[0].querySelector(".msg-head").innerHTML.indexOf("msg-detail"))
+
+  var pre = document.createElement("pre")
+  pre.id = "results"
+  pre.textContent = out.join("\n") + "\nTOTAL_FAILURES=" + fail
+  document.body.appendChild(pre)
+})
+</script>
+</body></html>

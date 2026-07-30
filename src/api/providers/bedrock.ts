@@ -44,7 +44,7 @@ import { convertToBedrockConverseMessages as sharedConverter } from "../transfor
 import { getModelParams } from "../transform/model-params"
 import { shouldUseReasoningBudget } from "../../shared/api"
 import { normalizeToolSchema } from "../../utils/json-schema"
-import type { SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import type { CompletionResult, SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
 
 /************************************************************************************
  *
@@ -793,6 +793,10 @@ export class AwsBedrockHandler extends BaseProvider implements SingleCompletionH
 	}
 
 	async completePrompt(prompt: string): Promise<string> {
+		return (await this.completePromptWithUsage(prompt)).text
+	}
+
+	async completePromptWithUsage(prompt: string): Promise<CompletionResult> {
 		try {
 			const modelConfig = this.getModel()
 
@@ -835,6 +839,13 @@ export class AwsBedrockHandler extends BaseProvider implements SingleCompletionH
 
 			const command = new ConverseCommand(payload)
 			const response = await this.client.send(command)
+			// Converse reports usage in already-camelCased fields.
+			const usage = response.usage
+				? {
+						inputTokens: response.usage.inputTokens ?? 0,
+						outputTokens: response.usage.outputTokens ?? 0,
+					}
+				: undefined
 
 			if (
 				response?.output?.message?.content &&
@@ -843,7 +854,7 @@ export class AwsBedrockHandler extends BaseProvider implements SingleCompletionH
 				response.output.message.content[0].text.trim().length > 0
 			) {
 				try {
-					return response.output.message.content[0].text
+					return { text: response.output.message.content[0].text, usage }
 				} catch (parseError) {
 					logger.error("Failed to parse Bedrock response", {
 						ctx: "bedrock",
@@ -851,7 +862,7 @@ export class AwsBedrockHandler extends BaseProvider implements SingleCompletionH
 					})
 				}
 			}
-			return ""
+			return { text: "", usage }
 		} catch (error) {
 			// Capture error in telemetry
 			const model = this.getModel()

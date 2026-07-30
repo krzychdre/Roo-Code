@@ -285,6 +285,45 @@ export type SummarizeConversationOptions = {
  *   getEnvironmentDetails() in recursivelyMakeClineRequests().
  */
 
+/** What a condense call cost, as the provider reported it. */
+type CondenseUsage = {
+	inputTokens: number
+	outputTokens: number
+	cacheReadTokens: number
+	cacheWriteTokens: number
+	totalCost?: number
+}
+
+/**
+ * Report a condense call to the usage metrics.
+ *
+ * Condensing is a full API request — often the largest single request a long
+ * task makes, since it sends the whole history — and it used to be recorded
+ * only as "Context Condensed", an event with no figures. It is emitted here
+ * with its own kind so the console can show what the machinery around the
+ * conversation costs, separately from the conversation.
+ *
+ * The model is stated explicitly: telemetry otherwise labels an event with the
+ * *current task's* model, and condensing routinely runs on its own profile (see
+ * BackgroundModelHandler).
+ */
+function reportCondenseUsage(taskId: string, handler: ApiHandler, usage: CondenseUsage | undefined): void {
+	if (!TelemetryService.hasInstance()) {
+		return
+	}
+	const model = handler.getModel?.()
+	TelemetryService.instance.captureLlmCompletion(taskId, {
+		inputTokens: usage?.inputTokens ?? 0,
+		outputTokens: usage?.outputTokens ?? 0,
+		cacheReadTokens: usage?.cacheReadTokens ?? 0,
+		cacheWriteTokens: usage?.cacheWriteTokens ?? 0,
+		cost: usage?.totalCost,
+		completionKind: "condense",
+		usageReported: usage !== undefined,
+		...(model?.id && { modelId: model.id }),
+	})
+}
+
 /**
  * Stream a condense summary from `handler`, accumulating text/usage chunks.
  *
@@ -306,10 +345,11 @@ async function streamSummary(
 	promptToUse: string,
 	requestMessages: Anthropic.Messages.MessageParam[],
 	metadata: ApiHandlerCreateMessageMetadata | undefined,
-): Promise<{ summary: string; cost: number; outputTokens: number }> {
+): Promise<{ summary: string; cost: number; outputTokens: number; usage?: CondenseUsage }> {
 	let summary = ""
 	let cost = 0
 	let outputTokens = 0
+	let usage: CondenseUsage | undefined
 	const stream = handler.createMessage(promptToUse, requestMessages, metadata)
 	try {
 		for await (const chunk of stream) {
@@ -324,6 +364,17 @@ async function streamSummary(
 				// usage is cumulative). Either way the final value is correct.
 				cost = chunk.totalCost ?? 0
 				outputTokens = chunk.outputTokens ?? 0
+				// Everything the chunk reports, not only the two fields the
+				// summary itself needs: condensing is a real API call on a real
+				// model and has to be accountable in the usage metrics like any
+				// other. Keeping only cost/outputTokens is what made it invisible.
+				usage = {
+					inputTokens: chunk.inputTokens ?? 0,
+					outputTokens: chunk.outputTokens ?? 0,
+					cacheReadTokens: chunk.cacheReadTokens ?? 0,
+					cacheWriteTokens: chunk.cacheWriteTokens ?? 0,
+					totalCost: chunk.totalCost,
+				}
 			}
 		}
 	} catch (error) {
@@ -335,7 +386,7 @@ async function streamSummary(
 		}
 		throw error
 	}
-	return { summary: summary.trim(), cost, outputTokens }
+	return { summary: summary.trim(), cost, outputTokens, usage }
 }
 
 export async function summarizeConversation(options: SummarizeConversationOptions): Promise<SummarizeResponse> {
@@ -431,6 +482,7 @@ export async function summarizeConversation(options: SummarizeConversationOption
 		summary = result.summary
 		cost = result.cost
 		outputTokens = result.outputTokens
+		reportCondenseUsage(taskId, apiHandler, result.usage)
 	} catch (error) {
 		// Capture partial cost from the failed attempt (Claim 7: failed-condense
 		// spend must not be silently lost — Anthropic emits usage mid-stream).

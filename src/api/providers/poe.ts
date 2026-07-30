@@ -18,7 +18,8 @@ import { convertToAiSdkMessages, convertToolsForAiSdk, processAiSdkStreamPart } 
 import { ApiStream } from "../transform/stream"
 
 import { BaseProvider } from "./base-provider"
-import type { SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import type { CompletionResult, SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import { aiSdkCompletionUsage } from "./utils/completion-usage"
 import { getModelsFromCache } from "./fetchers/modelCache"
 
 const DEFAULT_THINKING_BUDGET = 8192
@@ -135,13 +136,17 @@ export class PoeHandler extends BaseProvider implements SingleCompletionHandler 
 	}
 
 	async completePrompt(prompt: string): Promise<string> {
+		return (await this.completePromptWithUsage(prompt)).text
+	}
+
+	async completePromptWithUsage(prompt: string): Promise<CompletionResult> {
 		const { id } = this.getModel()
 		try {
-			const { text } = await generateText({
+			const { text, usage } = await generateText({
 				model: this.poe(id),
 				prompt,
 			})
-			return text
+			return { text, usage: aiSdkCompletionUsage(usage) }
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : String(error)
 			TelemetryService.instance.captureException(new ApiProviderError(errorMessage, "poe", id, "completePrompt"))

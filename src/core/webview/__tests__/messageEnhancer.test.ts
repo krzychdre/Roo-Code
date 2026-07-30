@@ -11,7 +11,7 @@ vi.mock("@roo-code/telemetry")
 
 describe("MessageEnhancer", () => {
 	let mockProviderSettingsManager: ProviderSettingsManager
-	let mockSingleCompletionHandler: ReturnType<typeof vi.fn>
+	let mockSingleCompletion: ReturnType<typeof vi.fn>
 
 	const mockApiConfiguration: ProviderSettings = {
 		apiProvider: "openai",
@@ -46,9 +46,13 @@ describe("MessageEnhancer", () => {
 			activateProfile: vi.fn().mockResolvedValue(enhancementProfile),
 		} as any
 
-		// Mock single completion handler
-		mockSingleCompletionHandler = vi.fn().mockResolvedValue("Enhanced prompt text")
-		vi.mocked(singleCompletionHandlerModule).singleCompletionHandler = mockSingleCompletionHandler
+		// Mock single completion handler. Enhancement goes through the
+		// usage-reporting variant now, so the mock resolves a CompletionResult.
+		mockSingleCompletion = vi.fn().mockResolvedValue({
+			text: "Enhanced prompt text",
+			usage: { inputTokens: 120, outputTokens: 30 },
+		})
+		vi.mocked(singleCompletionHandlerModule).singleCompletionWithUsage = mockSingleCompletion
 
 		// Mock TelemetryService
 		vi.mocked(TelemetryService).hasInstance = vi.fn().mockReturnValue(true)
@@ -56,6 +60,7 @@ describe("MessageEnhancer", () => {
 		Object.defineProperty(TelemetryService, "instance", {
 			get: vi.fn().mockReturnValue({
 				capturePromptEnhanced: vi.fn(),
+				captureLlmCompletion: vi.fn(),
 			}),
 			configurable: true,
 		})
@@ -79,7 +84,7 @@ describe("MessageEnhancer", () => {
 			expect(result.error).toBeUndefined()
 
 			// Verify single completion handler was called with correct prompt
-			expect(mockSingleCompletionHandler).toHaveBeenCalledWith(
+			expect(mockSingleCompletion).toHaveBeenCalledWith(
 				mockApiConfiguration,
 				expect.stringContaining("Write a function to calculate fibonacci"),
 			)
@@ -104,7 +109,7 @@ describe("MessageEnhancer", () => {
 				apiKey: "enhancement-key",
 				apiModelId: "claude-3",
 			}
-			expect(mockSingleCompletionHandler).toHaveBeenCalledWith(expectedConfig, expect.any(String))
+			expect(mockSingleCompletion).toHaveBeenCalledWith(expectedConfig, expect.any(String))
 		})
 
 		it("should include task history when enabled", async () => {
@@ -127,7 +132,7 @@ describe("MessageEnhancer", () => {
 			expect(result.success).toBe(true)
 
 			// Verify the prompt includes task history
-			const calledPrompt = mockSingleCompletionHandler.mock.calls[0][1]
+			const calledPrompt = mockSingleCompletion.mock.calls[0][1]
 			expect(calledPrompt).toContain("Improve the component")
 			expect(calledPrompt).toContain("previous conversation context")
 			expect(calledPrompt).toContain("User: Create a React component")
@@ -154,7 +159,7 @@ describe("MessageEnhancer", () => {
 				providerSettingsManager: mockProviderSettingsManager,
 			})
 
-			const calledPrompt = mockSingleCompletionHandler.mock.calls[0][1]
+			const calledPrompt = mockSingleCompletion.mock.calls[0][1]
 
 			// Should include messages 6-15 (last 10)
 			expect(calledPrompt).toContain("Message 6")
@@ -175,7 +180,7 @@ describe("MessageEnhancer", () => {
 				providerSettingsManager: mockProviderSettingsManager,
 			})
 
-			const calledPrompt = mockSingleCompletionHandler.mock.calls[0][1]
+			const calledPrompt = mockSingleCompletion.mock.calls[0][1]
 
 			// Should truncate to 500 chars + "..."
 			expect(calledPrompt).toContain("A".repeat(500) + "...")
@@ -195,12 +200,12 @@ describe("MessageEnhancer", () => {
 				providerSettingsManager: mockProviderSettingsManager,
 			})
 
-			const calledPrompt = mockSingleCompletionHandler.mock.calls[0][1]
+			const calledPrompt = mockSingleCompletion.mock.calls[0][1]
 			expect(calledPrompt).toBe("Custom enhancement template: Test prompt")
 		})
 
 		it("should handle errors gracefully", async () => {
-			mockSingleCompletionHandler.mockRejectedValue(new Error("API error"))
+			mockSingleCompletion.mockRejectedValue(new Error("API error"))
 
 			const result = await MessageEnhancer.enhanceMessage({
 				text: "Test",
@@ -215,7 +220,7 @@ describe("MessageEnhancer", () => {
 		})
 
 		it("should handle non-Error exceptions", async () => {
-			mockSingleCompletionHandler.mockRejectedValue("String error")
+			mockSingleCompletion.mockRejectedValue("String error")
 
 			const result = await MessageEnhancer.enhanceMessage({
 				text: "Test",
@@ -243,7 +248,7 @@ describe("MessageEnhancer", () => {
 			})
 
 			// Should use the default config
-			expect(mockSingleCompletionHandler).toHaveBeenCalledWith(mockApiConfiguration, expect.any(String))
+			expect(mockSingleCompletion).toHaveBeenCalledWith(mockApiConfiguration, expect.any(String))
 		})
 
 		it("should handle empty task history gracefully", async () => {
@@ -258,7 +263,7 @@ describe("MessageEnhancer", () => {
 
 			expect(result.success).toBe(true)
 
-			const calledPrompt = mockSingleCompletionHandler.mock.calls[0][1]
+			const calledPrompt = mockSingleCompletion.mock.calls[0][1]
 			// Should not include task history section
 			expect(calledPrompt).not.toContain("previous conversation context")
 		})

@@ -12,7 +12,8 @@ import { convertToOpenAiMessages } from "../transform/openai-format"
 import { ApiStream } from "../transform/stream"
 
 import { BaseProvider } from "./base-provider"
-import type { SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import type { CompletionResult, SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import { openAiCompletionUsage } from "./utils/completion-usage"
 import { getModelsFromCache } from "./fetchers/modelCache"
 import { getApiRequestTimeout } from "./utils/timeout-config"
 import { handleOpenAIError } from "./utils/openai-error-handler"
@@ -205,6 +206,10 @@ export class LmStudioHandler extends BaseProvider implements SingleCompletionHan
 	}
 
 	async completePrompt(prompt: string): Promise<string> {
+		return (await this.completePromptWithUsage(prompt)).text
+	}
+
+	async completePromptWithUsage(prompt: string): Promise<CompletionResult> {
 		try {
 			// Create params object with optional draft model
 			const params: any = {
@@ -230,7 +235,10 @@ export class LmStudioHandler extends BaseProvider implements SingleCompletionHan
 			} finally {
 				this.abortController = undefined
 			}
-			return response.choices?.[0]?.message?.content || ""
+			return {
+				text: response.choices?.[0]?.message?.content || "",
+				usage: openAiCompletionUsage(response.usage),
+			}
 		} catch (error) {
 			throw new Error(
 				"Please check the LM Studio developer logs to debug what went wrong. You may need to load the model with a larger context length to work with Roo Code's prompts.",

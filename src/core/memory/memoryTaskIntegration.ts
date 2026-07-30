@@ -16,7 +16,10 @@
 
 import { Anthropic } from "@anthropic-ai/sdk"
 
+import { TelemetryService } from "@roo-code/telemetry"
+
 import { type ApiHandler, type SingleCompletionHandler } from "../../api"
+import { runCompletion } from "../../utils/single-completion-handler"
 import { logger } from "../../utils/logging"
 
 import { type SideQuery } from "./relevance"
@@ -39,10 +42,10 @@ import { type SubTaskRunner, type SubTaskResult } from "./extractMemories"
  * system prompt through verbatim (the handler adds its own provider plumbing).
  * On any error we throw so the ranker can detect abort vs failure.
  */
-export function makeSideQuery(handler: ApiHandler): SideQuery | undefined {
+export function makeSideQuery(handler: ApiHandler, taskId?: string): SideQuery | undefined {
 	const completePrompt = (handler as Partial<SingleCompletionHandler>).completePrompt
 	if (typeof completePrompt !== "function") return undefined
-	const doComplete: (prompt: string) => Promise<string> = completePrompt.bind(handler)
+	const doComplete = (prompt: string) => runCompletion(handler as unknown as SingleCompletionHandler, prompt)
 	return async (system, user, signal) => {
 		// `completePrompt` implementations don't all accept an AbortSignal; we
 		// race against the signal so an aborted task still unblocks promptly.
@@ -61,7 +64,23 @@ export function makeSideQuery(handler: ApiHandler): SideQuery | undefined {
 				else signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true })
 			}),
 		])
-		return result
+		// Ranking memories is an LLM call on the task's model like any other, and
+		// one that runs on every user turn. Reported so its cost is visible
+		// instead of only showing up on the inference server's own counters.
+		if (TelemetryService.hasInstance()) {
+			const usage = result.usage
+			TelemetryService.instance.captureLlmCompletion(taskId, {
+				inputTokens: usage?.inputTokens ?? 0,
+				outputTokens: usage?.outputTokens ?? 0,
+				cacheReadTokens: usage?.cacheReadTokens ?? 0,
+				cacheWriteTokens: usage?.cacheWriteTokens ?? 0,
+				cost: usage?.totalCost,
+				completionKind: "memory",
+				usageReported: usage !== undefined,
+				...(handler.getModel?.()?.id && { modelId: handler.getModel().id }),
+			})
+		}
+		return result.text
 	}
 }
 
@@ -84,6 +103,8 @@ export class MemoryCoordinator {
 		recallEnabled: boolean
 		readFileState: FileStateCache
 		apiHandler?: ApiHandler
+		/** Attributes the recall query's token usage to the task that made it. */
+		taskId?: string
 		/**
 		 * Recall-activity signal for the UI ("recalling memory…"): called with
 		 * `true` when a prefetch actually starts (gates passed) and `false`
@@ -94,7 +115,7 @@ export class MemoryCoordinator {
 		this.cwd = params.cwd
 		this.recallEnabled = params.recallEnabled
 		this.readFileState = params.readFileState
-		this.sideQuery = params.apiHandler ? makeSideQuery(params.apiHandler) : undefined
+		this.sideQuery = params.apiHandler ? makeSideQuery(params.apiHandler, params.taskId) : undefined
 		this.onActivity = params.onActivity
 	}
 

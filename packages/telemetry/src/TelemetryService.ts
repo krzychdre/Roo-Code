@@ -1,6 +1,7 @@
 import { ZodError } from "zod"
 
 import {
+	type CompletionKind,
 	type TelemetryClient,
 	type TelemetryPropertiesProvider,
 	TelemetryEventName,
@@ -95,7 +96,9 @@ export class TelemetryService {
 	}
 
 	public captureLlmCompletion(
-		taskId: string,
+		// Optional: a prompt-enhancement call can happen with no task open at
+		// all, and it still costs tokens that have to be accounted for.
+		taskId: string | undefined,
 		properties: {
 			inputTokens: number
 			outputTokens: number
@@ -105,9 +108,42 @@ export class TelemetryService {
 			ttftMs?: number
 			reasoningChars?: number
 			toolCount?: number
+			/** Which part of the extension made the call; absent means a task turn. */
+			completionKind?: CompletionKind
+			/** False when the provider returned no usage block for this call. */
+			usageReported?: boolean
+			/**
+			 * The model that actually answered.
+			 *
+			 * Normally filled from the provider's *current task*, which is right
+			 * for a conversation turn and wrong for everything else: condensing
+			 * and prompt-enhancement run on their own profile. A call that knows
+			 * its model states it here, and event properties win over the
+			 * provider's in `BaseTelemetryClient.getEventProperties`.
+			 */
+			modelId?: string
+			apiProvider?: string
 		},
 	): void {
-		this.captureEvent(TelemetryEventName.LLM_COMPLETION, { taskId, ...properties })
+		this.captureEvent(TelemetryEventName.LLM_COMPLETION, { ...(taskId && { taskId }), ...properties })
+	}
+
+	/**
+	 * Tokens spent turning code into vectors.
+	 *
+	 * Its own event rather than an `LLM_COMPLETION` with a kind: indexing a
+	 * repository is hundreds of thousands of input tokens with no output and no
+	 * cost, and folding that into the conversation totals would bury the figures
+	 * it is meant to sit beside.
+	 */
+	public captureEmbeddingUsage(properties: {
+		promptTokens: number
+		totalTokens: number
+		modelId?: string
+		apiProvider?: string
+		source?: string
+	}): void {
+		this.captureEvent(TelemetryEventName.EMBEDDING_USAGE, properties)
 	}
 
 	public captureModeSwitch(taskId: string, newMode: string): void {

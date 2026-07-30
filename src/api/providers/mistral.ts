@@ -18,7 +18,8 @@ import { ApiStream } from "../transform/stream"
 import { handleProviderError } from "./utils/error-handler"
 
 import { BaseProvider } from "./base-provider"
-import type { SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import type { CompletionResult, SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import { aiSdkCompletionUsage } from "./utils/completion-usage"
 
 // Type helper to handle thinking chunks from Mistral API
 // The SDK includes ThinkChunk but TypeScript has trouble with the discriminated union
@@ -194,6 +195,10 @@ export class MistralHandler extends BaseProvider implements SingleCompletionHand
 	}
 
 	async completePrompt(prompt: string): Promise<string> {
+		return (await this.completePromptWithUsage(prompt)).text
+	}
+
+	async completePromptWithUsage(prompt: string): Promise<CompletionResult> {
 		const { id: model, temperature } = this.getModel()
 
 		try {
@@ -204,16 +209,18 @@ export class MistralHandler extends BaseProvider implements SingleCompletionHand
 			})
 
 			const content = response.choices?.[0]?.message.content
+			const usage = aiSdkCompletionUsage(response.usage)
 
 			if (Array.isArray(content)) {
 				// Only return text content, filter out thinking content for non-streaming
-				return (content as ContentChunkWithThinking[])
+				const text = (content as ContentChunkWithThinking[])
 					.filter((c) => c.type === "text" && c.text)
 					.map((c) => c.text || "")
 					.join("")
+				return { text, usage }
 			}
 
-			return content || ""
+			return { text: content || "", usage }
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : String(error)
 			const apiError = new ApiProviderError(errorMessage, this.providerName, model, "completePrompt")

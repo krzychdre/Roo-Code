@@ -21,7 +21,8 @@ import { ApiStream, ApiStreamUsageChunk } from "../transform/stream"
 import { getModelParams } from "../transform/model-params"
 
 import { BaseProvider } from "./base-provider"
-import type { SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import type { CompletionResult, SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import { responsesApiCompletionUsage } from "./utils/completion-usage"
 import { isMcpTool } from "../../utils/mcp-name"
 import { sanitizeOpenAiCallId } from "../../utils/tool-id"
 import { openAiCodexOAuthManager } from "../../integrations/openai-codex/oauth"
@@ -1153,6 +1154,10 @@ export class OpenAiCodexHandler extends BaseProvider implements SingleCompletion
 	}
 
 	async completePrompt(prompt: string): Promise<string> {
+		return (await this.completePromptWithUsage(prompt)).text
+	}
+
+	async completePromptWithUsage(prompt: string): Promise<CompletionResult> {
 		this.abortController = new AbortController()
 
 		try {
@@ -1227,12 +1232,15 @@ export class OpenAiCodexHandler extends BaseProvider implements SingleCompletion
 
 			const responseData = await response.json()
 
+			// The Responses API names its usage fields input_tokens/output_tokens.
+			const usage = responsesApiCompletionUsage(responseData?.usage)
+
 			if (responseData?.output && Array.isArray(responseData.output)) {
 				for (const outputItem of responseData.output) {
 					if (outputItem.type === "message" && outputItem.content) {
 						for (const content of outputItem.content) {
 							if (content.type === "output_text" && content.text) {
-								return content.text
+								return { text: content.text, usage }
 							}
 						}
 					}
@@ -1240,10 +1248,10 @@ export class OpenAiCodexHandler extends BaseProvider implements SingleCompletion
 			}
 
 			if (responseData?.text) {
-				return responseData.text
+				return { text: responseData.text, usage }
 			}
 
-			return ""
+			return { text: "", usage }
 		} catch (error) {
 			const errorModel = this.getModel()
 			const errorMessage = error instanceof Error ? error.message : String(error)

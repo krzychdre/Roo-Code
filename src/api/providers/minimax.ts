@@ -12,7 +12,8 @@ import { getModelParams } from "../transform/model-params"
 import { mergeEnvironmentDetailsForMiniMax } from "../transform/minimax-format"
 
 import { BaseProvider } from "./base-provider"
-import type { SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import type { CompletionResult, SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import { anthropicCompletionUsage } from "./utils/completion-usage"
 import { calculateApiCostAnthropic } from "../../shared/cost"
 import { convertOpenAIToolsToAnthropic } from "../../core/prompts/tools/native-tools/converters"
 
@@ -290,7 +291,11 @@ export class MiniMaxHandler extends BaseProvider implements SingleCompletionHand
 		}
 	}
 
-	async completePrompt(prompt: string) {
+	async completePrompt(prompt: string): Promise<string> {
+		return (await this.completePromptWithUsage(prompt)).text
+	}
+
+	async completePromptWithUsage(prompt: string): Promise<CompletionResult> {
 		const { id: model, temperature } = this.getModel()
 
 		const message = await this.client.messages.create({
@@ -302,6 +307,9 @@ export class MiniMaxHandler extends BaseProvider implements SingleCompletionHand
 		})
 
 		const content = message.content.find(({ type }) => type === "text")
-		return content?.type === "text" ? content.text : ""
+		return {
+			text: content?.type === "text" ? content.text : "",
+			usage: anthropicCompletionUsage(message.usage),
+		}
 	}
 }

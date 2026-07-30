@@ -27,6 +27,7 @@ import { TelemetryService } from "@roo-code/telemetry"
 import { TelemetryEventName } from "@roo-code/types"
 import { sanitizeErrorMessage } from "../shared/validation-helpers"
 import { Package } from "../../../shared/package"
+import { reportEmbeddingUsage } from "../embedding-usage"
 
 /**
  * Implementation of the file watcher interface
@@ -566,7 +567,9 @@ export class FileWatcher implements IFileWatcher {
 			let pointsToUpsert: PointStruct[] = []
 			if (this.embedder && blocks.length > 0) {
 				const texts = blocks.map((block) => block.content)
-				const { embeddings } = await this.embedder.createEmbeddings(texts)
+				const embeddingResponse = await this.embedder.createEmbeddings(texts)
+				const { embeddings } = embeddingResponse
+				reportEmbeddingUsage(this.embedder, embeddingResponse, "index-watch")
 
 				pointsToUpsert = blocks.map((block, index) => {
 					const normalizedAbsolutePath = generateNormalizedAbsolutePath(block.file_path, this.workspacePath)
