@@ -3,23 +3,34 @@
 {% block content %}
 <div class="list-head">
   <h1 class="page-title">Your tasks{% if total %} <span class="count-pill">{{ total }}</span>{% endif %}</h1>
-  <form class="search" method="get" action="/app" role="search">
-    <input type="search" name="q" value="{{ query }}" placeholder="Search title or project…" aria-label="Search tasks">
-    {% if query %}<a class="search-clear" href="/app" title="Clear search">✕</a>{% endif %}
-  </form>
+  <div class="list-tools">
+    {# Subtasks are reached by opening the run that spawned them, so they are
+       hidden by default; the flat list is one click away. #}
+    <nav class="scope-control" aria-label="Which tasks to list">
+      <a class="scope-opt{{ ' active' if scope == 'roots' else '' }}"
+         href="/app?scope=roots{% if query %}&q={{ query }}{% endif %}">Runs</a>
+      <a class="scope-opt{{ ' active' if scope == 'all' else '' }}"
+         href="/app?scope=all{% if query %}&q={{ query }}{% endif %}">All {{ all_total }}</a>
+    </nav>
+    <form class="search" method="get" action="/app" role="search">
+      <input type="hidden" name="scope" value="{{ scope }}">
+      <input type="search" name="q" value="{{ query }}" placeholder="Search title or project…" aria-label="Search tasks">
+      {% if query %}<a class="search-clear" href="/app?scope={{ scope }}" title="Clear search">✕</a>{% endif %}
+    </form>
+  </div>
 </div>
 
 {% if tasks %}
 <ul class="task-list">
   {% for t in tasks %}
-  <li class="task-item">
+  <li class="task-item{{ ' is-subtask' if t.is_subtask else '' }}">
     {#
       Fixed grid, not a flex row: every cell is emitted even when empty, so the
       numbers line up into scannable columns down the whole page. A row that
       simply omits an absent value would shift every figure after it.
     #}
     <a class="task-link" href="/app/tasks/{{ t.id }}" title="{{ t.metrics_title }}">
-      <span class="cell-title">{{ t.title }}</span>
+      <span class="cell-title">{% if t.is_subtask %}<span class="subtask-mark" title="Subtask of another run">↳</span>{% endif %}{{ t.title }}{% if t.child_count %}<span class="child-count" title="{{ t.child_count }} subtask{{ '' if t.child_count == 1 else 's' }}">{{ t.child_count }}</span>{% endif %}</span>
       <span class="cell-workspace">{% if t.workspace_label %}<span class="badge badge-workspace" title="{{ t.workspace }}">{{ t.workspace_label }}</span>{% endif %}</span>
       <span class="cell-num">{{ t.message_count }}<span class="unit">msg</span></span>
       <span class="cell-num">{{ t.duration or '' }}</span>
@@ -38,13 +49,13 @@
 {% if page_count > 1 %}
 <nav class="pager" aria-label="Pagination">
   {% if has_prev %}
-  <a class="pager-btn" href="/app?page={{ page - 1 }}{% if query %}&q={{ query }}{% endif %}">← Newer</a>
+  <a class="pager-btn" href="/app?scope={{ scope }}&page={{ page - 1 }}{% if query %}&q={{ query }}{% endif %}">← Newer</a>
   {% else %}
   <span class="pager-btn disabled">← Newer</span>
   {% endif %}
   <span class="pager-status">Page {{ page }} of {{ page_count }}</span>
   {% if has_next %}
-  <a class="pager-btn" href="/app?page={{ page + 1 }}{% if query %}&q={{ query }}{% endif %}">Older →</a>
+  <a class="pager-btn" href="/app?scope={{ scope }}&page={{ page + 1 }}{% if query %}&q={{ query }}{% endif %}">Older →</a>
   {% else %}
   <span class="pager-btn disabled">Older →</span>
   {% endif %}
@@ -54,7 +65,7 @@
 {% elif query %}
 <div class="empty">
   <p>Nothing matches “{{ query }}”.</p>
-  <p class="empty-hint"><a href="/app">Clear the search</a> to see all tasks.</p>
+  <p class="empty-hint"><a href="/app?scope={{ scope }}">Clear the search</a> to see all tasks.</p>
 </div>
 {% else %}
 <div class="empty">

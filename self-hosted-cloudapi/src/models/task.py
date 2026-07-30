@@ -32,6 +32,15 @@ class Task(Base, TimestampMixin):
     # while the bridge was offline (and the client sent nothing) have no value.
     workspace_path = Column(String, nullable=True)
 
+    # The task that spawned this one, when it is a subtask. Denormalized from
+    # task_relations (which is written from telemetry, often before either task
+    # row exists) so the list and detail views can render the hierarchy without
+    # a lookup per row. ON DELETE SET NULL: deleting a parent orphans its
+    # children rather than cascading their conversations away.
+    parent_task_id = Column(
+        String, ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
     # --- denormalized display summary -------------------------------------
     # Maintained by services/task_summary.refresh_task_summary() on every write
     # so the task list renders from one indexed query instead of re-parsing the

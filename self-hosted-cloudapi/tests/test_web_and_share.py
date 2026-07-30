@@ -1520,3 +1520,176 @@ async def test_task_list_does_not_read_message_bodies(client, db_session, sessio
     assert resp.status_code == 200
     assert "Cheap render" in resp.text
     assert called is False
+
+
+# --- subtask tree -----------------------------------------------------------
+
+
+async def _post_event(client, task_id, parent_task_id=None, event_type="Task Created"):
+    props = {"taskId": task_id}
+    if parent_task_id:
+        props["parentTaskId"] = parent_task_id
+        props["isSubtask"] = True
+    return client.post("/api/events", json={"type": event_type, "properties": props})
+
+
+async def test_parent_link_survives_event_arriving_before_the_task(
+    client, db_session, session_factory
+):
+    """The hard case, and the normal one: a subtask announces its parent when it
+    starts, but neither task exists as a row until messages are stored — at
+    share time that can be hours later."""
+    from src.models.relation import TaskRelation
+
+    await _seed_user(db_session)
+    _override_current_user(client.app)
+    try:
+        # 1. Telemetry first — nothing exists yet.
+        assert (await _post_event(client, "child-1", "parent-1")).status_code == 200
+
+        async with session_factory() as s:
+            rel = (
+                await s.execute(select(TaskRelation).where(TaskRelation.child_task_id == "child-1"))
+            ).scalar_one()
+            assert rel.parent_task_id == "parent-1"
+            assert (await s.execute(select(func.count(Task.id)))).scalar_one() == 0
+
+        # 2. Parent shared, then child shared.
+        for tid in ("parent-1", "child-1"):
+            files, data = _backfill_files(tid, _msgs())
+            assert client.post("/api/events/backfill", files=files, data=data).status_code == 200
+    finally:
+        client.app.dependency_overrides.pop(get_current_user, None)
+
+    async with session_factory() as s:
+        child = (await s.execute(select(Task).where(Task.id == "child-1"))).scalar_one()
+        assert child.parent_task_id == "parent-1"
+
+
+async def test_child_stored_before_its_parent_is_adopted_later(
+    client, db_session, session_factory
+):
+    """The reverse order, which happens whenever a subtask finishes and is shared
+    while the run that spawned it is still going."""
+    await _seed_user(db_session)
+    _override_current_user(client.app)
+    try:
+        assert (await _post_event(client, "child-2", "parent-2")).status_code == 200
+
+        # Child first: its parent has no row, so the stamp must be deferred
+        # rather than written as a dangling foreign key.
+        files, data = _backfill_files("child-2", _msgs())
+        assert client.post("/api/events/backfill", files=files, data=data).status_code == 200
+
+        async with session_factory() as s:
+            child = (await s.execute(select(Task).where(Task.id == "child-2"))).scalar_one()
+            assert child.parent_task_id is None
+
+        files, data = _backfill_files("parent-2", _msgs())
+        assert client.post("/api/events/backfill", files=files, data=data).status_code == 200
+    finally:
+        client.app.dependency_overrides.pop(get_current_user, None)
+
+    async with session_factory() as s:
+        child = (await s.execute(select(Task).where(Task.id == "child-2"))).scalar_one()
+        assert child.parent_task_id == "parent-2", "parent's arrival must claim waiting children"
+
+
+async def test_relation_is_recorded_once_across_many_events(client, db_session, session_factory):
+    """Every later event repeats parentTaskId; the link must not accumulate."""
+    from src.models.relation import TaskRelation
+
+    await _seed_user(db_session)
+    _override_current_user(client.app)
+    try:
+        for evt in ("Task Created", "LLM Completion", "Tool Used", "Task Message"):
+            assert (await _post_event(client, "child-3", "parent-3", evt)).status_code == 200
+    finally:
+        client.app.dependency_overrides.pop(get_current_user, None)
+
+    async with session_factory() as s:
+        count = (
+            await s.execute(
+                select(func.count(TaskRelation.child_task_id)).where(
+                    TaskRelation.child_task_id == "child-3"
+                )
+            )
+        ).scalar_one()
+        assert count == 1
+
+
+async def test_task_list_hides_subtasks_by_default(client, db_session, session_factory):
+    """150 of 387 tasks on the live deployment are subtasks; listing them flat
+    buried the actual runs among their own fragments."""
+    await _seed_user(db_session)
+    async with session_factory() as s:
+        s.add(Task(id="run-a", user_id="user_test", title="The run"))
+        await s.flush()
+        s.add(Task(id="sub-a", user_id="user_test", title="Its subtask", parent_task_id="run-a"))
+        await s.commit()
+
+    _override_web_user(client.app)
+    try:
+        roots = client.get("/app")
+        everything = client.get("/app?scope=all")
+    finally:
+        client.app.dependency_overrides.pop(get_web_user_optional, None)
+
+    assert "The run" in roots.text
+    assert "Its subtask" not in roots.text
+    # The run advertises that opening it leads somewhere.
+    assert 'class="child-count"' in roots.text
+
+    assert "The run" in everything.text
+    assert "Its subtask" in everything.text
+
+
+async def test_task_detail_links_up_and_down_the_tree(client, db_session, session_factory):
+    await _seed_user(db_session)
+    async with session_factory() as s:
+        s.add(Task(id="root-x", user_id="user_test", title="Root run"))
+        await s.flush()
+        s.add(Task(id="mid-x", user_id="user_test", title="Middle task", parent_task_id="root-x"))
+        await s.flush()
+        s.add(Task(id="leaf-x", user_id="user_test", title="Leaf task", parent_task_id="mid-x"))
+        await s.commit()
+
+    _override_web_user(client.app)
+    try:
+        mid = client.get("/app/tasks/mid-x")
+    finally:
+        client.app.dependency_overrides.pop(get_web_user_optional, None)
+
+    assert mid.status_code == 200
+    # Up: the breadcrumb reaches the root.
+    assert "/app/tasks/root-x" in mid.text
+    assert "Root run" in mid.text
+    # Down: the subtask panel reaches the child.
+    assert "/app/tasks/leaf-x" in mid.text
+    assert "Leaf task" in mid.text
+
+
+async def test_ancestor_walk_survives_a_cycle(db_session, session_factory):
+    """Task ids come from a client. A cycle must not hang a page render."""
+    from src.services.task_tree import ancestors
+
+    await _seed_user(db_session)
+    async with session_factory() as s:
+        s.add(Task(id="cyc-a", user_id="user_test", title="A"))
+        s.add(Task(id="cyc-b", user_id="user_test", title="B"))
+        await s.flush()
+        # Forced directly: the write paths never create this, which is exactly
+        # why the read path has to defend itself.
+        await s.execute(
+            Task.__table__.update().where(Task.id == "cyc-a").values(parent_task_id="cyc-b")
+        )
+        await s.execute(
+            Task.__table__.update().where(Task.id == "cyc-b").values(parent_task_id="cyc-a")
+        )
+        await s.commit()
+
+    async with session_factory() as s:
+        task = (await s.execute(select(Task).where(Task.id == "cyc-a"))).scalar_one()
+        chain = await ancestors(s, task)
+
+    assert len(chain) <= 2, "the walk must stop instead of looping forever"

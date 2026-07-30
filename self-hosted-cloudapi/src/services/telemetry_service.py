@@ -6,6 +6,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.models.event import TelemetryEvent
 
 
+async def _link_task_tree(db, task_id: str) -> None:
+    """Wire a task into the subtask tree, in both directions.
+
+    A task can arrive either before or after its relatives: the parent may
+    already be stored (so this task is adopted), and children of this task may
+    have been stored earlier while it did not exist yet (so they are claimed
+    now). Doing both here means no ordering of shares, backfills and live
+    streams can leave the tree half-built.
+    """
+    from src.services.task_tree import adopt_from_relations, link_pending_children
+
+    await adopt_from_relations(db, task_id)
+    await link_pending_children(db, task_id)
+
+
 def _stamp_workspace_path(task, workspace_path) -> None:
     """Record the task's project/worktree root, once.
 
@@ -37,6 +52,13 @@ async def record_event(
     )
     db.add(event)
     await db.flush()
+
+    # Telemetry is the only place a subtask states which task spawned it, and
+    # it says so long before the subtask exists as a row. Capture the link here
+    # so the web view can render the tree. See services/task_tree.
+    from src.services.task_tree import record_relation
+
+    await record_relation(db, properties, user_id=user_id)
 
 
 async def backfill_messages(
@@ -71,6 +93,7 @@ async def backfill_messages(
         # Flush the new parent before inserting messages (FK on task_id).
         await db.flush()
     _stamp_workspace_path(task, workspace_path)
+    await _link_task_tree(db, task_id)
 
     # Replace any existing messages for this task (idempotent re-share).
     await db.execute(delete(TaskMessage).where(TaskMessage.task_id == task_id))
@@ -161,6 +184,7 @@ async def upsert_task_message(
     # Stamp the project/worktree root on first sight (set on create, and fill a
     # legacy NULL the first time the bridge reports a path). Never overwrites.
     _stamp_workspace_path(task, workspace_path)
+    await _link_task_tree(db, task_id)
 
     dialect = db.bind.dialect.name
     if ts is not None and dialect in ("postgresql", "sqlite"):

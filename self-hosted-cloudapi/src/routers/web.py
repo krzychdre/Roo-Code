@@ -33,6 +33,7 @@ from src.services.metrics_service import (
     compute_user_metrics,
 )
 from src.services.task_summary import DEFAULT_TITLE, derive_title, duration_ms
+from src.services.task_tree import ancestors, child_counts, children_of
 from src.utils.format import fmt_duration, fmt_tokens
 
 logger = logging.getLogger(__name__)
@@ -83,6 +84,24 @@ def _workspace_label(path: str | None) -> str | None:
     return trimmed.rsplit("/", 1)[-1] or trimmed
 
 
+def _tree_entry(task: Task) -> dict:
+    """Compact view-model for a task shown as somebody else's relative.
+
+    Used by the breadcrumb and the subtask panel, where a task appears as a link
+    with its own headline figures rather than as a full list row.
+    """
+    span = duration_ms(task.first_ts, task.last_ts)
+    tokens = (task.tokens_in or 0) + (task.tokens_out or 0)
+    return {
+        "id": task.id,
+        "title": task.title or DEFAULT_TITLE,
+        "message_count": task.message_count or 0,
+        "tokens": fmt_tokens(tokens) if tokens else None,
+        "cost": f"${task.cost:.4f}" if (task.cost or 0) > 0 else None,
+        "duration": fmt_duration(span) if span else None,
+    }
+
+
 def _metrics_tooltip(task: Task) -> str:
     """Multi-line hover breakdown (native title tooltips honour the newlines).
 
@@ -128,6 +147,7 @@ async def task_list(
     request: Request,
     page: int = Query(1, ge=1),
     q: str = Query("", max_length=200),
+    scope: str = Query("roots"),
     user: Optional[WebUser] = Depends(get_web_user_optional),
     db: AsyncSession = Depends(get_db),
 ):
@@ -137,15 +157,23 @@ async def task_list(
     services/task_summary), so this is a single indexed query regardless of how
     many messages the conversations hold. It used to load and JSON-parse the
     entire corpus — 387 queries and 205 MB per request on the live deployment.
+
+    ``scope=roots`` (the default) hides subtasks, which are reached by opening
+    the run that spawned them. On the live deployment 150 of 387 tasks are
+    subtasks, so listing them flat buried the actual runs among their own
+    fragments. ``scope=all`` restores the flat list.
     """
     if user is None:
         return RedirectResponse(url="/app/login", status_code=303)
 
     search = q.strip()
+    scope = scope if scope in ("roots", "all") else "roots"
     filters = [Task.user_id == user["user_id"]]
     if search:
         pattern = f"%{search}%"
         filters.append(or_(Task.title.ilike(pattern), Task.workspace_path.ilike(pattern)))
+    if scope == "roots":
+        filters.append(Task.parent_task_id.is_(None))
 
     total = await db.scalar(select(func.count(Task.id)).where(*filters)) or 0
     page_count = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
@@ -159,8 +187,12 @@ async def task_list(
         .offset((page - 1) * PAGE_SIZE)
     )
 
+    page_tasks = list(result.scalars().all())
+    # One grouped query for the whole page rather than a count per row.
+    counts = await child_counts(db, [t.id for t in page_tasks])
+
     items = []
-    for task in result.scalars().all():
+    for task in page_tasks:
         total_tokens = (task.tokens_in or 0) + (task.tokens_out or 0)
         has_metrics = total_tokens > 0 or (task.cost or 0) > 0
         span = duration_ms(task.first_ts, task.last_ts)
@@ -176,8 +208,15 @@ async def task_list(
                 "metrics_title": _metrics_tooltip(task) if has_metrics else None,
                 "workspace": task.workspace_path,
                 "workspace_label": _workspace_label(task.workspace_path),
+                "child_count": counts.get(task.id, 0),
+                "is_subtask": task.parent_task_id is not None,
             }
         )
+
+    # Shown on the scope toggle so the cost of switching is visible up front.
+    all_total = await db.scalar(
+        select(func.count(Task.id)).where(Task.user_id == user["user_id"])
+    ) or 0
 
     return templates.TemplateResponse(
         request,
@@ -187,9 +226,11 @@ async def task_list(
             "tasks": items,
             "nav_active": "tasks",
             "query": search,
+            "scope": scope,
             "page": page,
             "page_count": page_count,
             "total": total,
+            "all_total": all_total,
             "has_prev": page > 1,
             "has_next": page < page_count,
         },
@@ -254,12 +295,16 @@ async def task_detail(
     # The owner view is live: it can drive the task through the socket.io bridge
     # (extension ↔ backend ↔ browser). Disabled when the bridge is off.
     live = settings.bridge_enabled
+    # Nearest-first from ancestors(); the trail reads root → … → here.
+    trail = list(reversed(await ancestors(db, task)))
     return templates.TemplateResponse(
         request,
         "task_detail.html",
         {
             "user": user,
             "task": task,
+            "ancestors": [_tree_entry(t) for t in trail],
+            "subtasks": [_tree_entry(t) for t in await children_of(db, task_id)],
             # The stored title is authoritative; deriving it again is only a
             # fallback for a row written before the summary columns existed and
             # somehow missed the migration's backfill.

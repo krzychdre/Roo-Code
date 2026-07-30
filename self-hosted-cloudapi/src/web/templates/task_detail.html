@@ -2,7 +2,21 @@
 {% block title %}{{ title }} · Tumble Code{% endblock %}
 {% block content %}
 <div class="detail-header">
+  {% if ancestors %}
+  {# The run this task belongs to. Reads root → … → here, so the chain of
+     delegation is visible and every step is one click away. #}
+  <nav class="trail" aria-label="Parent tasks">
+    <a href="/app">All tasks</a>
+    {% for a in ancestors %}
+    <span class="trail-sep">/</span>
+    <a href="/app/tasks/{{ a.id }}" title="{{ a.title }}">{{ a.title }}</a>
+    {% endfor %}
+    <span class="trail-sep">/</span>
+    <span class="trail-here">this subtask</span>
+  </nav>
+  {% else %}
   <a class="back" href="/app">← All tasks</a>
+  {% endif %}
   <div class="detail-title-row">
     <h1 class="page-title">{{ title }}</h1>
     {% if can_delete %}
@@ -25,6 +39,25 @@
   <span class="live-stat">context <b id="hdr-context">—</b></span>
   <span class="live-stat" id="hdr-cost-wrap">cost <b id="hdr-cost">—</b></span>
 </div>
+{% endif %}
+
+{% if subtasks %}
+<section class="subtasks panel">
+  <h2 class="chart-title">Subtasks <span class="count-pill">{{ subtasks|length }}</span></h2>
+  <ul class="subtask-list">
+    {% for s in subtasks %}
+    <li>
+      <a class="subtask-link" href="/app/tasks/{{ s.id }}">
+        <span class="cell-title">{{ s.title }}</span>
+        <span class="cell-num">{{ s.message_count }}<span class="unit">msg</span></span>
+        <span class="cell-num">{{ s.duration or '' }}</span>
+        <span class="cell-num">{{ s.tokens or '' }}{% if s.tokens %}<span class="unit">tok</span>{% endif %}</span>
+        <span class="cell-num cell-cost">{{ s.cost or '' }}</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
 {% endif %}
 
 <div id="conversation" class="conversation" aria-busy="true">

@@ -370,6 +370,68 @@ textarea::placeholder {
 	letter-spacing: 0.02em;
 }
 
+.list-tools {
+	display: flex;
+	align-items: center;
+	gap: var(--s3);
+	flex-wrap: wrap;
+}
+
+/* Same segmented control as the metrics period selector — one pattern for
+   "pick one of these views". */
+.scope-control {
+	display: inline-flex;
+	gap: 2px;
+	padding: 3px;
+	background: var(--surface-1);
+	border: 1px solid var(--line);
+	border-radius: var(--r-md);
+}
+.scope-opt {
+	font-family: var(--mono);
+	font-size: var(--t-micro);
+	color: var(--text-dim);
+	padding: var(--s1) var(--s3);
+	border-radius: var(--r-sm);
+	line-height: 1.6;
+	white-space: nowrap;
+}
+.scope-opt:hover {
+	background: var(--surface-2);
+	color: var(--text);
+	text-decoration: none;
+}
+.scope-opt.active {
+	background: var(--signal);
+	color: var(--signal-ink);
+	font-weight: 600;
+}
+
+/* A subtask in the flat list: marked, and set back from the run rows so the
+   two kinds are distinguishable without reading. */
+.subtask-mark {
+	color: var(--text-faint);
+	margin-right: var(--s1);
+	font-family: var(--mono);
+}
+.task-item.is-subtask .task-link::before {
+	background: transparent;
+	border-left: 2px dashed var(--line-strong);
+}
+/* How many subtasks this run spawned — a promise that opening it leads
+   somewhere, not just a number. */
+.child-count {
+	display: inline-block;
+	margin-left: var(--s2);
+	padding: 0 0.4em;
+	border-radius: var(--r-pill);
+	background: var(--d-in-wash);
+	color: var(--d-in);
+	font-family: var(--mono);
+	font-size: var(--t-label);
+	vertical-align: 1px;
+}
+
 .search {
 	position: relative;
 	display: flex;
@@ -522,6 +584,7 @@ textarea::placeholder {
 	border-radius: var(--r-sm);
 	font-family: var(--mono);
 	font-size: var(--t-micro);
+	white-space: nowrap;
 	cursor: pointer;
 	transition:
 		color 0.12s,
@@ -605,6 +668,67 @@ textarea::placeholder {
 	justify-content: space-between;
 	gap: var(--s4);
 }
+/* Breadcrumb up the delegation chain, on a subtask's page. */
+.trail {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--s1);
+	font-family: var(--mono);
+	font-size: var(--t-micro);
+	color: var(--text-faint);
+	margin-bottom: var(--s2);
+}
+.trail a {
+	color: var(--text-dim);
+	max-width: 22rem;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.trail a:hover {
+	color: var(--signal);
+}
+.trail-sep {
+	opacity: 0.5;
+}
+.trail-here {
+	color: var(--text-faint);
+}
+
+/* The runs this task delegated to. Sits above the conversation because it is
+   navigation, not content: it answers "where did the rest of the work go?". */
+.subtasks {
+	padding: var(--s3) var(--s4) var(--s4);
+	margin-bottom: var(--s5);
+}
+.subtasks .chart-title {
+	display: flex;
+	align-items: center;
+	gap: var(--s2);
+	margin: 0 0 var(--s2);
+}
+.subtask-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+.subtask-list li + li {
+	border-top: 1px solid var(--line);
+}
+.subtask-link {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 4.5rem 4.5rem 5.5rem 5rem;
+	align-items: center;
+	gap: var(--s3);
+	padding: var(--s2) 0;
+	color: var(--text);
+}
+.subtask-link:hover {
+	text-decoration: none;
+	color: var(--signal);
+}
+
 .detail-workspace {
 	color: var(--text-faint);
 	font-family: var(--mono);

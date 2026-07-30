@@ -22,7 +22,7 @@ async def lifespan(app: FastAPI):
         User, Session, ClientToken, Ticket,
         Organization, Membership,
         OrganizationSettings, UserSettings,
-        Task, TaskMessage, TaskShare,
+        Task, TaskMessage, TaskShare, TaskRelation,
         TelemetryEvent, ProviderConfig, AuthentikStateStore,
     )
 
