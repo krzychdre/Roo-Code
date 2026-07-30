@@ -129,4 +129,57 @@ external implementor) still works and simply reports `usageReported: false`.
 
 ## 6. Outcome
 
-_(filled in after the work)_
+Both branches built and tested. Extension: **6978 tests pass** (was 6919).
+Console: **170 pass** (was 157).
+
+### What each call site now reports
+
+| Kind       | Model reported            | Figures                                   |
+| ---------- | ------------------------- | ----------------------------------------- |
+| `task`     | the task's                | as before, now stated rather than implied |
+| `condense` | the condensing handler's  | the whole usage chunk, not two fields     |
+| `enhance`  | the enhancement profile's | from `completePromptWithUsage`            |
+| `memory`   | the task's                | from `completePromptWithUsage`            |
+| embeddings | the embedder's provider   | `promptTokens`, tagged by source          |
+
+All 23 providers were converted. Behaviour is unchanged by construction — the
+existing body moved, `completePrompt` delegates — and the 26 provider test files
+that exercise `completePrompt` pass untouched.
+
+### The correctness fix this forced (T3)
+
+`attribute_requests` and the model rollups now filter through
+`task_completions()`. Without it a condense event landing between two turns
+matches a conversation row on its token pair and labels it with the background
+model. Pinned by `test_a_condense_event_is_never_matched_to_a_conversation_row`.
+
+### Defects found while building
+
+- **`messageEnhancer`'s test mock was testing the catch block.** It stubbed
+  `getProfile` while the code calls `activateProfile`, so both tests covering
+  the enhancement-config path asserted on a caught `TypeError` rather than on
+  the behaviour they name. Pre-existing; fixed here because the file had to be
+  touched anyway.
+- **The kind-split panel had no padding** and its cost column ran flush to the
+  panel edge — every other panel on the page insets its content.
+- **The Indexing tile had no accent rule** while the four beside it did. It
+  takes the "you" hue rather than one of the four token/cost hues, because it
+  is the one tile on that row that is not counting the conversation.
+
+### Verification
+
+Layout checked against a clone of the production database with synthetic
+side-call and embedding events (the extension side is not deployed, so the real
+corpus has none). Screenshots confirmed: the split panel reads
+Conversation / Condensing / Memory recall with proportion bars, the Indexing
+tile reports 1.5M across 21 calls broken down by source, and a task detail shows
+`Condensing 9 · 417.6k tok · Memory recall 26 · 110k tok` under a model list
+that stays the conversation's alone.
+
+### Operational note
+
+Both branches are unmerged and neither is deployed. The console half needs
+`docker compose up -d --build api`; the extension half needs a rebuilt VSIX.
+Until the extension ships, the console renders exactly as before — every stored
+row is a conversation turn, the split panel stays hidden and there is no
+Indexing tile.

@@ -33,6 +33,25 @@ logger = logging.getLogger(__name__)
 # cost, model, provider and mode. Keep in sync with packages/types/src/telemetry.ts.
 LLM_COMPLETION_EVENT = "LLM Completion"
 
+# TelemetryEventName.EMBEDDING_USAGE — tokens spent turning code into vectors.
+# A separate event, and a separate figure on the page: indexing a repository is
+# hundreds of thousands of input tokens with no output and no price, so adding
+# it to the conversation total would bury what the conversation actually cost.
+EMBEDDING_EVENT = "Embedding Usage"
+
+# Which part of the extension made a completion. Only ``task`` calls are turns
+# of a conversation; the rest is the machinery around it. Absent on every row
+# written before the extension started reporting it, and all of those are task
+# turns. Keep in sync with services/model_attribution and the CompletionKind
+# enum in packages/types/src/telemetry.ts.
+TASK_KIND = "task"
+KIND_LABELS: dict[str, str] = {
+    "task": "Conversation",
+    "condense": "Condensing",
+    "enhance": "Prompt enhancement",
+    "memory": "Memory recall",
+}
+
 # Period presets → how far back from "now" to include (None = all time). The key
 # is what the route accepts as ?period=… and what the selector renders.
 PERIODS: dict[str, Optional[timedelta]] = {
@@ -74,6 +93,54 @@ def _event_ts_ms(props: dict, fallback: datetime) -> float:
         if isinstance(v, (int, float)) and not isinstance(v, bool):
             return float(v)
     return fallback.timestamp() * 1000.0
+
+
+async def _embedding_totals(
+    db: AsyncSession, user_id: str, start: Optional[datetime]
+) -> dict:
+    """Tokens spent on code-index embeddings in the period, by source.
+
+    Reported apart from the completion totals rather than inside them. An index
+    of a repository is one number with no output tokens and no price, and it is
+    large enough to hide everything it sits next to; the question it answers
+    ("what is indexing costing me?") is also a different question.
+    """
+    stmt = select(TelemetryEvent.properties).where(
+        TelemetryEvent.user_id == user_id,
+        TelemetryEvent.event_type == EMBEDDING_EVENT,
+    )
+    if start is not None:
+        stmt = stmt.where(TelemetryEvent.created_at >= start)
+
+    total = 0
+    calls = 0
+    by_source: dict[str, dict] = {}
+    for (payload,) in (await db.execute(stmt)).all():
+        try:
+            props = json.loads(payload or "{}")
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(props, dict):
+            continue
+        tokens = int(_num(props.get("promptTokens")))
+        total += tokens
+        calls += 1
+        source = str(props.get("source") or "unknown")
+        slot = by_source.setdefault(source, {"name": source, "tokens": 0, "count": 0})
+        slot["tokens"] += tokens
+        slot["count"] += 1
+
+    sources = sorted(by_source.values(), key=lambda s: -s["tokens"])
+    for row in sources:
+        row["tokens_fmt"] = fmt_tokens(row["tokens"])
+
+    return {
+        "tokens": total,
+        "tokens_fmt": fmt_tokens(total),
+        "calls": calls,
+        "by_source": sources,
+        "has_data": calls > 0,
+    }
 
 
 async def compute_user_metrics(
@@ -122,7 +189,12 @@ async def compute_user_metrics(
     by_model: dict[str, dict] = {}
     by_mode: dict[str, dict] = {}
     by_provider: dict[str, dict] = {}
+    by_kind: dict[str, dict] = {}
     by_day: dict[str, dict] = {}
+    # Completions whose provider could not say what they cost. Counted rather
+    # than silently added in as zero, so "12 calls we have no figures for" reads
+    # as what it is instead of as twelve free calls.
+    unreported = 0
     # taskId -> [min_ts_ms, max_ts_ms] for per-session duration spans.
     task_spans: dict[str, list[float]] = {}
 
@@ -154,9 +226,14 @@ async def compute_user_metrics(
         totals["cost"] += cost
         totals["completions"] += 1
 
+        kind = str(props.get("completionKind") or TASK_KIND)
+        if props.get("usageReported") is False:
+            unreported += 1
+
         _bucket(by_model, str(props.get("modelId") or "unknown"), tokens, cost)
         _bucket(by_mode, str(props.get("mode") or "unknown"), tokens, cost)
         _bucket(by_provider, str(props.get("apiProvider") or "unknown"), tokens, cost)
+        _bucket(by_kind, kind, tokens, cost)
 
         created = row.created_at or (now or datetime.now(timezone.utc))
         day = created.strftime("%Y-%m-%d")
@@ -182,7 +259,11 @@ async def compute_user_metrics(
     models = _sorted(by_model)
     modes = _sorted(by_mode)
     providers = _sorted(by_provider)
+    kinds = _sorted(by_kind)
+    for row in kinds:
+        row["label"] = KIND_LABELS.get(row["name"], row["name"])
     days = sorted(by_day.values(), key=lambda d: d["day"])
+    embeddings = await _embedding_totals(db, user_id, start)
 
     total_tokens = totals["input"] + totals["output"]
 
@@ -200,6 +281,9 @@ async def compute_user_metrics(
         "by_model": models,
         "by_mode": modes,
         "by_provider": providers,
+        "by_kind": kinds,
+        "unreported": unreported,
+        "embeddings": embeddings,
         "by_day": days,
         "chart": {
             "days": [d["day"] for d in days],

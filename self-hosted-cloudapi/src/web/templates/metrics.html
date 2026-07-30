@@ -88,7 +88,47 @@
     <div class="stat-value">{{ metrics.duration }}</div>
     <div class="stat-sub">{{ metrics.task_count }} task{{ '' if metrics.task_count == 1 else 's' }}</div>
   </div>
+  {% if metrics.embeddings.has_data %}
+  {# Its own tile, deliberately not inside "Total tokens": indexing a repository
+     is a large number with no output and no price, and adding it to the
+     conversation total would hide what the conversation cost. #}
+  <div class="stat-card" data-metric="indexing">
+    <div class="stat-label">Indexing</div>
+    <div class="stat-value">{{ metrics.embeddings.tokens_fmt }}</div>
+    <div class="stat-sub">
+      {{ "{:,}".format(metrics.embeddings.calls) }} embedding call{{ '' if metrics.embeddings.calls == 1 else 's' }}
+      {%- for s in metrics.embeddings.by_source %} · {{ s.name }} {{ s.tokens_fmt }}{% endfor %}
+    </div>
+  </div>
+  {% endif %}
 </section>
+
+{% if metrics.by_kind|length > 1 or metrics.unreported %}
+{# What the conversation cost, against what the machinery around it cost.
+   Only shown once there is more than one kind to compare — on a corpus recorded
+   before side calls were reported, everything is a conversation turn and the
+   panel would be a single row stating the obvious. #}
+<section class="kind-split panel">
+  <h2 class="chart-title">Where the tokens went</h2>
+  <div class="kind-rows">
+    {% for k in metrics.by_kind %}
+    <div class="kind-row{{ ' is-task' if k.name == 'task' else '' }}">
+      <span class="kind-label">{{ k.label }}</span>
+      <span class="kind-bar"><i style="width: {{ (100 * k.tokens / metrics.totals.total_tokens) if metrics.totals.total_tokens else 0 }}%"></i></span>
+      <span class="kind-num">{{ k.tokens_fmt }}<span class="unit">tok</span></span>
+      <span class="kind-num">{{ k.count }}<span class="unit">calls</span></span>
+      <span class="kind-num cell-cost">{% if k.cost %}${{ "%.4f"|format(k.cost) }}{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% if metrics.unreported %}
+  <p class="kind-note">
+    {{ metrics.unreported }} call{{ '' if metrics.unreported == 1 else 's' }} came back with no usage figures from the
+    provider — counted here, but contributing no tokens.
+  </p>
+  {% endif %}
+</section>
+{% endif %}
 
 <section class="chart-grid">
   <div class="chart-card chart-wide">

@@ -828,6 +828,8 @@ def _llm_event(
     cwrite=0,
     cost=0.01,
     created_at=None,
+    kind=None,
+    usage_reported=None,
 ):
     """Build an ``LLM Completion`` telemetry row mirroring the extension payload."""
     from datetime import datetime, timezone
@@ -842,6 +844,10 @@ def _llm_event(
         "cacheReadTokens": cread,
         "cacheWriteTokens": cwrite,
         "cost": cost,
+        # Absent by default: every row recorded before the extension reported
+        # which part of it made the call is a conversation turn.
+        **({"completionKind": kind} if kind is not None else {}),
+        **({"usageReported": usage_reported} if usage_reported is not None else {}),
     }
     return TelemetryEvent(
         user_id=user_id,

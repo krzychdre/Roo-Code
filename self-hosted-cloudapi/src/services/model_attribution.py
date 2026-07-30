@@ -41,7 +41,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.event import TelemetryEvent
 from src.models.task import Task
-from src.utils.format import num
+from src.utils.format import fmt_tokens, num
 
 # Keep in sync with services/metrics_service.LLM_COMPLETION_EVENT and
 # packages/types/src/telemetry.ts.
@@ -55,6 +55,14 @@ LLM_COMPLETION_EVENT = "LLM Completion"
 MODELS_SHOWN = 1
 
 
+# Which part of the extension made a call. Only ``task`` completions are turns
+# of the conversation; the rest is the machinery around it (summarising the
+# history, rewriting a prompt, ranking memories), which the extension started
+# reporting so its cost stops being invisible. Rows written before that carry no
+# kind at all, and every one of them is a task turn.
+TASK_KIND = "task"
+
+
 @dataclass(frozen=True)
 class Completion:
     """One LLM Completion event, reduced to what attribution needs."""
@@ -63,6 +71,8 @@ class Completion:
     mode: Optional[str]
     input_tokens: int
     output_tokens: int
+    kind: str = TASK_KIND
+    cost: float = 0.0
 
 
 def completion_from_properties(props: dict) -> Optional[Completion]:
@@ -71,11 +81,14 @@ def completion_from_properties(props: dict) -> Optional[Completion]:
     if not model or not isinstance(model, str):
         return None
     mode = props.get("mode")
+    kind = props.get("completionKind")
     return Completion(
         model=model,
         mode=mode if isinstance(mode, str) and mode else None,
         input_tokens=int(num(props.get("inputTokens"))),
         output_tokens=int(num(props.get("outputTokens"))),
+        kind=kind if isinstance(kind, str) and kind else TASK_KIND,
+        cost=float(num(props.get("cost"))),
     )
 
 
@@ -131,6 +144,20 @@ def _request_tokens(msg: dict) -> Optional[tuple[int, int]]:
     return pair if pair != (0, 0) else None
 
 
+def task_completions(completions: list[Completion]) -> list[Completion]:
+    """Only the calls that are turns of the conversation.
+
+    Everything the console says about the *conversation* is filtered through
+    here. Once the extension began reporting condense/enhance/memory calls,
+    those events started landing on the same ``taskId`` as the conversation —
+    and the request join below matches on a token pair, so a condense event
+    sitting between two turns would happily be matched to one of them and
+    labelled with the background model. Kind-less rows predate the field and
+    are conversation turns.
+    """
+    return [c for c in completions if c.kind == TASK_KIND]
+
+
 def attribute_requests(
     messages: Iterable[dict], completions: list[Completion]
 ) -> dict[str, dict]:
@@ -140,6 +167,7 @@ def attribute_requests(
     because the caller hands it to the browser as JSON (where object keys are
     strings anyway) and the renderer looks it up by the row's ``data-ts``.
     """
+    completions = task_completions(completions)
     if not completions:
         return {}
 
@@ -182,11 +210,15 @@ def attribute_requests(
 def models_summary(completions: list[Completion]) -> list[dict]:
     """Per-model rollup for the detail panel: name, modes, request count.
 
+    Conversation turns only. A background model that condensed the history once
+    did not answer the run, and putting it in the same list as the model that
+    did would misread the transcript.
+
     Sorted by request count descending — the model that did most of the work
     reads first, which is also the order the compact label uses.
     """
     rollup: dict[str, dict] = {}
-    for c in completions:
+    for c in task_completions(completions):
         slot = rollup.setdefault(c.model, {"name": c.model, "count": 0, "modes": []})
         slot["count"] += 1
         if c.mode and c.mode not in slot["modes"]:
@@ -202,6 +234,51 @@ def models_label(completions: list[Completion]) -> Optional[str]:
     """
     names = [row["name"] for row in models_summary(completions)]
     return ", ".join(names) if names else None
+
+
+# How each non-conversation kind reads on the page. Anything the extension
+# starts reporting that is not listed falls back to its raw name rather than
+# being dropped, so a new kind shows up as an unexplained row instead of
+# silently vanishing from the totals.
+SIDE_CALL_LABELS: dict[str, str] = {
+    "condense": "Condensing",
+    "enhance": "Prompt enhancement",
+    "memory": "Memory recall",
+}
+
+
+def side_calls_summary(completions: list[Completion]) -> list[dict]:
+    """What the machinery around the conversation cost, per kind.
+
+    Reported next to the conversation rather than inside it: condensing a
+    history, rewriting a prompt and ranking memories are real requests on real
+    models, and the point of showing them is that they are *not* turns — a run
+    whose condensing costs as much as its answers is a run worth looking at.
+    """
+    rollup: dict[str, dict] = {}
+    for c in completions:
+        if c.kind == TASK_KIND:
+            continue
+        slot = rollup.setdefault(
+            c.kind,
+            {
+                "kind": c.kind,
+                "label": SIDE_CALL_LABELS.get(c.kind, c.kind),
+                "count": 0,
+                "tokens": 0,
+                "cost": 0.0,
+                "models": [],
+            },
+        )
+        slot["count"] += 1
+        slot["tokens"] += c.input_tokens + c.output_tokens
+        slot["cost"] += c.cost
+        if c.model not in slot["models"]:
+            slot["models"].append(c.model)
+    rows = sorted(rollup.values(), key=lambda s: (-s["tokens"], s["kind"]))
+    for row in rows:
+        row["tokens_fmt"] = fmt_tokens(row["tokens"])
+    return rows
 
 
 def models_badge(label: Optional[str]) -> Optional[dict]:

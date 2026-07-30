@@ -37,6 +37,7 @@ from src.services.model_attribution import (
     models_badge,
     models_label,
     models_summary,
+    side_calls_summary,
 )
 from src.services.retention_service import apply_sweep, get_policy, plan_sweep
 from src.services.share_service import delete_shared_task, delete_tasks
@@ -227,6 +228,10 @@ async def _model_context(db: AsyncSession, task_id: str, messages: list[dict]) -
     return {
         "models": models_summary(completions),
         "models_label": models_label(completions),
+        # Condensing, prompt enhancement and memory recall: real requests on
+        # real models that are not turns, so they are named apart from the
+        # conversation rather than mixed into it.
+        "side_calls": side_calls_summary(completions),
         "request_models_json": json.dumps(attribute_requests(messages, completions)),
     }
 

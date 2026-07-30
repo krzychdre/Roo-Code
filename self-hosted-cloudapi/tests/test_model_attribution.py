@@ -24,6 +24,7 @@ from src.services.model_attribution import (
     models_badge,
     models_label,
     models_summary,
+    side_calls_summary,
 )
 
 from tests.test_web_and_share import (
@@ -395,3 +396,109 @@ async def test_a_task_with_no_telemetry_renders_without_a_badge(
     assert "badge-model" not in detail.text
     assert "badge-model" not in listing.text
     assert 'id="request-models"' in detail.text, "the island is always present, just empty"
+
+
+# --- calls that are not turns of the conversation ---------------------------
+
+
+def _c_kind(model: str, tin: int, tout: int, kind: str, cost: float = 0.0) -> Completion:
+    return Completion(
+        model=model, mode="code", input_tokens=tin, output_tokens=tout, kind=kind, cost=cost
+    )
+
+
+def test_a_condense_event_is_never_matched_to_a_conversation_row():
+    """The join matches on a token pair, so a side call sitting between two
+    turns would otherwise be attributed to one of them — and labelled with the
+    background model that condensed, which never answered anything."""
+    messages = [_req(1, 100, 10), _req(2, 300, 30)]
+    completions = [
+        _c_kind("GLM-5.2", 100, 10, "task"),
+        _c_kind("a-cheap-background-model", 300, 30, "condense"),
+        _c_kind("GLM-5.2", 300, 30, "task"),
+    ]
+
+    attributed = attribute_requests(messages, completions)
+
+    assert attributed["1"]["model"] == "GLM-5.2"
+    assert attributed["2"]["model"] == "GLM-5.2", "the condense event must not win the match"
+
+
+def test_side_calls_do_not_count_as_a_second_model_for_the_run():
+    """A run condensed by a background model is still a one-model run.
+
+    This is also what keeps the single-model fallback honest: counting the
+    condensing model would make the task look ambiguous and blank out badges.
+    """
+    completions = [
+        _c_kind("GLM-5.2", 100, 10, "task"),
+        _c_kind("a-cheap-background-model", 900, 90, "condense"),
+    ]
+
+    assert [row["name"] for row in models_summary(completions)] == ["GLM-5.2"]
+    assert models_label(completions) == "GLM-5.2"
+
+
+def test_a_row_with_no_kind_is_a_conversation_turn():
+    """Every completion recorded before the field existed is a task turn."""
+    legacy = Completion(model="GLM-5.2", mode="code", input_tokens=100, output_tokens=10)
+
+    assert legacy.kind == "task"
+    assert attribute_requests([_req(1, 100, 10)], [legacy])["1"]["model"] == "GLM-5.2"
+
+
+def test_side_calls_summary_groups_by_kind_and_names_it_readably():
+    completions = [
+        _c_kind("GLM-5.2", 100, 10, "task"),
+        _c_kind("background", 40_000, 800, "condense", cost=0.2),
+        _c_kind("background", 20_000, 400, "condense", cost=0.1),
+        _c_kind("GLM-5.2", 3_000, 20, "memory"),
+    ]
+
+    rows = side_calls_summary(completions)
+
+    assert [r["kind"] for r in rows] == ["condense", "memory"], "largest first"
+    assert rows[0]["label"] == "Condensing"
+    assert rows[0]["count"] == 2
+    assert rows[0]["tokens"] == 61_200
+    assert rows[0]["cost"] == pytest.approx(0.3)
+    assert rows[0]["models"] == ["background"]
+    assert not any(r["kind"] == "task" for r in rows), "a turn is not a side call"
+
+
+def test_a_kind_nobody_taught_the_console_still_shows_up():
+    """A kind added on the extension side must not vanish from the totals."""
+    rows = side_calls_summary([_c_kind("m", 5, 1, "some-new-kind")])
+
+    assert rows[0]["label"] == "some-new-kind"
+
+
+async def test_task_detail_names_side_calls_apart_from_the_conversation(
+    client, db_session, session_factory
+):
+    async with session_factory() as s:
+        await _seed_user(s)
+        s.add(Task(id="task-v4", user_id="user_test", title="Run"))
+        await s.flush()
+        await _add_message(s, "task-v4", _req(1, 100, 10))
+        s.add(_llm_event(task_id="task-v4", model="GLM-5.2", tin=100, tout=10))
+        s.add(
+            _llm_event(
+                task_id="task-v4", model="a-background-model", tin=40_000, tout=800, kind="condense"
+            )
+        )
+        await _summarize(s, "task-v4")
+        await s.commit()
+
+    _override_web_user(client.app)
+    try:
+        resp = client.get("/app/tasks/task-v4")
+    finally:
+        client.app.dependency_overrides.pop(get_web_user_optional, None)
+
+    assert resp.status_code == 200
+    assert "Condensing" in resp.text
+    assert "a-background-model" in resp.text
+    # …but the conversation's own model list stays the conversation's.
+    models_block = resp.text[resp.text.index('class="detail-models"') : resp.text.index('class="detail-side-calls"')]
+    assert "a-background-model" not in models_block

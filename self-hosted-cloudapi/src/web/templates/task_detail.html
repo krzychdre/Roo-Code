@@ -39,6 +39,17 @@
     {% endfor %}
   </div>
   {% endif %}
+  {% if side_calls %}
+  {# Not turns of the conversation, so not in the model list above and never on
+     a request row: this is what the machinery around the run cost. #}
+  <div class="detail-side-calls">
+    {% for c in side_calls %}
+    <span class="side-call" title="{{ c.models | join(', ') }}">
+      {{ c.label }} <b>{{ c.count }}</b> · {{ c.tokens_fmt }} tok{% if c.cost %} · ${{ "%.4f"|format(c.cost) }}{% endif %}
+    </span>
+    {% endfor %}
+  </div>
+  {% endif %}
   {% if share_url and not live %}<div class="share-note">Shared link · read-only</div>{% endif %}
 </div>
 

@@ -651,6 +651,90 @@ textarea::placeholder {
 	justify-content: flex-end;
 }
 
+/* --- what the run spent off the conversation ------------------------------
+   Condensing, prompt enhancement and memory recall are real requests on real
+   models but they are not turns, so they read as a quiet line under the model
+   badges rather than as more badges beside them. */
+.detail-side-calls {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--s3);
+	margin-top: var(--s2);
+	font-family: var(--mono);
+	font-size: var(--t-micro);
+	color: var(--text-faint);
+}
+.side-call b {
+	color: var(--text-dim);
+	font-weight: 600;
+}
+
+/* Where the tokens went: one whole divided by what asked for it. The bar is
+   the point — a run whose condensing costs as much as its answers is visible
+   at a glance, which a column of figures does not make it. */
+.kind-split {
+	padding: var(--s3) var(--s4) var(--s4);
+	margin-bottom: var(--s5);
+}
+.kind-rows {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s2);
+	margin-top: var(--s3);
+}
+.kind-row {
+	display: grid;
+	grid-template-columns: 11rem minmax(0, 1fr) 6rem 5rem 6rem;
+	align-items: center;
+	gap: var(--s3);
+}
+.kind-label {
+	font-size: var(--t-sm);
+	color: var(--text-dim);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.kind-row.is-task .kind-label {
+	color: var(--text);
+}
+.kind-bar {
+	height: 6px;
+	border-radius: 3px;
+	background: var(--surface-2);
+	overflow: hidden;
+}
+.kind-bar i {
+	display: block;
+	height: 100%;
+	border-radius: 3px;
+	background: var(--d-out);
+}
+.kind-row.is-task .kind-bar i {
+	background: var(--signal);
+}
+.kind-num {
+	font-family: var(--mono);
+	font-size: var(--t-micro);
+	color: var(--text-faint);
+	text-align: right;
+	white-space: nowrap;
+}
+.kind-note {
+	margin: var(--s3) 0 0;
+	font-size: var(--t-micro);
+	color: var(--text-faint);
+}
+
+@media (max-width: 860px) {
+	.kind-row {
+		grid-template-columns: minmax(0, 1fr) 5rem;
+	}
+	.kind-bar {
+		display: none;
+	}
+}
+
 /* ==========================================================================
    Session quality
    ========================================================================== */
@@ -1806,6 +1890,12 @@ details.env-details > pre {
 }
 .stat-card[data-metric="duration"] {
 	border-top-color: var(--d-out);
+}
+/* Indexing borrows the "you" hue rather than any of the four token/cost hues:
+   it is the one tile on this row that is not counting the conversation, and
+   reusing an encoding hue would say it was. */
+.stat-card[data-metric="indexing"] {
+	border-top-color: var(--d-you);
 }
 .stat-value {
 	font-family: var(--mono);
