@@ -329,8 +329,13 @@ prefix caching needs — and (1) for the honest gate. Do not do (3) alone.
 
 Acceptance criteria:
 
-- a synthetic 40-turn task shows a **monotonically non-decreasing** `tokensIn` sequence apart from
-  genuine `condense_context` events
+- ~~a synthetic 40-turn task shows a **monotonically non-decreasing** `tokensIn` sequence apart from
+  genuine `condense_context` events~~ — **corrected 2026-07-30, this criterion is unachievable by
+  design.** Microcompaction is non-destructive, so a strip legitimately makes that one request
+  report a smaller size; one strip = one drop. The defect was the **rebound**, not the drop. The
+  criterion is instead **no drop-then-rebound pair** (`osc = 0` in
+  `scripts/agent-bench/collect.py`), and it is **met**: see
+  `ai_plans/2026-07-30_post-ship-measurement.md` §3
 - `cacheReads > 0` on GLM after turn 2 in a real task — now meaningful, since the client-side
   parsing gap is fixed; cross-check against vLLM's own `/metrics` (WS-8) to separate "we broke
   it" from "the server does not report it"
@@ -377,8 +382,15 @@ Optionally revive WS-F (read-dedup) from the July plan: when a path+range is alr
 return a pointer instead of the bytes. After WS-1 this actually holds, because content stops
 disappearing from under the model.
 
-Acceptance: share of reads using the default window rises from 11.8%; same-path re-read share
+Acceptance: ~~share of reads using the default window rises from 11.8%~~; same-path re-read share
 falls from ~52%.
+
+> **Metric corrected 2026-07-30.** "Uses the default window" was defined as omitting `limit`, and
+> GLM-5.2 and `OpenAI Sol` **never omit a parameter at all** — 0.0% across 4,762 July reads — while
+> Nemotron omits it 76.5% of the time against the same `strict: true` schema. That figure measured
+> the serving path, not the model's intent. The criterion is now `whole%` (omitted **or** ≥ 2000
+> lines) in `scripts/agent-bench/collect.py`; on Sol it rose 7% → 57% and same-path re-reads fell
+> 58% → 25%. See `ai_plans/2026-07-30_post-ship-measurement.md` §4. Still unvalidated on GLM.
 
 ### WS-4 — Rewrite the reviewer mode (prompt-only, user-side file)
 
@@ -561,6 +573,12 @@ One branch per work stream, stacked where the change only makes sense on top of 
 Not yet measured: every acceptance criterion in this document is stated against the pre-change
 baseline. Re-running `scripts/agent-bench` after these land is what turns them from arguments into
 results.
+
+> **Partly measured as of 2026-07-30** — `ai_plans/2026-07-30_post-ship-measurement.md`. WS-1 is
+> verified (criterion restated, see WS-1 above); WS-3 moved on `OpenAI Sol` with a corrected metric;
+> WS-2 and the `rules.ts` bullet remain unvalidated because there is not one GLM-5.2 task after the
+> stack landed. `collect.py` now also reports quality proxies, so the next comparison can show
+> whether a turn-cutting change cost anything.
 
 ### What can be validated before the vLLM server is back
 
