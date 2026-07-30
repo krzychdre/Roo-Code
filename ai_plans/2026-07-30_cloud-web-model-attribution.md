@@ -59,7 +59,7 @@ from (`3aaa6c9f1`). So the column gets promoted.
 
 ## 3. Design
 
-### 3.1 Schema (migration `e1f2a3b4c5d6`)
+### 3.1 Schema (migration `d0e1f2a3b4c5`)
 
 - `telemetry_events.task_id` — String, nullable, **indexed**. Stamped at ingest
   from `properties.taskId`; backfilled for existing rows. The blob stays
