@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
         Organization, Membership,
         OrganizationSettings, UserSettings,
         Task, TaskMessage, TaskShare, TaskRelation,
-        TelemetryEvent, ProviderConfig, AuthentikStateStore,
+        TelemetryEvent, ProviderConfig, AuthentikStateStore, RetentionPolicy,
     )
 
     async with engine.begin() as conn:
@@ -36,10 +36,32 @@ async def lifespan(app: FastAPI):
     print(f"  Telemetry: {'enabled' if settings.telemetry_enabled else 'disabled'}")
     print(f"  Bridge: {'enabled' if settings.bridge_enabled else 'disabled'}")
     print(f"  Credits: {'enabled' if settings.credit_system_enabled else 'disabled'}")
+    print(
+        "  Retention sweep: "
+        + (
+            f"every {settings.retention_sweep_hours}h"
+            if settings.retention_sweep_enabled
+            else "disabled"
+        )
+    )
+
+    sweeper = None
+    if settings.retention_sweep_enabled:
+        import asyncio
+
+        from src.services.retention_scheduler import run_retention_loop
+
+        sweeper = asyncio.create_task(run_retention_loop())
 
     yield
 
     # Shutdown
+    if sweeper is not None:
+        sweeper.cancel()
+        try:
+            await sweeper
+        except asyncio.CancelledError:
+            pass
     await engine.dispose()
     print("Roo Cloud API stopped")
 

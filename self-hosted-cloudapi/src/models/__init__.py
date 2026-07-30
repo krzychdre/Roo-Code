@@ -9,6 +9,7 @@ from src.models.relation import TaskRelation
 from src.models.event import TelemetryEvent
 from src.models.provider import ProviderConfig
 from src.models.oauth import AuthentikStateStore
+from src.models.retention import RetentionPolicy
 
 __all__ = [
     "Base",
@@ -28,4 +29,5 @@ __all__ = [
     "TelemetryEvent",
     "ProviderConfig",
     "AuthentikStateStore",
+    "RetentionPolicy",
 ]

@@ -26,6 +26,12 @@ from src.database import get_db
 from src.auth.web_session import WebUser, get_web_user_optional
 from src.models.task import Task, TaskMessage, TaskShare
 from src.models.organization import Membership
+from src.models.retention import (
+    SUGGESTED_MAX_AGE_DAYS,
+    SUGGESTED_MAX_TASKS,
+    SUGGESTED_TELEMETRY_MAX_AGE_DAYS,
+)
+from src.services.retention_service import apply_sweep, get_policy, plan_sweep
 from src.services.share_service import delete_shared_task, delete_tasks
 from src.services.metrics_service import (
     DEFAULT_PERIOD,
@@ -476,6 +482,132 @@ async def delete_task(
 
     await delete_shared_task(db, task_id, user["user_id"])
     return RedirectResponse(url="/app", status_code=303)
+
+
+@router.get("/app/settings", response_class=HTMLResponse)
+async def settings_page(
+    request: Request,
+    ran: str = Query(""),
+    user: Optional[WebUser] = Depends(get_web_user_optional),
+    db: AsyncSession = Depends(get_db),
+):
+    """Retention settings, with a preview of exactly what a sweep would remove.
+
+    The preview is computed by the same function the sweep acts on, so what is
+    shown here and what would be deleted cannot drift apart. It renders whether
+    or not retention is switched on — before you arm it is the one moment the
+    preview is genuinely worth reading.
+    """
+    if user is None:
+        return RedirectResponse(url="/app/login", status_code=303)
+
+    policy = await get_policy(db, user["user_id"])
+    plan = await plan_sweep(db, user["user_id"], policy)
+    await db.commit()
+
+    return templates.TemplateResponse(
+        request,
+        "settings.html",
+        {
+            "user": user,
+            "nav_active": "settings",
+            "policy": policy,
+            "plan": _plan_view(plan),
+            "suggest": {
+                "age": SUGGESTED_MAX_AGE_DAYS,
+                "tasks": SUGGESTED_MAX_TASKS,
+                "telemetry": SUGGESTED_TELEMETRY_MAX_AGE_DAYS,
+            },
+            "ran": ran,
+        },
+    )
+
+
+@router.post("/app/settings")
+async def save_settings(
+    request: Request,
+    user: Optional[WebUser] = Depends(get_web_user_optional),
+    db: AsyncSession = Depends(get_db),
+):
+    """Save the retention policy. Saving never deletes anything.
+
+    Arming a policy and running it are deliberately separate actions: switching
+    retention on should not silently remove hundreds of conversations in the
+    same click that turned it on. Deleting happens on "Run now", or on the
+    scheduled sweep.
+    """
+    if user is None:
+        return RedirectResponse(url="/app/login", status_code=303)
+
+    form = await request.form()
+    policy = await get_policy(db, user["user_id"])
+
+    policy.enabled = form.get("enabled") == "1"
+    policy.keep_shared = form.get("keep_shared") == "1"
+    policy.purge_telemetry = form.get("purge_telemetry") == "1"
+    policy.max_age_days = _positive_int(form.get("max_age_days"))
+    policy.max_tasks = _positive_int(form.get("max_tasks"))
+    policy.telemetry_max_age_days = _positive_int(form.get("telemetry_max_age_days"))
+
+    await db.commit()
+    return RedirectResponse(url="/app/settings", status_code=303)
+
+
+@router.post("/app/settings/run")
+async def run_retention_now(
+    user: Optional[WebUser] = Depends(get_web_user_optional),
+    db: AsyncSession = Depends(get_db),
+):
+    """Apply the saved policy immediately.
+
+    Runs regardless of the ``enabled`` switch: the button is an explicit
+    instruction, and the switch only governs the scheduled sweep.
+    """
+    if user is None:
+        return RedirectResponse(url="/app/login", status_code=303)
+
+    policy = await get_policy(db, user["user_id"])
+    plan = await apply_sweep(db, user["user_id"], policy)
+    await db.commit()
+    return RedirectResponse(url=f"/app/settings?ran={plan.task_count}", status_code=303)
+
+
+def _positive_int(value) -> Optional[int]:
+    """Parse a form field to a positive int, or None to mean "rule disabled".
+
+    Anything unparseable is treated as "off" rather than as zero: a zero limit
+    would select every task the user owns, which is the opposite of what a
+    fumbled entry should do.
+    """
+    try:
+        number = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def _plan_view(plan) -> dict:
+    """View-model for the preview, including a readable size."""
+    return {
+        "task_count": plan.task_count,
+        "message_count": plan.message_count,
+        "event_count": plan.event_count,
+        "exempt_shared": plan.exempt_shared,
+        "total_bytes": plan.total_bytes,
+        "size": _fmt_bytes(plan.total_bytes),
+        "is_empty": plan.is_empty,
+        "reasons": sorted(set(plan.reasons.values())),
+    }
+
+
+def _fmt_bytes(n: int) -> str:
+    """Human size. Stated as an approximation — see RetentionPlan.message_bytes."""
+    size = float(n)
+    for unit in ("B", "KB", "MB", "GB"):
+        if abs(size) < 1024 or unit == "GB":
+            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} GB"
 
 
 @router.post("/app/tasks/bulk-delete")

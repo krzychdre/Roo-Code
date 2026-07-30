@@ -1834,6 +1834,113 @@ table.breakdown tr:last-child td {
 }
 
 /* ==========================================================================
+   Settings
+   ========================================================================== */
+
+.settings-panel {
+	padding: var(--s4);
+	margin-bottom: var(--s4);
+	max-width: 780px;
+}
+.settings-panel .chart-title {
+	margin: 0 0 var(--s2);
+}
+.settings-lead {
+	margin: 0 0 var(--s4);
+	font-size: var(--t-sm);
+	color: var(--text-dim);
+}
+.settings-form {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s3);
+}
+.switch-row {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--s2);
+	font-size: var(--t-sm);
+	color: var(--text-dim);
+	cursor: pointer;
+}
+.switch-row input {
+	accent-color: var(--signal);
+	margin: 0.25rem 0 0;
+	width: 14px;
+	height: 14px;
+}
+.switch-row b {
+	color: var(--text);
+	font-weight: 550;
+}
+
+.field-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	gap: var(--s3);
+}
+.field {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s1);
+}
+.field-inline {
+	max-width: 260px;
+}
+.field-input {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--s2);
+}
+.field-input input {
+	width: 6.5rem;
+	font-family: var(--mono);
+}
+.field-unit {
+	font-family: var(--mono);
+	font-size: var(--t-micro);
+	color: var(--text-faint);
+}
+.field-hint {
+	margin: 0;
+	font-size: var(--t-micro);
+	color: var(--text-faint);
+}
+
+.settings-rule {
+	border: none;
+	border-top: 1px solid var(--line);
+	margin: var(--s2) 0;
+}
+.settings-actions {
+	display: flex;
+	align-items: center;
+	gap: var(--s3);
+	flex-wrap: wrap;
+	margin-top: var(--s2);
+}
+.settings-meta {
+	font-family: var(--mono);
+	font-size: var(--t-micro);
+	color: var(--text-faint);
+}
+
+.preview-signals {
+	border-bottom: none;
+	padding-bottom: var(--s2);
+}
+
+.notice {
+	padding: var(--s2) var(--s3);
+	margin-bottom: var(--s4);
+	border-radius: var(--r-md);
+	background: var(--d-cache-wash);
+	color: var(--d-cache);
+	font-family: var(--mono);
+	font-size: var(--t-micro);
+}
+
+/* ==========================================================================
    Responsive
    ========================================================================== */
 
