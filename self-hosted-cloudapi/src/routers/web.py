@@ -12,14 +12,13 @@ by static/render.js from the embedded ClineMessage[] JSON.
 
 import json
 import logging
-import re
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config.settings import settings
@@ -33,7 +32,8 @@ from src.services.metrics_service import (
     PERIOD_LABELS,
     compute_user_metrics,
 )
-from src.utils.format import fmt_duration, fmt_tokens, num
+from src.services.task_summary import DEFAULT_TITLE, derive_title, duration_ms
+from src.utils.format import fmt_duration, fmt_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -61,32 +61,10 @@ templates.env.globals["asset_v"] = _asset_version()
 
 router = APIRouter(tags=["web"])
 
-# Message says/asks whose text is the most representative task title.
-_TITLE_MAX = 100
-
-# Roo Code's first user turn can reach the cloud in API-prompt form: the typed
-# text wrapped in <user_message>/<task>/<feedback>, trailed by a machine-built
-# <environment_details> block (current mode, open tabs, file tree, cost…). None
-# of the environment block is the user's query, so strip it before deriving a
-# title. Match the trailing/unclosed case too (the block is always last).
-_ENV_DETAILS_RE = re.compile(r"<environment_details>.*?(?:</environment_details>|\Z)", re.DOTALL)
-_MSG_WRAPPER_RE = re.compile(r"<(user_message|task|feedback)>(.*?)</\1>", re.DOTALL)
-
-
-def _strip_task_wrappers(text: str) -> str:
-    """Reduce a raw conversation message to the human-authored query.
-
-    Drops the machine ``<environment_details>`` appendix and unwraps the
-    ``<user_message>``/``<task>``/``<feedback>`` tag to its inner content. Plain
-    text (already clean) passes through unchanged.
-    """
-    if not text:
-        return ""
-    cleaned = _ENV_DETAILS_RE.sub("", text)
-    match = _MSG_WRAPPER_RE.search(cleaned)
-    if match:
-        cleaned = match.group(2)
-    return cleaned.strip()
+# How many tasks one page of the list shows. The corpus on a working
+# deployment runs to hundreds of tasks; rendering all of them was never a
+# deliberate choice, just the absence of paging.
+PAGE_SIZE = 25
 
 
 def _workspace_label(path: str | None) -> str | None:
@@ -105,87 +83,22 @@ def _workspace_label(path: str | None) -> str | None:
     return trimmed.rsplit("/", 1)[-1] or trimmed
 
 
-def _derive_title(messages: list[dict]) -> str:
-    """Pick a human-readable title from the conversation (first text-bearing msg).
+def _metrics_tooltip(task: Task) -> str:
+    """Multi-line hover breakdown (native title tooltips honour the newlines).
 
-    The first candidate is unwrapped to the user's query (machine framing such as
-    ``<environment_details>`` is dropped) so the title reflects what the user
-    actually typed, not the current mode/file tree the extension appended.
+    Reads the denormalized columns on the task row — the whole point of
+    services/task_summary is that the list never re-derives these.
     """
-    for msg in messages:
-        text = (msg.get("text") or "").strip()
-        if not text or text.startswith("{"):
-            continue
-        query = _strip_task_wrappers(text)
-        if not query:
-            continue
-        first_line = query.splitlines()[0].strip()
-        if first_line:
-            return first_line[:_TITLE_MAX] + ("…" if len(first_line) > _TITLE_MAX else "")
-    return "Untitled task"
-
-
-def _compute_metrics(messages: list[dict]) -> dict:
-    """Sum token/cost totals from a task's messages.
-
-    Server-side port of ``getMetrics`` in static/render.js (the aggregation the
-    VS Code view and live header use): over every ``api_req_started`` say-message
-    add ``tokensIn``/``tokensOut``/``cost`` (plus ``cacheWrites``/``cacheReads`` for
-    the hover breakdown) parsed from its JSON ``text``, plus the cost of any
-    ``condense_context`` message. ``duration_ms`` spans the first→last message ts.
-    ``contextTokens`` is deliberately omitted — it's a live header gauge, not a total.
-    """
-    tokens_in = 0
-    tokens_out = 0
-    cache_writes = 0
-    cache_reads = 0
-    cost = 0.0
-    first_ts: Optional[int] = None
-    last_ts: Optional[int] = None
-    for msg in messages:
-        ts = msg.get("ts")
-        if isinstance(ts, (int, float)):
-            first_ts = ts if first_ts is None else min(first_ts, ts)
-            last_ts = ts if last_ts is None else max(last_ts, ts)
-        if msg.get("type") != "say":
-            continue
-        say = msg.get("say")
-        if say == "api_req_started" and msg.get("text"):
-            try:
-                obj = json.loads(msg["text"])
-            except (json.JSONDecodeError, TypeError):
-                continue
-            if isinstance(obj, dict):
-                tokens_in += num(obj.get("tokensIn"))
-                tokens_out += num(obj.get("tokensOut"))
-                cache_writes += num(obj.get("cacheWrites"))
-                cache_reads += num(obj.get("cacheReads"))
-                cost += num(obj.get("cost"))
-        elif say == "condense_context":
-            condense = msg.get("contextCondense")
-            if isinstance(condense, dict):
-                cost += num(condense.get("cost"))
-    return {
-        "tokens_in": int(tokens_in),
-        "tokens_out": int(tokens_out),
-        "cache_writes": int(cache_writes),
-        "cache_reads": int(cache_reads),
-        "cost": cost,
-        "duration_ms": (last_ts - first_ts) if (first_ts is not None and last_ts is not None) else 0,
-    }
-
-
-def _metrics_tooltip(metrics: dict) -> str:
-    """Multi-line hover breakdown (native title tooltips honour the newlines)."""
     lines = [
-        f"↑ In: {metrics['tokens_in']:,}",
-        f"↓ Out: {metrics['tokens_out']:,}",
+        f"↑ In: {task.tokens_in:,}",
+        f"↓ Out: {task.tokens_out:,}",
     ]
-    if metrics["cache_writes"] or metrics["cache_reads"]:
-        lines.append(f"⚡ Cache: {metrics['cache_writes']:,} write / {metrics['cache_reads']:,} read")
-    if metrics["duration_ms"]:
-        lines.append(f"⏱ Session: {fmt_duration(metrics['duration_ms'])}")
-    lines.append(f"$ Cost: ${metrics['cost']:.4f}")
+    if task.cache_writes or task.cache_reads:
+        lines.append(f"⚡ Cache: {task.cache_writes:,} write / {task.cache_reads:,} read")
+    span = duration_ms(task.first_ts, task.last_ts)
+    if span:
+        lines.append(f"⏱ Session: {fmt_duration(span)}")
+    lines.append(f"$ Cost: ${task.cost:.4f}")
     return "\n".join(lines)
 
 
@@ -213,41 +126,54 @@ async def _load_task_messages(db: AsyncSession, task_id: str) -> list[dict]:
 @router.get("/app", response_class=HTMLResponse)
 async def task_list(
     request: Request,
+    page: int = Query(1, ge=1),
+    q: str = Query("", max_length=200),
     user: Optional[WebUser] = Depends(get_web_user_optional),
     db: AsyncSession = Depends(get_db),
 ):
-    """List the logged-in user's shared tasks."""
+    """List the logged-in user's shared tasks, newest first, one page at a time.
+
+    Every column shown comes from the task row itself (see
+    services/task_summary), so this is a single indexed query regardless of how
+    many messages the conversations hold. It used to load and JSON-parse the
+    entire corpus — 387 queries and 205 MB per request on the live deployment.
+    """
     if user is None:
         return RedirectResponse(url="/app/login", status_code=303)
 
-    # Tasks owned by the user, newest first, with message counts.
-    count_sq = (
-        select(TaskMessage.task_id, func.count(TaskMessage.id).label("n"))
-        .group_by(TaskMessage.task_id)
-        .subquery()
-    )
+    search = q.strip()
+    filters = [Task.user_id == user["user_id"]]
+    if search:
+        pattern = f"%{search}%"
+        filters.append(or_(Task.title.ilike(pattern), Task.workspace_path.ilike(pattern)))
+
+    total = await db.scalar(select(func.count(Task.id)).where(*filters)) or 0
+    page_count = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+    page = min(page, page_count)
+
     result = await db.execute(
-        select(Task, count_sq.c.n)
-        .outerjoin(count_sq, count_sq.c.task_id == Task.id)
-        .where(Task.user_id == user["user_id"])
+        select(Task)
+        .where(*filters)
         .order_by(Task.updated_at.desc())
+        .limit(PAGE_SIZE)
+        .offset((page - 1) * PAGE_SIZE)
     )
 
     items = []
-    for task, n in result.all():
-        messages = await _load_task_messages(db, task.id)
-        metrics = _compute_metrics(messages)
-        total_tokens = metrics["tokens_in"] + metrics["tokens_out"]
-        has_metrics = total_tokens > 0 or metrics["cost"] > 0
+    for task in result.scalars().all():
+        total_tokens = (task.tokens_in or 0) + (task.tokens_out or 0)
+        has_metrics = total_tokens > 0 or (task.cost or 0) > 0
+        span = duration_ms(task.first_ts, task.last_ts)
         items.append(
             {
                 "id": task.id,
-                "title": _derive_title(messages),
-                "message_count": n or 0,
+                "title": task.title or DEFAULT_TITLE,
+                "message_count": task.message_count or 0,
                 "updated_at": task.updated_at,
                 "tokens": fmt_tokens(total_tokens) if total_tokens else None,
-                "cost": f"${metrics['cost']:.4f}" if metrics["cost"] > 0 else None,
-                "metrics_title": _metrics_tooltip(metrics) if has_metrics else None,
+                "cost": f"${task.cost:.4f}" if (task.cost or 0) > 0 else None,
+                "duration": fmt_duration(span) if span else None,
+                "metrics_title": _metrics_tooltip(task) if has_metrics else None,
                 "workspace": task.workspace_path,
                 "workspace_label": _workspace_label(task.workspace_path),
             }
@@ -256,7 +182,17 @@ async def task_list(
     return templates.TemplateResponse(
         request,
         "tasks_list.html",
-        {"user": user, "tasks": items, "nav_active": "tasks"},
+        {
+            "user": user,
+            "tasks": items,
+            "nav_active": "tasks",
+            "query": search,
+            "page": page,
+            "page_count": page_count,
+            "total": total,
+            "has_prev": page > 1,
+            "has_next": page < page_count,
+        },
     )
 
 
@@ -324,7 +260,10 @@ async def task_detail(
         {
             "user": user,
             "task": task,
-            "title": _derive_title(messages),
+            # The stored title is authoritative; deriving it again is only a
+            # fallback for a row written before the summary columns existed and
+            # somehow missed the migration's backfill.
+            "title": task.title or derive_title(messages),
             "workspace": task.workspace_path,
             "workspace_label": _workspace_label(task.workspace_path),
             "messages_json": json.dumps(messages),
@@ -416,7 +355,7 @@ async def shared_task(
         {
             "user": user,
             "task": {"id": task_id},
-            "title": _derive_title(messages),
+            "title": (task.title if task is not None else None) or derive_title(messages),
             "messages_json": json.dumps(messages),
             "share_url": share.share_url,
             "live": live,

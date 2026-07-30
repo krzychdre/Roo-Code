@@ -1,7 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Your tasks · Tumble Code{% endblock %}
 {% block content %}
-<h1 class="page-title">Your tasks</h1>
+<div class="list-head">
+  <h1 class="page-title">Your tasks{% if total %} <span class="count-pill">{{ total }}</span>{% endif %}</h1>
+  <form class="search" method="get" action="/app" role="search">
+    <input type="search" name="q" value="{{ query }}" placeholder="Search title or project…" aria-label="Search tasks">
+    {% if query %}<a class="search-clear" href="/app" title="Clear search">✕</a>{% endif %}
+  </form>
+</div>
+
 {% if tasks %}
 <ul class="task-list">
   {% for t in tasks %}
@@ -11,6 +18,7 @@
       <span class="task-meta">
         {% if t.workspace_label %}<span class="badge badge-workspace" title="{{ t.workspace }}">{{ t.workspace_label }}</span>{% endif %}
         <span class="badge">{{ t.message_count }} message{{ '' if t.message_count == 1 else 's' }}</span>
+        {% if t.duration %}<span class="badge badge-muted" title="{{ t.metrics_title }}">{{ t.duration }}</span>{% endif %}
         {% if t.tokens %}<span class="badge badge-muted" title="{{ t.metrics_title }}">{{ t.tokens }} tokens</span>{% endif %}
         {% if t.cost %}<span class="badge badge-muted" title="{{ t.metrics_title }}">{{ t.cost }}</span>{% endif %}
         {% if t.updated_at %}<span class="task-date" data-ts="{{ t.updated_at.isoformat() }}">{{ t.updated_at.strftime('%Y-%m-%d %H:%M') }}</span>{% endif %}
@@ -23,6 +31,28 @@
   </li>
   {% endfor %}
 </ul>
+
+{% if page_count > 1 %}
+<nav class="pager" aria-label="Pagination">
+  {% if has_prev %}
+  <a class="pager-btn" href="/app?page={{ page - 1 }}{% if query %}&q={{ query }}{% endif %}">← Newer</a>
+  {% else %}
+  <span class="pager-btn disabled">← Newer</span>
+  {% endif %}
+  <span class="pager-status">Page {{ page }} of {{ page_count }}</span>
+  {% if has_next %}
+  <a class="pager-btn" href="/app?page={{ page + 1 }}{% if query %}&q={{ query }}{% endif %}">Older →</a>
+  {% else %}
+  <span class="pager-btn disabled">Older →</span>
+  {% endif %}
+</nav>
+{% endif %}
+
+{% elif query %}
+<div class="empty">
+  <p>Nothing matches “{{ query }}”.</p>
+  <p class="empty-hint"><a href="/app">Clear the search</a> to see all tasks.</p>
+</div>
 {% else %}
 <div class="empty">
   <p>No shared tasks yet.</p>

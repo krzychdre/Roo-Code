@@ -68,6 +68,54 @@ def _msgs():
     ]
 
 
+async def _add_message(session, task_id: str, message: dict) -> None:
+    """Insert one message the way the real write path does.
+
+    Production never stores a TaskMessage without also recording the token/cost
+    figures it contributes (services/task_summary.message_metrics) — the task
+    list reads those columns instead of re-parsing the conversation. A bare
+    ``session.add(TaskMessage(...))`` would leave them at zero, so tests that
+    took that shortcut would assert against a state production never produces.
+    """
+    from src.services.task_summary import message_metrics
+
+    session.add(
+        TaskMessage(
+            task_id=task_id,
+            message_data=json.dumps(message),
+            message_ts=message.get("ts"),
+            **message_metrics(message).as_columns(),
+        )
+    )
+
+
+async def _summarize(session, *task_ids: str) -> None:
+    """Roll the seeded messages up onto their task rows.
+
+    The counterpart of the refresh that ``backfill_messages`` /
+    ``upsert_task_message`` perform after every write.
+    """
+    from src.services.task_summary import derive_title, refresh_task_summary
+
+    await session.flush()
+    for task_id in task_ids:
+        rows = await session.execute(
+            select(TaskMessage.message_data).where(TaskMessage.task_id == task_id)
+        )
+        messages = []
+        for (payload,) in rows.all():
+            try:
+                parsed = json.loads(payload)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if isinstance(parsed, dict):
+                messages.append(parsed)
+        messages.sort(key=lambda m: m.get("ts") or 0)
+        await refresh_task_summary(
+            session, task_id, title=derive_title(messages), force_title=True
+        )
+
+
 def _backfill_files(task_id, messages):
     return {
         "file": ("task.json", json.dumps(messages), "application/json"),
@@ -292,7 +340,8 @@ async def test_app_lists_owned_tasks(client, db_session, session_factory):
     await _seed_user(db_session)
     async with session_factory() as s:
         s.add(Task(id="task-9", user_id="user_test"))
-        s.add(TaskMessage(task_id="task-9", message_data=json.dumps(_msgs()[0])))
+        await _add_message(s, "task-9", _msgs()[0])
+        await _summarize(s, "task-9")
         await s.commit()
 
     from src.main import app
@@ -322,12 +371,10 @@ async def test_title_strips_environment_details_wrapper(client, db_session, sess
     )
     async with session_factory() as s:
         s.add(Task(id="task-wrapped", user_id="user_test"))
-        s.add(
-            TaskMessage(
-                task_id="task-wrapped",
-                message_data=json.dumps({"ts": 1, "type": "say", "say": "text", "text": wrapped}),
-            )
+        await _add_message(
+            s, "task-wrapped", {"ts": 1, "type": "say", "say": "text", "text": wrapped}
         )
+        await _summarize(s, "task-wrapped")
         await s.commit()
 
     from src.main import app
@@ -355,7 +402,8 @@ async def test_app_list_and_detail_show_workspace(client, db_session, session_fa
     ws = "/home/krzych/Projekty/QUB-IT/Roo-Code-worktree-alpha"
     async with session_factory() as s:
         s.add(Task(id="task-ws-view", user_id="user_test", workspace_path=ws))
-        s.add(TaskMessage(task_id="task-ws-view", message_data=json.dumps(_msgs()[0])))
+        await _add_message(s, "task-ws-view", _msgs()[0])
+        await _summarize(s, "task-ws-view")
         await s.commit()
 
     from src.main import app
@@ -382,7 +430,8 @@ async def test_app_list_without_workspace_renders_cleanly(client, db_session, se
     await _seed_user(db_session)
     async with session_factory() as s:
         s.add(Task(id="task-no-ws", user_id="user_test", workspace_path=None))
-        s.add(TaskMessage(task_id="task-no-ws", message_data=json.dumps(_msgs()[0])))
+        await _add_message(s, "task-no-ws", _msgs()[0])
+        await _summarize(s, "task-no-ws")
         await s.commit()
 
     from src.main import app
@@ -417,8 +466,9 @@ async def test_app_list_shows_cost_and_tokens(client, db_session, session_factor
     }
     async with session_factory() as s:
         s.add(Task(id="task-metrics", user_id="user_test"))
-        s.add(TaskMessage(task_id="task-metrics", message_data=json.dumps(first)))
-        s.add(TaskMessage(task_id="task-metrics", message_data=json.dumps(api_req)))
+        await _add_message(s, "task-metrics", first)
+        await _add_message(s, "task-metrics", api_req)
+        await _summarize(s, "task-metrics")
         await s.commit()
 
     from src.main import app
@@ -467,7 +517,7 @@ async def test_shared_public_allows_anonymous(client, db_session, session_factor
     await _seed_user(db_session)
     async with session_factory() as s:
         s.add(Task(id="task-pub", user_id="user_test"))
-        s.add(TaskMessage(task_id="task-pub", message_data=json.dumps(_msgs()[0])))
+        await _add_message(s, "task-pub", _msgs()[0])
         s.add(
             TaskShare(
                 task_id="task-pub",
@@ -475,6 +525,7 @@ async def test_shared_public_allows_anonymous(client, db_session, session_factor
                 share_url="http://testserver/shared/task-pub",
             )
         )
+        await _summarize(s, "task-pub")
         await s.commit()
 
     resp = client.get("/shared/task-pub")
@@ -516,7 +567,8 @@ async def test_owner_task_detail_renders_live_controls(
     await _seed_user(db_session)
     async with session_factory() as s:
         s.add(Task(id="task-live", user_id="user_test"))
-        s.add(TaskMessage(task_id="task-live", message_data=json.dumps(_msgs()[0])))
+        await _add_message(s, "task-live", _msgs()[0])
+        await _summarize(s, "task-live")
         await s.commit()
 
     from src.main import app
@@ -550,7 +602,7 @@ async def test_shared_page_anonymous_never_renders_live_controls(
     await _seed_user(db_session)
     async with session_factory() as s:
         s.add(Task(id="task-pub2", user_id="user_test"))
-        s.add(TaskMessage(task_id="task-pub2", message_data=json.dumps(_msgs()[0])))
+        await _add_message(s, "task-pub2", _msgs()[0])
         s.add(
             TaskShare(
                 task_id="task-pub2",
@@ -558,6 +610,7 @@ async def test_shared_page_anonymous_never_renders_live_controls(
                 share_url="http://testserver/shared/task-pub2",
             )
         )
+        await _summarize(s, "task-pub2")
         await s.commit()
 
     resp = client.get("/shared/task-pub2")
@@ -579,7 +632,7 @@ async def test_shared_owner_gets_live_controls(
     await _seed_user(db_session)
     async with session_factory() as s:
         s.add(Task(id="task-own-live", user_id="user_test"))
-        s.add(TaskMessage(task_id="task-own-live", message_data=json.dumps(_msgs()[0])))
+        await _add_message(s, "task-own-live", _msgs()[0])
         s.add(
             TaskShare(
                 task_id="task-own-live",
@@ -587,6 +640,7 @@ async def test_shared_owner_gets_live_controls(
                 share_url="http://testserver/shared/task-own-live",
             )
         )
+        await _summarize(s, "task-own-live")
         await s.commit()
 
     from src.main import app
@@ -614,7 +668,7 @@ async def test_delete_task_removes_task_messages_and_share(
     await _seed_user(db_session)
     async with session_factory() as s:
         s.add(Task(id="task-del", user_id="user_test"))
-        s.add(TaskMessage(task_id="task-del", message_data=json.dumps(_msgs()[0])))
+        await _add_message(s, "task-del", _msgs()[0])
         s.add(
             TaskShare(
                 task_id="task-del",
@@ -622,6 +676,7 @@ async def test_delete_task_removes_task_messages_and_share(
                 share_url="http://testserver/shared/task-del",
             )
         )
+        await _summarize(s, "task-del")
         await s.commit()
 
     from src.main import app
@@ -660,7 +715,8 @@ async def test_delete_task_non_owner_is_noop(client, db_session, session_factory
     await _seed_user(db_session, user_id="owner", email="owner@example.com")
     async with session_factory() as s:
         s.add(Task(id="task-keep", user_id="owner"))
-        s.add(TaskMessage(task_id="task-keep", message_data=json.dumps(_msgs()[0])))
+        await _add_message(s, "task-keep", _msgs()[0])
+        await _summarize(s, "task-keep")
         await s.commit()
 
     from src.main import app
@@ -693,7 +749,7 @@ async def test_shared_link_404s_after_owner_deletes(
     await _seed_user(db_session)
     async with session_factory() as s:
         s.add(Task(id="task-gone", user_id="user_test"))
-        s.add(TaskMessage(task_id="task-gone", message_data=json.dumps(_msgs()[0])))
+        await _add_message(s, "task-gone", _msgs()[0])
         s.add(
             TaskShare(
                 task_id="task-gone",
@@ -701,6 +757,7 @@ async def test_shared_link_404s_after_owner_deletes(
                 share_url="http://testserver/shared/task-gone",
             )
         )
+        await _summarize(s, "task-gone")
         await s.commit()
 
     # Visible before delete.
@@ -729,7 +786,7 @@ async def test_shared_nonowner_stays_readonly(
     await _seed_user(db_session, user_id="owner", email="owner@example.com")
     async with session_factory() as s:
         s.add(Task(id="task-other", user_id="owner"))
-        s.add(TaskMessage(task_id="task-other", message_data=json.dumps(_msgs()[0])))
+        await _add_message(s, "task-other", _msgs()[0])
         s.add(
             TaskShare(
                 task_id="task-other",
@@ -737,6 +794,7 @@ async def test_shared_nonowner_stays_readonly(
                 share_url="http://testserver/shared/task-other",
             )
         )
+        await _summarize(s, "task-other")
         await s.commit()
 
     from src.main import app
@@ -951,8 +1009,9 @@ async def test_web_num_excludes_booleans(client, db_session, session_factory):
     }
     async with session_factory() as s:
         s.add(Task(id="task-bool", user_id="user_test"))
-        s.add(TaskMessage(task_id="task-bool", message_data=json.dumps(first)))
-        s.add(TaskMessage(task_id="task-bool", message_data=json.dumps(api_req)))
+        await _add_message(s, "task-bool", first)
+        await _add_message(s, "task-bool", api_req)
+        await _summarize(s, "task-bool")
         await s.commit()
 
     from src.main import app
@@ -1031,8 +1090,9 @@ async def test_shared_organization_visibility_blocks_other_org_user(
         s.add(Membership(user_id="owner", organization_id="org-a", role="org:member"))
         s.add(Membership(user_id="viewer", organization_id="org-b", role="org:member"))
         s.add(Task(id="task-org-vis", user_id="owner", organization_id="org-a"))
-        s.add(TaskMessage(task_id="task-org-vis", message_data=json.dumps(_msgs()[0])))
+        await _add_message(s, "task-org-vis", _msgs()[0])
         s.add(TaskShare(task_id="task-org-vis", visibility="organization"))
+        await _summarize(s, "task-org-vis")
         await s.commit()
 
     from src.main import app
@@ -1062,8 +1122,9 @@ async def test_shared_organization_visibility_allows_same_org_user(
         s.add(Membership(user_id="owner", organization_id="org-shared", role="org:member"))
         s.add(Membership(user_id="colleague", organization_id="org-shared", role="org:member"))
         s.add(Task(id="task-org-same", user_id="owner", organization_id="org-shared"))
-        s.add(TaskMessage(task_id="task-org-same", message_data=json.dumps(_msgs()[0])))
+        await _add_message(s, "task-org-same", _msgs()[0])
         s.add(TaskShare(task_id="task-org-same", visibility="organization"))
+        await _summarize(s, "task-org-same")
         await s.commit()
 
     from src.main import app
@@ -1250,19 +1311,23 @@ async def test_share_allowed_when_no_org_settings_configured(client, db_session,
 
 
 async def test_format_helpers_are_single_source_of_truth():
-    """web.py and metrics_service.py must import the SAME ``num``/``fmt_tokens``/
+    """Every module that counts tokens must use the SAME ``num``/``fmt_tokens``/
     ``fmt_duration`` function objects from ``src.utils.format`` — not local copies.
 
     This guards against the CB-7 regression: two independent copies of ``_num``
     drifted (one counted ``bool``, one didn't), so a malformed ``tokensIn: true``
-    inflated one view and not the other. If either module ever re-defines a
-    local copy, identity fails.
+    inflated one view and not the other. If any module re-defines a local copy,
+    identity fails.
+
+    Token parsing moved out of ``web.py`` into ``task_summary.py`` when the task
+    list stopped deriving its numbers at read time, so that module is now the one
+    that must be pinned; ``web.py`` only formats what it is handed.
     """
     from src.routers import web
-    from src.services import metrics_service
+    from src.services import metrics_service, task_summary
     from src.utils import format as fmt
 
-    assert web.num is fmt.num
+    assert task_summary.num is fmt.num
     assert web.fmt_tokens is fmt.fmt_tokens
     assert web.fmt_duration is fmt.fmt_duration
 
@@ -1270,3 +1335,187 @@ async def test_format_helpers_are_single_source_of_truth():
     assert metrics_service._num is fmt.num
     assert metrics_service.fmt_tokens is fmt.fmt_tokens
     assert metrics_service.fmt_duration is fmt.fmt_duration
+
+
+# --- task summary (denormalized display columns) ----------------------------
+
+
+async def test_backfill_fills_the_task_summary_columns(client, db_session, session_factory):
+    """The list renders from columns on the task row, so the write path must fill
+    them. Before this existed the list re-parsed every message on every view."""
+    await _seed_user(db_session)
+    _override_current_user(client.app)
+    messages = [
+        {"ts": 10, "type": "say", "say": "text", "text": "Add retention settings"},
+        {
+            "ts": 20,
+            "type": "say",
+            "say": "api_req_started",
+            "text": json.dumps(
+                {"tokensIn": 1200, "tokensOut": 300, "cacheReads": 900, "cacheWrites": 100, "cost": 0.0125}
+            ),
+        },
+        {"ts": 50, "type": "say", "say": "completion_result", "text": "Done"},
+    ]
+    files, data = _backfill_files("task-sum", messages)
+    try:
+        resp = client.post("/api/events/backfill", files=files, data=data)
+    finally:
+        client.app.dependency_overrides.pop(get_current_user, None)
+    assert resp.status_code == 200
+
+    async with session_factory() as s:
+        task = (await s.execute(select(Task).where(Task.id == "task-sum"))).scalar_one()
+        assert task.title == "Add retention settings"
+        assert task.message_count == 3
+        assert task.tokens_in == 1200
+        assert task.tokens_out == 300
+        assert task.cache_reads == 900
+        assert task.cache_writes == 100
+        assert task.cost == pytest.approx(0.0125)
+        assert task.first_ts == 10
+        assert task.last_ts == 50
+
+
+async def test_resharing_a_task_does_not_double_count(client, db_session, session_factory):
+    """Backfill replaces the conversation, so re-sharing must recompute — not add.
+
+    The summary is re-summed from the stored rows rather than accumulated, which
+    is what makes this idempotent.
+    """
+    await _seed_user(db_session)
+    _override_current_user(client.app)
+    messages = [
+        {"ts": 1, "type": "say", "say": "text", "text": "One task"},
+        {
+            "ts": 2,
+            "type": "say",
+            "say": "api_req_started",
+            "text": json.dumps({"tokensIn": 500, "tokensOut": 50, "cost": 0.01}),
+        },
+    ]
+    try:
+        for _ in range(3):
+            files, data = _backfill_files("task-idem", messages)
+            assert client.post("/api/events/backfill", files=files, data=data).status_code == 200
+    finally:
+        client.app.dependency_overrides.pop(get_current_user, None)
+
+    async with session_factory() as s:
+        task = (await s.execute(select(Task).where(Task.id == "task-idem"))).scalar_one()
+        assert task.message_count == 2
+        assert task.tokens_in == 500
+        assert task.cost == pytest.approx(0.01)
+
+
+async def test_live_upsert_replaces_metrics_instead_of_adding(db_session, session_factory):
+    """A streamed api_req_started only learns its cost in its final revision.
+
+    The row is upserted in place and the task total re-summed, so the interim
+    zero-cost revision must not linger and the final must not be added on top of
+    it.
+    """
+    from src.services.telemetry_service import upsert_task_message
+
+    await _seed_user(db_session)
+    partial = {
+        "ts": 7,
+        "type": "say",
+        "say": "api_req_started",
+        "partial": True,
+        "text": json.dumps({"tokensIn": 100, "tokensOut": 0}),
+    }
+    final = {
+        "ts": 7,
+        "type": "say",
+        "say": "api_req_started",
+        "text": json.dumps({"tokensIn": 100, "tokensOut": 250, "cost": 0.02}),
+    }
+
+    async with session_factory() as s:
+        await upsert_task_message(s, "task-live-sum", "user_test", partial)
+        await upsert_task_message(s, "task-live-sum", "user_test", final)
+        await s.commit()
+
+    async with session_factory() as s:
+        task = (await s.execute(select(Task).where(Task.id == "task-live-sum"))).scalar_one()
+        assert task.message_count == 1
+        assert task.tokens_in == 100
+        assert task.tokens_out == 250
+        assert task.cost == pytest.approx(0.02)
+
+
+async def test_task_list_is_paginated(client, db_session, session_factory):
+    """More tasks than one page must not all render at once."""
+    from src.routers.web import PAGE_SIZE
+
+    await _seed_user(db_session)
+    async with session_factory() as s:
+        for i in range(PAGE_SIZE + 5):
+            s.add(Task(id=f"task-p{i}", user_id="user_test", title=f"Task number {i}"))
+        await s.commit()
+
+    _override_web_user(client.app)
+    try:
+        first = client.get("/app")
+        second = client.get("/app?page=2")
+    finally:
+        client.app.dependency_overrides.pop(get_web_user_optional, None)
+
+    assert first.status_code == 200 and second.status_code == 200
+    assert first.text.count('class="task-item"') == PAGE_SIZE
+    assert second.text.count('class="task-item"') == 5
+    assert "Page 1 of 2" in first.text
+
+
+async def test_task_list_search_filters_by_title_and_workspace(client, db_session, session_factory):
+    await _seed_user(db_session)
+    async with session_factory() as s:
+        s.add(Task(id="t-a", user_id="user_test", title="Refactor the parser"))
+        s.add(Task(id="t-b", user_id="user_test", title="Unrelated", workspace_path="/home/k/parser-lab"))
+        s.add(Task(id="t-c", user_id="user_test", title="Something else"))
+        await s.commit()
+
+    _override_web_user(client.app)
+    try:
+        resp = client.get("/app?q=parser")
+    finally:
+        client.app.dependency_overrides.pop(get_web_user_optional, None)
+
+    assert resp.status_code == 200
+    assert "Refactor the parser" in resp.text
+    assert "parser-lab" in resp.text
+    assert "Something else" not in resp.text
+
+
+async def test_task_list_does_not_read_message_bodies(client, db_session, session_factory, monkeypatch):
+    """The whole point of the summary columns: rendering the list must never touch
+    the message corpus. Guards against a future change quietly reintroducing the
+    N+1 read that cost 2.47s per page view on the live deployment."""
+    from src.routers import web
+
+    await _seed_user(db_session)
+    async with session_factory() as s:
+        s.add(Task(id="task-noread", user_id="user_test", title="Cheap render", message_count=3))
+        await s.flush()
+        await _add_message(s, "task-noread", _msgs()[0])
+        await s.commit()
+
+    called = False
+
+    async def _boom(*args, **kwargs):
+        nonlocal called
+        called = True
+        return []
+
+    monkeypatch.setattr(web, "_load_task_messages", _boom)
+
+    _override_web_user(client.app)
+    try:
+        resp = client.get("/app")
+    finally:
+        client.app.dependency_overrides.pop(get_web_user_optional, None)
+
+    assert resp.status_code == 200
+    assert "Cheap render" in resp.text
+    assert called is False

@@ -60,6 +60,7 @@ async def backfill_messages(
     """
     from sqlalchemy import select, delete
     from src.models.task import Task, TaskMessage
+    from src.services.task_summary import derive_title, message_metrics, refresh_task_summary
 
     # Get-or-create the parent task, owned by the uploading user.
     result = await db.execute(select(Task).where(Task.id == task_id))
@@ -74,15 +75,27 @@ async def backfill_messages(
     # Replace any existing messages for this task (idempotent re-share).
     await db.execute(delete(TaskMessage).where(TaskMessage.task_id == task_id))
 
+    # The token/cost figures are parsed here, once, and stored alongside the
+    # message so the task rollup is a numeric SUM rather than a re-parse of the
+    # whole conversation on every page view (see services/task_summary).
+    parsed: list[dict] = []
     for msg in messages:
-        ts = msg.get("ts") if isinstance(msg, dict) else None
+        is_dict = isinstance(msg, dict)
+        if is_dict:
+            parsed.append(msg)
         task_msg = TaskMessage(
             task_id=task_id,
-            message_data=json.dumps(msg) if not isinstance(msg, str) else msg,
-            message_ts=ts,
+            message_data=msg if isinstance(msg, str) else json.dumps(msg),
+            message_ts=msg.get("ts") if is_dict else None,
+            **message_metrics(msg if is_dict else {}).as_columns(),
         )
         db.add(task_msg)
     await db.flush()
+
+    # A re-share replaces the whole conversation, so the title is re-derived
+    # from scratch (force=True): the row may still carry the placeholder set
+    # when the live bridge created the task before any text-bearing message.
+    await refresh_task_summary(db, task_id, title=derive_title(parsed), force_title=True)
 
 
 async def upsert_task_message(
@@ -127,12 +140,14 @@ async def upsert_task_message(
     """
     from sqlalchemy import func, select
     from src.models.task import Task, TaskMessage
+    from src.services.task_summary import derive_title, message_metrics, refresh_task_summary
 
     if not isinstance(message, dict):
         return
 
     ts = message.get("ts")
     payload = json.dumps(message)
+    metrics = message_metrics(message).as_columns()
 
     result = await db.execute(select(Task).where(Task.id == task_id))
     task = result.scalar_one_or_none()
@@ -156,11 +171,17 @@ async def upsert_task_message(
 
         is_final = not message.get("partial")
         base = _insert(TaskMessage).values(
-            task_id=task_id, message_data=payload, message_ts=ts
+            task_id=task_id, message_data=payload, message_ts=ts, **metrics
         )
         on_conflict = dict(
             index_elements=["task_id", "message_ts"],
-            set_={"message_data": base.excluded.message_data},
+            set_={
+                "message_data": base.excluded.message_data,
+                # The metrics travel with the payload: an `api_req_started` only
+                # learns its real token/cost figures in its final revision, so a
+                # stale row must be corrected, not left behind.
+                **{name: getattr(base.excluded, name) for name in metrics},
+            },
         )
         if not is_final:
             # A partial may only advance the row, never shrink it, so a
@@ -174,8 +195,40 @@ async def upsert_task_message(
         stmt = base.on_conflict_do_update(**on_conflict)
         await db.execute(stmt)
         await db.flush()
+        await _refresh_after_live_write(db, task_id, message, is_final)
         return
 
     # ts is None (legacy/backfill) or an exotic dialect: just append.
-    db.add(TaskMessage(task_id=task_id, message_data=payload, message_ts=ts))
+    db.add(TaskMessage(task_id=task_id, message_data=payload, message_ts=ts, **metrics))
     await db.flush()
+    await _refresh_after_live_write(db, task_id, message, not message.get("partial"))
+
+
+async def _refresh_after_live_write(
+    db: AsyncSession,
+    task_id: str,
+    message: dict,
+    is_final: bool,
+) -> None:
+    """Re-roll the task summary after a live message, but only when it can change.
+
+    A streaming message is upserted many times per second while `partial` is
+    true, and none of those revisions can move the totals: a partial
+    ``api_req_started`` has no cost yet, and the row's ``ts`` (which sets the
+    task's timespan) was already recorded by its first revision. Refreshing on
+    finals only cuts the aggregate down to roughly one per conversation step
+    while leaving the stored summary exactly as correct — the final revision of
+    every message always arrives.
+
+    The live web view reads its header numbers from the socket stream, not from
+    this summary, so nothing on screen lags because of the skipped refreshes.
+    """
+    if not is_final:
+        return
+
+    from src.services.task_summary import derive_title, refresh_task_summary
+
+    # Only a text-bearing message can supply a title, and only the first one
+    # ever does — refresh_task_summary keeps an existing title as-is.
+    candidate = derive_title([message]) if message.get("text") else None
+    await refresh_task_summary(db, task_id, title=candidate)
