@@ -31,7 +31,14 @@ export class PostHogTelemetryClient extends BaseTelemetryClient {
 		super(
 			{
 				type: "exclude",
-				events: [TelemetryEventName.TASK_MESSAGE, TelemetryEventName.LLM_COMPLETION],
+				// Per-call usage stays out of PostHog for the same reason
+				// TASK_MESSAGE does: it is high-volume accounting detail meant
+				// for the user's own cloud backend, not product analytics.
+				events: [
+					TelemetryEventName.TASK_MESSAGE,
+					TelemetryEventName.LLM_COMPLETION,
+					TelemetryEventName.EMBEDDING_USAGE,
+				],
 			},
 			debug,
 		)

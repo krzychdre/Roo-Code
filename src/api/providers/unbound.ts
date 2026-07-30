@@ -14,7 +14,8 @@ import { OpenAiReasoningParams } from "../transform/reasoning"
 import { DEFAULT_HEADERS } from "./constants"
 import { getModels } from "./fetchers/modelCache"
 import { BaseProvider } from "./base-provider"
-import type { SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import type { CompletionResult, SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import { openAiCompletionUsage } from "./utils/completion-usage"
 import { handleOpenAIError } from "./utils/openai-error-handler"
 import { applyRouterToolPreferences } from "./utils/router-tool-preferences"
 import { extractReasoningFromDelta } from "./utils/extract-reasoning"
@@ -193,6 +194,10 @@ export class UnboundHandler extends BaseProvider implements SingleCompletionHand
 	}
 
 	async completePrompt(prompt: string): Promise<string> {
+		return (await this.completePromptWithUsage(prompt)).text
+	}
+
+	async completePromptWithUsage(prompt: string): Promise<CompletionResult> {
 		const { id: model, maxTokens: max_tokens, temperature } = await this.fetchModel()
 
 		let openAiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [{ role: "system", content: prompt }]
@@ -210,6 +215,6 @@ export class UnboundHandler extends BaseProvider implements SingleCompletionHand
 		} catch (error) {
 			throw handleOpenAIError(error, this.providerName)
 		}
-		return response.choices[0]?.message.content || ""
+		return { text: response.choices[0]?.message.content || "", usage: openAiCompletionUsage(response.usage) }
 	}
 }

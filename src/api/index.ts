@@ -10,8 +10,48 @@ import {
 	runtimeProviderRegistry,
 } from "./runtime-provider-registry"
 
+/**
+ * What a one-shot completion cost, as the provider reported it.
+ *
+ * Optional throughout: not every provider returns a usage block, and an absent
+ * figure must stay absent rather than become a zero that quietly lands in a
+ * total. `cacheReadTokens`/`cacheWriteTokens` follow the same convention as the
+ * streaming path — for OpenAI-protocol providers the cached part is already
+ * inside `inputTokens`.
+ */
+export interface CompletionUsage {
+	inputTokens: number
+	outputTokens: number
+	cacheReadTokens?: number
+	cacheWriteTokens?: number
+	totalCost?: number
+}
+
+/**
+ * A one-shot completion plus what it cost.
+ */
+export interface CompletionResult {
+	text: string
+	usage?: CompletionUsage
+}
+
 export interface SingleCompletionHandler {
 	completePrompt(prompt: string): Promise<string>
+	/**
+	 * The same call, reporting what it cost.
+	 *
+	 * `completePrompt` returns a bare string, so every one-shot call the
+	 * extension makes off the main task loop — enhancing a prompt, ranking
+	 * memories — threw its token usage away and appeared nowhere in the usage
+	 * metrics, while still costing real prompt processing on the server.
+	 *
+	 * Providers implement this and let `completePrompt` delegate to it, so the
+	 * request itself is unchanged. Optional so that an implementation which has
+	 * not been converted (or lives outside this repo) still works; callers go
+	 * through `runCompletion`, which falls back and reports the usage as
+	 * unknown rather than as zero.
+	 */
+	completePromptWithUsage?(prompt: string): Promise<CompletionResult>
 }
 
 export interface ApiHandlerCreateMessageMetadata {

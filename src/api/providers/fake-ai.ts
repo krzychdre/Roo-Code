@@ -2,7 +2,7 @@ import { Anthropic } from "@anthropic-ai/sdk"
 
 import type { ModelInfo } from "@roo-code/types"
 
-import type { ApiHandler, SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import type { ApiHandler, CompletionResult, SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
 import type { ApiHandlerOptions } from "../../shared/api"
 import { ApiStream } from "../transform/stream"
 
@@ -77,5 +77,15 @@ export class FakeAIHandler implements ApiHandler, SingleCompletionHandler {
 
 	completePrompt(prompt: string): Promise<string> {
 		return this.ai.completePrompt(prompt)
+	}
+
+	// Delegates when the injected fake reports usage, and otherwise reports none
+	// — the fake's shape is supplied by whoever is testing with it.
+	async completePromptWithUsage(prompt: string): Promise<CompletionResult> {
+		const fake = this.ai as Partial<SingleCompletionHandler>
+		if (typeof fake.completePromptWithUsage === "function") {
+			return fake.completePromptWithUsage(prompt)
+		}
+		return { text: await this.ai.completePrompt(prompt) }
 	}
 }

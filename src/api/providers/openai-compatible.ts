@@ -17,7 +17,8 @@ import { ApiStream, ApiStreamUsageChunk } from "../transform/stream"
 
 import { DEFAULT_HEADERS } from "./constants"
 import { BaseProvider } from "./base-provider"
-import type { SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import type { CompletionResult, SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import { aiSdkCompletionUsage } from "./utils/completion-usage"
 
 /**
  * Configuration options for creating an OpenAI-compatible provider.
@@ -249,17 +250,21 @@ export abstract class OpenAICompatibleHandler extends BaseProvider implements Si
 	 * Complete a prompt using the AI SDK generateText.
 	 */
 	async completePrompt(prompt: string): Promise<string> {
+		return (await this.completePromptWithUsage(prompt)).text
+	}
+
+	async completePromptWithUsage(prompt: string): Promise<CompletionResult> {
 		const languageModel = this.getLanguageModel()
 
 		// Only include temperature if explicitly set
 		const temperature = this.config.temperature
-		const { text } = await generateText({
+		const { text, usage } = await generateText({
 			model: languageModel,
 			prompt,
 			maxOutputTokens: this.getMaxOutputTokens(),
 			...(temperature !== undefined && { temperature }),
 		})
 
-		return text
+		return { text, usage: aiSdkCompletionUsage(usage) }
 	}
 }

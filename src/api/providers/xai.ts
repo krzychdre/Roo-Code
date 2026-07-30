@@ -13,7 +13,8 @@ import { getModelParams } from "../transform/model-params"
 
 import { DEFAULT_HEADERS } from "./constants"
 import { BaseProvider } from "./base-provider"
-import type { SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import type { CompletionResult, SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import { responsesApiCompletionUsage } from "./utils/completion-usage"
 import { handleOpenAIError } from "./utils/openai-error-handler"
 import { isMcpTool } from "../../utils/mcp-name"
 
@@ -143,6 +144,10 @@ export class XAIHandler extends BaseProvider implements SingleCompletionHandler 
 	}
 
 	async completePrompt(prompt: string): Promise<string> {
+		return (await this.completePromptWithUsage(prompt)).text
+	}
+
+	async completePromptWithUsage(prompt: string): Promise<CompletionResult> {
 		const model = this.getModel()
 
 		try {
@@ -153,7 +158,11 @@ export class XAIHandler extends BaseProvider implements SingleCompletionHandler 
 			})
 
 			// output_text is a convenience field on the Responses API response
-			return response.output_text || ""
+			// The Responses API names its usage fields input_tokens/output_tokens.
+			return {
+				text: response.output_text || "",
+				usage: responsesApiCompletionUsage(response.usage),
+			}
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : String(error)
 			const apiError = new ApiProviderError(errorMessage, this.providerName, model.id, "completePrompt")

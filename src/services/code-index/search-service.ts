@@ -6,6 +6,7 @@ import { CodeIndexConfigManager } from "./config-manager"
 import { CodeIndexStateManager } from "./state-manager"
 import { TelemetryService } from "@roo-code/telemetry"
 import { TelemetryEventName } from "@roo-code/types"
+import { reportEmbeddingUsage } from "./embedding-usage"
 
 /**
  * Service responsible for searching the code index.
@@ -43,6 +44,7 @@ export class CodeIndexSearchService {
 		try {
 			// Generate embedding for query
 			const embeddingResponse = await this.embedder.createEmbeddings([query])
+			reportEmbeddingUsage(this.embedder, embeddingResponse, "search")
 			const vector = embeddingResponse?.embeddings[0]
 			if (!vector) {
 				throw new Error("Failed to generate embedding for query.")

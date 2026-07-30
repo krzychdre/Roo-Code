@@ -12,7 +12,7 @@ import { ApiStream } from "../transform/stream"
 import { convertToVsCodeLmMessages, extractTextCountFromMessage } from "../transform/vscode-lm-format"
 
 import { BaseProvider } from "./base-provider"
-import type { SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import type { CompletionResult, SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
 
 /**
  * Converts OpenAI-format tools to VSCode Language Model tools.
@@ -563,6 +563,10 @@ export class VsCodeLmHandler extends BaseProvider implements SingleCompletionHan
 	}
 
 	async completePrompt(prompt: string): Promise<string> {
+		return (await this.completePromptWithUsage(prompt)).text
+	}
+
+	async completePromptWithUsage(prompt: string): Promise<CompletionResult> {
 		try {
 			const client = await this.getClient()
 			const response = await client.sendRequest(
@@ -576,7 +580,14 @@ export class VsCodeLmHandler extends BaseProvider implements SingleCompletionHan
 					result += chunk.value
 				}
 			}
-			return result
+			// The VS Code LM API returns no usage block, so the figures come from
+			// its own tokenizer — the same source the streaming path reports from
+			// (see the `usage` chunk in createMessage), so the two agree.
+			const [inputTokens, outputTokens] = await Promise.all([
+				this.internalCountTokens(prompt),
+				this.internalCountTokens(result),
+			])
+			return { text: result, usage: { inputTokens, outputTokens } }
 		} catch (error) {
 			if (error instanceof Error) {
 				throw new Error(`VSCode LM completion error: ${error.message}`)

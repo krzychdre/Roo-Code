@@ -24,6 +24,7 @@ export enum TelemetryEventName {
 	TASK_MESSAGE = "Task Message",
 	TASK_CONVERSATION_MESSAGE = "Conversation Message",
 	LLM_COMPLETION = "LLM Completion",
+	EMBEDDING_USAGE = "Embedding Usage",
 	MODE_SWITCH = "Mode Switched",
 	MODE_SELECTOR_OPENED = "Mode Selector Opened",
 	TOOL_USED = "Tool Used",
@@ -146,6 +147,20 @@ export const telemetryPropertiesSchema = z.object({
 	...gitPropertiesSchema.shape,
 })
 
+/**
+ * Which part of the extension made a completion.
+ *
+ * Only `task` calls are turns of the conversation. The rest is the machinery
+ * around it — summarising the history, rewriting a prompt, ranking memories —
+ * which costs real tokens on the same endpoint and used to be reported
+ * nowhere. Absent on rows written before this existed, which are all `task`.
+ */
+export const completionKinds = ["task", "condense", "enhance", "memory"] as const
+
+export const completionKindSchema = z.enum(completionKinds)
+
+export type CompletionKind = z.infer<typeof completionKindSchema>
+
 export type TelemetryProperties = z.infer<typeof telemetryPropertiesSchema>
 
 /**
@@ -238,6 +253,17 @@ export const rooCodeTelemetryEventSchema = z.discriminatedUnion("type", [
 			ttftMs: z.number().optional(),
 			reasoningChars: z.number().optional(),
 			toolCount: z.number().optional(),
+			completionKind: completionKindSchema.optional(),
+			usageReported: z.boolean().optional(),
+		}),
+	}),
+	z.object({
+		type: z.literal(TelemetryEventName.EMBEDDING_USAGE),
+		properties: z.object({
+			...telemetryPropertiesSchema.shape,
+			promptTokens: z.number(),
+			totalTokens: z.number(),
+			source: z.string().optional(),
 		}),
 	}),
 ])

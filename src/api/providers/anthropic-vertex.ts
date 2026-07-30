@@ -25,7 +25,8 @@ import {
 
 import { BaseProvider } from "./base-provider"
 import { parseVertexJsonCredentials } from "./utils/vertex-credentials"
-import type { SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import type { CompletionResult, SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import { anthropicCompletionUsage } from "./utils/completion-usage"
 
 // https://docs.anthropic.com/en/api/claude-on-vertex-ai
 export class AnthropicVertexHandler extends BaseProvider implements SingleCompletionHandler {
@@ -276,7 +277,11 @@ export class AnthropicVertexHandler extends BaseProvider implements SingleComple
 		}
 	}
 
-	async completePrompt(prompt: string) {
+	async completePrompt(prompt: string): Promise<string> {
+		return (await this.completePromptWithUsage(prompt)).text
+	}
+
+	async completePromptWithUsage(prompt: string): Promise<CompletionResult> {
 		try {
 			let {
 				id,
@@ -304,12 +309,13 @@ export class AnthropicVertexHandler extends BaseProvider implements SingleComple
 
 			const response = await this.client.messages.create(params)
 			const content = response.content[0]
+			const usage = anthropicCompletionUsage(response.usage)
 
 			if (content.type === "text") {
-				return content.text
+				return { text: content.text, usage }
 			}
 
-			return ""
+			return { text: "", usage }
 		} catch (error) {
 			if (error instanceof Error) {
 				throw new Error(`Vertex completion error: ${error.message}`)

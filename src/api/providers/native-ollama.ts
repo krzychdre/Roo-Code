@@ -7,7 +7,8 @@ import { BaseProvider } from "./base-provider"
 import type { ApiHandlerOptions } from "../../shared/api"
 import { getOllamaModels } from "./fetchers/ollama"
 import { TagMatcher } from "../../utils/tag-matcher"
-import type { SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import type { CompletionResult, SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
+import { ollamaCompletionUsage } from "./utils/completion-usage"
 
 interface OllamaChatOptions {
 	temperature?: number
@@ -389,6 +390,10 @@ export class NativeOllamaHandler extends BaseProvider implements SingleCompletio
 	}
 
 	async completePrompt(prompt: string): Promise<string> {
+		return (await this.completePromptWithUsage(prompt)).text
+	}
+
+	async completePromptWithUsage(prompt: string): Promise<CompletionResult> {
 		try {
 			const client = this.ensureClient()
 			const { id: modelId } = await this.fetchModel()
@@ -413,7 +418,10 @@ export class NativeOllamaHandler extends BaseProvider implements SingleCompletio
 				options: chatOptions,
 			})
 
-			return response.message?.content || ""
+			return {
+				text: response.message?.content || "",
+				usage: ollamaCompletionUsage(response),
+			}
 		} catch (error) {
 			if (error instanceof Error) {
 				throw new Error(`Ollama completion error: ${error.message}`)

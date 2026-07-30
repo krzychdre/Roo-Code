@@ -1,7 +1,7 @@
 import { ProviderSettings, ClineMessage, GlobalState, TelemetryEventName } from "@roo-code/types"
 import { TelemetryService } from "@roo-code/telemetry"
 import { supportPrompt } from "../../shared/support-prompt"
-import { singleCompletionHandler } from "../../utils/single-completion-handler"
+import { singleCompletionWithUsage } from "../../utils/single-completion-handler"
 import { ProviderSettingsManager } from "../config/ProviderSettingsManager"
 import { ClineProvider } from "./ClineProvider"
 
@@ -14,6 +14,8 @@ export interface MessageEnhancerOptions {
 	includeTaskHistoryInEnhance?: boolean
 	currentClineMessages?: ClineMessage[]
 	providerSettingsManager: ProviderSettingsManager
+	/** The open task, when there is one — enhancement also works with none. */
+	taskId?: string
 }
 
 export interface MessageEnhancerResult {
@@ -42,6 +44,7 @@ export class MessageEnhancer {
 				includeTaskHistoryInEnhance,
 				currentClineMessages,
 				providerSettingsManager,
+				taskId,
 			} = options
 
 			// Determine which API configuration to use
@@ -77,7 +80,24 @@ export class MessageEnhancer {
 			)
 
 			// Call the single completion handler to get the enhanced prompt
-			const enhancedText = await singleCompletionHandler(configToUse, enhancementPrompt)
+			const { text: enhancedText, usage } = await singleCompletionWithUsage(configToUse, enhancementPrompt)
+
+			// Enhancement is a real request to a real model — and often not the
+			// task's model, since it has its own profile. Report it so the tokens
+			// it spends stop being invisible.
+			if (TelemetryService.hasInstance()) {
+				TelemetryService.instance.captureLlmCompletion(taskId, {
+					inputTokens: usage?.inputTokens ?? 0,
+					outputTokens: usage?.outputTokens ?? 0,
+					cacheReadTokens: usage?.cacheReadTokens ?? 0,
+					cacheWriteTokens: usage?.cacheWriteTokens ?? 0,
+					cost: usage?.totalCost,
+					completionKind: "enhance",
+					usageReported: usage !== undefined,
+					...(configToUse.apiModelId && { modelId: configToUse.apiModelId }),
+					...(configToUse.apiProvider && { apiProvider: configToUse.apiProvider }),
+				})
+			}
 
 			return {
 				success: true,
