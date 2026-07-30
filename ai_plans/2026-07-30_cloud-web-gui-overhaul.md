@@ -197,7 +197,69 @@ id. Deleting a parent offers to include its subtasks.
 
 ---
 
-## 4. Non-goals / follow-ups recorded
+## 4. Outcome
+
+All seven branches are built, tested and committed, stacked in the order above.
+138 tests pass (up from 91). Every migration was verified against a clone of the
+production database, never against production itself.
+
+| Branch                                | State | Evidence                                                                                                   |
+| ------------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------- |
+| 1 `perf/cloud-web-task-list`          | done  | `/app` server time 2470ms -> 2.3ms; 387/387 tasks match the old computation on every field, 0 mismatches   |
+| 2 `feat/cloud-web-ui-foundation`      | done  | screenshots of all three pages; found the column-alignment and uppercase-content defects                   |
+| 3 `feat/cloud-web-collapsible-blocks` | done  | 21 browser assertions; mutation-checked (breaking the fold rule turns 21 passes into 10 failures)          |
+| 4 `feat/cloud-web-subtasks`           | done  | 157 links recovered, 151 stamped, 0 dangling / 0 disagreements / 0 self-parents; list 387 flat -> 236 runs |
+| 5 `feat/cloud-web-session-quality`    | done  | 60 clean / 104 friction / 72 unfinished across 236 runs                                                    |
+| 6 `feat/cloud-web-bulk-delete`        | done  | 20 browser assertions + 8 server tests                                                                     |
+| 7 `feat/cloud-web-retention`          | done  | 15 tests; preview verified against the sweep                                                               |
+
+### Changes from the plan as written
+
+**Light mode was cut** (planned in branch 2). Dark is the identity here and a
+half-committed light theme would dilute it for a personal console used beside a
+dark editor. The token layer would support one if it is ever wanted.
+
+**The "rejection" signal was renamed and taken out of the grade** (branch 5).
+Counting a reply to a proposed result as a defect fired 160 times against 104
+mid-run corrections on the live corpus, and moved 17 of 236 runs out of "clean"
+on a reading the data does not support — `scripts/agent-bench/collect.py`
+documents the same signal as "pushback or follow-up, not a defect count". It is
+now reported as context, named honestly, and excluded from the grade.
+
+**A retention default was removed before it could bite** (branch 7). The first
+draft gave a fresh policy `max_age_days = 90`; a test written for it showed that
+"Run now" would then delete months of conversations for someone who had only
+just opened the page. Limits now start NULL, with the suggested values as form
+placeholders.
+
+### Defects found while building, beyond the audit list
+
+- The task list was a flex row, so a task missing a workspace or a cost shifted
+  every figure after it and the columns could not be read down.
+- Message headers uppercased their whole label, mangling content: `uv run pytest
+-q` rendered as `UV RUN PYTEST -Q`, and file paths came out shouting.
+- A fold the reader opened slammed shut on the next streamed chunk, because
+  every partial re-rendered the row.
+- Deleting a parent left its children pointing at a deleted task. Postgres nulls
+  it via the foreign key; SQLite does not enforce foreign keys unless asked, so
+  the engines disagreed — and a child left pointing at a deleted parent
+  disappears from the list entirely, since the default view selects on
+  `parent_task_id IS NULL`. Now nulled explicitly, in code, on both.
+- Session quality was rendered inside the telemetry `has_data` gate, so it
+  vanished whenever no completions were recorded for the period — even though it
+  is computed from the task rows, not from telemetry.
+
+### Operational note
+
+The running `api` container is built from an image that predates
+`src/utils/`, so it is behind this branch stack. It needs rebuilding before any
+of this is live: `docker compose up -d --build api`. The migrations then run
+from the entrypoint; the whole chain took 14s against a clone of the production
+database.
+
+---
+
+## 5. Non-goals / follow-ups recorded
 
 - **D5** (`Tool Used` loses `tool`) — extension-side Zod schema fix.
 - **D6** (proxy stub + optional auth) — separate hardening branch; make auth
