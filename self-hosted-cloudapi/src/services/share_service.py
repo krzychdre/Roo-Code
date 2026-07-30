@@ -4,7 +4,7 @@ import json
 from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, update
 
 from config.settings import settings
 from src.models.task import Task, TaskMessage, TaskShare
@@ -111,18 +111,102 @@ async def delete_shared_task(
     Returns True when the task existed and was owned by ``user_id`` (and is now
     gone), False otherwise — so an unknown id or another user's task is a safe
     no-op, never a leak or an error.
+    """
+    return await delete_tasks(db, [task_id], user_id) == 1
+
+
+async def delete_tasks(
+    db: AsyncSession,
+    task_ids: list[str],
+    user_id: str,
+    *,
+    include_subtasks: bool = False,
+) -> int:
+    """Delete every task in ``task_ids`` that ``user_id`` owns. Returns the count.
+
+    Ownership is re-checked here against the database rather than trusted from
+    the request: a bulk form posts a list of ids, and nothing stops a caller
+    from adding somebody else's. Ids that are unknown or owned by another user
+    are dropped silently, so a partly-wrong list still deletes exactly the part
+    the caller was entitled to delete, and reveals nothing about the rest.
+
+    With ``include_subtasks`` the selection is expanded downwards through the
+    task tree first. Without it, a deleted parent's children survive as roots
+    rather than disappearing with work the caller never selected.
 
     Children are deleted explicitly (messages, then shares, then the task)
     rather than via ORM relationship cascade: under async SQLAlchemy the cascade
     would try to lazy-load ``task.messages``/``task.shares``, which raises.
     """
-    result = await db.execute(select(Task).where(Task.id == task_id))
-    task = result.scalar_one_or_none()
-    if task is None or task.user_id != user_id:
-        return False
+    if not task_ids:
+        return 0
 
-    await db.execute(delete(TaskMessage).where(TaskMessage.task_id == task_id))
-    await db.execute(delete(TaskShare).where(TaskShare.task_id == task_id))
-    await db.execute(delete(Task).where(Task.id == task_id))
+    owned = await _owned_ids(db, task_ids, user_id)
+    if include_subtasks:
+        owned = await _with_descendants(db, owned, user_id)
+    if not owned:
+        return 0
+
+    # Orphan surviving children explicitly rather than leaving it to the
+    # ON DELETE SET NULL on tasks.parent_task_id. Postgres honours that
+    # constraint; SQLite does not enforce foreign keys unless the connection
+    # asks it to, so the two engines would disagree — and a child left pointing
+    # at a deleted parent disappears from the list entirely, because the default
+    # view selects on `parent_task_id IS NULL`.
+    await db.execute(
+        update(Task).where(Task.parent_task_id.in_(owned)).values(parent_task_id=None)
+    )
+
+    await db.execute(delete(TaskMessage).where(TaskMessage.task_id.in_(owned)))
+    await db.execute(delete(TaskShare).where(TaskShare.task_id.in_(owned)))
+    await db.execute(delete(Task).where(Task.id.in_(owned)))
     await db.flush()
-    return True
+    # `task_relations` rows are deliberately kept. They are the durable record
+    # of what telemetry said, they carry no foreign keys, and keeping them means
+    # re-sharing a deleted task restores its place in the tree.
+    return len(owned)
+
+
+async def _owned_ids(db: AsyncSession, task_ids: list[str], user_id: str) -> list[str]:
+    result = await db.execute(
+        select(Task.id).where(Task.id.in_(task_ids), Task.user_id == user_id)
+    )
+    return [row[0] for row in result.all()]
+
+
+async def _with_descendants(
+    db: AsyncSession, task_ids: list[str], user_id: str, max_depth: int = 20
+) -> list[str]:
+    """Expand a selection to include every subtask beneath it, at any depth.
+
+    Walked level by level rather than with a recursive CTE so the same code runs
+    on SQLite (the test database) and Postgres. Bounded by ``max_depth`` — the
+    parent links are built from client-supplied ids, and a cycle must not spin
+    here.
+    """
+    collected = list(task_ids)
+    seen = set(collected)
+    frontier = collected
+    for _ in range(max_depth):
+        if not frontier:
+            break
+        result = await db.execute(
+            select(Task.id).where(
+                Task.parent_task_id.in_(frontier), Task.user_id == user_id
+            )
+        )
+        frontier = [row[0] for row in result.all() if row[0] not in seen]
+        seen.update(frontier)
+        collected.extend(frontier)
+    return collected
+
+
+async def count_descendants(db: AsyncSession, task_ids: list[str], user_id: str) -> int:
+    """How many extra tasks ``include_subtasks`` would add to this selection.
+
+    Shown on the confirmation so the scope of a delete is stated before it runs.
+    """
+    if not task_ids:
+        return 0
+    owned = await _owned_ids(db, task_ids, user_id)
+    return len(await _with_descendants(db, owned, user_id)) - len(owned)

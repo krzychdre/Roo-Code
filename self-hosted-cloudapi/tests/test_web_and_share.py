@@ -1972,3 +1972,212 @@ async def test_replying_to_a_result_does_not_count_as_friction(
     assert q.grade == "clean"
     # It is still reported — just as context, after the grade's own reasons.
     assert any("replied to 1 finished result" in r for r in q.reasons())
+
+
+# --- bulk delete ------------------------------------------------------------
+
+
+async def _seed_tasks(session_factory, *specs):
+    """specs: (task_id, user_id, parent_task_id or None)."""
+    async with session_factory() as s:
+        for task_id, user_id, parent in specs:
+            s.add(Task(id=task_id, user_id=user_id, title=f"Task {task_id}"))
+            await s.flush()
+            await _add_message(s, task_id, _msgs()[0])
+        await s.flush()
+        for task_id, _, parent in specs:
+            if parent:
+                await s.execute(
+                    Task.__table__.update().where(Task.id == task_id).values(parent_task_id=parent)
+                )
+        await s.commit()
+
+
+async def _remaining(session_factory):
+    async with session_factory() as s:
+        rows = await s.execute(select(Task.id).order_by(Task.id))
+        return {r[0] for r in rows.all()}
+
+
+async def test_bulk_delete_removes_the_selection(client, db_session, session_factory):
+    await _seed_user(db_session)
+    await _seed_tasks(
+        session_factory, ("b1", "user_test", None), ("b2", "user_test", None), ("b3", "user_test", None)
+    )
+
+    _override_web_user(client.app)
+    try:
+        resp = client.post(
+            "/app/tasks/bulk-delete", data={"task_ids": ["b1", "b3"]}, follow_redirects=False
+        )
+    finally:
+        client.app.dependency_overrides.pop(get_web_user_optional, None)
+
+    assert resp.status_code == 303
+    assert await _remaining(session_factory) == {"b2"}
+
+    # The conversations went with them.
+    async with session_factory() as s:
+        left = (
+            await s.execute(
+                select(func.count(TaskMessage.id)).where(TaskMessage.task_id.in_(["b1", "b3"]))
+            )
+        ).scalar_one()
+    assert left == 0
+
+
+async def test_bulk_delete_ignores_tasks_the_user_does_not_own(
+    client, db_session, session_factory
+):
+    """The form posts a list of ids and nothing stops a caller from adding
+    somebody else's. Ownership is re-checked per id against the database."""
+    await _seed_user(db_session)
+    await _seed_user(db_session, user_id="user_other", email="other@example.com")
+    await _seed_tasks(
+        session_factory, ("mine", "user_test", None), ("theirs", "user_other", None)
+    )
+
+    _override_web_user(client.app)
+    try:
+        resp = client.post(
+            "/app/tasks/bulk-delete",
+            data={"task_ids": ["mine", "theirs"]},
+            follow_redirects=False,
+        )
+    finally:
+        client.app.dependency_overrides.pop(get_web_user_optional, None)
+
+    # The caller's own task goes; the other user's survives, and the response
+    # gives away nothing about it.
+    assert resp.status_code == 303
+    assert await _remaining(session_factory) == {"theirs"}
+
+
+async def test_bulk_delete_leaves_subtasks_alone_unless_asked(
+    client, db_session, session_factory
+):
+    """Deleting a run must not silently take work the caller never selected;
+    orphaned children survive as roots (parent_task_id is ON DELETE SET NULL)."""
+    await _seed_user(db_session)
+    await _seed_tasks(
+        session_factory, ("parent", "user_test", None), ("child", "user_test", "parent")
+    )
+
+    _override_web_user(client.app)
+    try:
+        resp = client.post(
+            "/app/tasks/bulk-delete", data={"task_ids": ["parent"]}, follow_redirects=False
+        )
+    finally:
+        client.app.dependency_overrides.pop(get_web_user_optional, None)
+
+    assert resp.status_code == 303
+    assert await _remaining(session_factory) == {"child"}
+    async with session_factory() as s:
+        child = (await s.execute(select(Task).where(Task.id == "child"))).scalar_one()
+    assert child.parent_task_id is None
+
+
+async def test_bulk_delete_can_include_the_whole_subtree(client, db_session, session_factory):
+    await _seed_user(db_session)
+    await _seed_tasks(
+        session_factory,
+        ("root", "user_test", None),
+        ("mid", "user_test", "root"),
+        ("leaf", "user_test", "mid"),
+        ("unrelated", "user_test", None),
+    )
+
+    _override_web_user(client.app)
+    try:
+        resp = client.post(
+            "/app/tasks/bulk-delete",
+            data={"task_ids": ["root"], "include_subtasks": "1"},
+            follow_redirects=False,
+        )
+    finally:
+        client.app.dependency_overrides.pop(get_web_user_optional, None)
+
+    assert resp.status_code == 303
+    assert await _remaining(session_factory) == {"unrelated"}, "the walk must reach every depth"
+
+
+async def test_subtree_walk_survives_a_cycle(db_session, session_factory):
+    """Parent links are built from client-supplied ids; a cycle must terminate."""
+    from src.services.share_service import delete_tasks
+
+    await _seed_user(db_session)
+    await _seed_tasks(session_factory, ("cy-a", "user_test", None), ("cy-b", "user_test", "cy-a"))
+    async with session_factory() as s:
+        await s.execute(
+            Task.__table__.update().where(Task.id == "cy-a").values(parent_task_id="cy-b")
+        )
+        await s.commit()
+
+    async with session_factory() as s:
+        deleted = await delete_tasks(s, ["cy-a"], "user_test", include_subtasks=True)
+        await s.commit()
+
+    assert deleted == 2
+    assert await _remaining(session_factory) == set()
+
+
+async def test_bulk_delete_with_no_selection_is_a_no_op(client, db_session, session_factory):
+    await _seed_user(db_session)
+    await _seed_tasks(session_factory, ("keep", "user_test", None))
+
+    _override_web_user(client.app)
+    try:
+        resp = client.post("/app/tasks/bulk-delete", data={}, follow_redirects=False)
+    finally:
+        client.app.dependency_overrides.pop(get_web_user_optional, None)
+
+    assert resp.status_code == 303
+    assert await _remaining(session_factory) == {"keep"}
+
+
+async def test_bulk_delete_requires_a_session(client, db_session, session_factory):
+    await _seed_user(db_session)
+    await _seed_tasks(session_factory, ("guarded", "user_test", None))
+
+    resp = client.post(
+        "/app/tasks/bulk-delete", data={"task_ids": ["guarded"]}, follow_redirects=False
+    )
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/app/login"
+    assert await _remaining(session_factory) == {"guarded"}
+
+
+async def test_bulk_delete_returns_to_the_current_view(client, db_session, session_factory):
+    """Deleting from a filtered view must not dump the reader back to page 1 of
+    an unfiltered list."""
+    await _seed_user(db_session)
+    await _seed_tasks(session_factory, ("v1", "user_test", None))
+
+    _override_web_user(client.app)
+    try:
+        resp = client.post(
+            "/app/tasks/bulk-delete",
+            data={"task_ids": ["v1"], "scope": "all", "q": "parser"},
+            follow_redirects=False,
+        )
+    finally:
+        client.app.dependency_overrides.pop(get_web_user_optional, None)
+
+    assert resp.headers["location"] == "/app?scope=all&q=parser"
+
+
+async def test_list_offers_selection_controls(client, db_session, session_factory):
+    await _seed_user(db_session)
+    await _seed_tasks(session_factory, ("s1", "user_test", None))
+
+    _override_web_user(client.app)
+    try:
+        resp = client.get("/app")
+    finally:
+        client.app.dependency_overrides.pop(get_web_user_optional, None)
+
+    assert 'name="task_ids"' in resp.text
+    assert 'id="select-all"' in resp.text
+    assert "/app/tasks/bulk-delete" in resp.text

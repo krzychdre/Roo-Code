@@ -1,0 +1,157 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
+<!--
+  Selection behaviour for the task list (static/tasklist.js), driven against a
+  DOM that mirrors templates/tasks_list.html. Kept as a fixture rather than a
+  copy of the template so the assertions are about behaviour, not markup.
+-->
+<form id="bulk-form" method="post" action="/app/tasks/bulk-delete">
+  <input type="hidden" name="scope" value="roots">
+  <input type="hidden" name="q" value="">
+  <div class="select-head">
+    <label class="select-all"><input type="checkbox" id="select-all"><span>Select page</span></label>
+  </div>
+  <ul class="task-list">
+    <li class="task-item">
+      <label class="task-check"><input type="checkbox" name="task_ids" value="t1" data-child-count="0"></label>
+      <a class="task-link" href="/app/tasks/t1"><span class="cell-title">One</span></a>
+      <div class="task-delete">
+        <button class="btn-delete" type="submit" formaction="/app/tasks/t1/delete"
+                data-confirm="Delete One?">Delete</button>
+      </div>
+    </li>
+    <li class="task-item">
+      <label class="task-check"><input type="checkbox" name="task_ids" value="t2" data-child-count="2"></label>
+      <a class="task-link" href="/app/tasks/t2"><span class="cell-title">Two</span></a>
+      <div class="task-delete">
+        <button class="btn-delete" type="submit" formaction="/app/tasks/t2/delete"
+                data-confirm="Delete Two?">Delete</button>
+      </div>
+    </li>
+    <li class="task-item">
+      <label class="task-check"><input type="checkbox" name="task_ids" value="t3" data-child-count="0"></label>
+      <a class="task-link" href="/app/tasks/t3"><span class="cell-title">Three</span></a>
+      <div class="task-delete">
+        <button class="btn-delete" type="submit" formaction="/app/tasks/t3/delete"
+                data-confirm="Delete Three?">Delete</button>
+      </div>
+    </li>
+    <li class="task-item">
+      <label class="task-check"><input type="checkbox" name="task_ids" value="t4" data-child-count="0"></label>
+      <a class="task-link" href="/app/tasks/t4"><span class="cell-title">Four</span></a>
+      <div class="task-delete">
+        <button class="btn-delete" type="submit" formaction="/app/tasks/t4/delete"
+                data-confirm="Delete Four?">Delete</button>
+      </div>
+    </li>
+  </ul>
+  <div id="bulk-bar" class="bulk-bar" hidden>
+    <span class="bulk-count"><b id="bulk-n">0</b> selected</span>
+    <label class="bulk-subtasks" id="bulk-subtasks-wrap" hidden>
+      <input type="checkbox" name="include_subtasks" value="1" id="include-subtasks">
+      <span>Include their subtasks (<b id="bulk-children">0</b>)</span>
+    </label>
+    <button type="button" class="btn ghost" id="bulk-clear">Clear</button>
+    <button type="submit" class="btn btn-danger" id="bulk-delete">Delete selected</button>
+  </div>
+</form>
+
+<script src="../../src/web/static/tasklist.js"></script>
+<script>
+window.addEventListener("load", function () {
+  var out = [], fail = 0
+  function check(name, cond) { out.push((cond ? "PASS " : "FAIL ") + name); if (!cond) fail++ }
+
+  var form = document.getElementById("bulk-form")
+  var bar = document.getElementById("bulk-bar")
+  var boxes = Array.prototype.slice.call(form.querySelectorAll('input[name="task_ids"]'))
+  var selectAll = document.getElementById("select-all")
+  var subtasksWrap = document.getElementById("bulk-subtasks-wrap")
+  var includeSubtasks = document.getElementById("include-subtasks")
+
+  // Never submits for real: the harness has no server, and a navigation would
+  // abandon the remaining assertions. Registered after tasklist.js, so a submit
+  // it cancelled still arrives here — count only the ones it let through.
+  var submits = 0
+  form.addEventListener("submit", function (e) {
+    if (!e.defaultPrevented) submits++
+    e.preventDefault()
+  })
+
+  // Nothing selected → the bar stays out of the way.
+  check("action bar hidden with no selection", bar.hidden === true)
+
+  boxes[0].click()
+  check("bar appears on first selection", bar.hidden === false)
+  check("count shows 1", document.getElementById("bulk-n").textContent === "1")
+  check("row marked as selected", boxes[0].closest(".task-item").classList.contains("selected"))
+
+  // Shift-click selects the range, the way a file manager does.
+  //
+  // Dispatched WITHOUT pre-setting `checked`: each box sits inside a <label>,
+  // whose activation behaviour toggles the control for us — exactly as a real
+  // click does. Setting it first and then dispatching toggles it back off, and
+  // would test a sequence no user can produce.
+  boxes[3].dispatchEvent(new MouseEvent("click", { shiftKey: true, bubbles: true, cancelable: true }))
+  check("shift-click selects the range", boxes.every(function (b) { return b.checked }))
+  check("count shows 4", document.getElementById("bulk-n").textContent === "4")
+  check("select-all reflects a full page", selectAll.checked === true && !selectAll.indeterminate)
+
+  // The subtask offer only appears when the selection actually has subtasks.
+  check("subtask option offered", subtasksWrap.hidden === false)
+  check("subtask count is the sum of the rows", document.getElementById("bulk-children").textContent === "2")
+
+  document.getElementById("bulk-clear").click()
+  check("clear deselects everything", boxes.every(function (b) { return !b.checked }))
+  check("bar hides again", bar.hidden === true)
+  check("select-all cleared", selectAll.checked === false)
+
+  selectAll.click()
+  check("select-all selects the page", boxes.every(function (b) { return b.checked }))
+  boxes[1].click()
+  check("select-all goes indeterminate on a partial page", selectAll.indeterminate === true)
+
+  // A ticked "include subtasks" must not survive the selection that justified it.
+  boxes.forEach(function (b) { if (b.value !== "t2") b.click() })
+  // only t2 unchecked now; tick the option, then drop t2 from the selection
+  boxes[1].click()            // t2 back in
+  includeSubtasks.checked = true
+  includeSubtasks.dispatchEvent(new Event("change"))
+  boxes[1].click()            // t2 out again → no subtasks in the selection
+  check("stale subtask option is cleared when it no longer applies",
+        includeSubtasks.checked === false && subtasksWrap.hidden === true)
+
+  // Confirmations.
+  var asked = []
+  var answer = true
+  window.confirm = function (msg) { asked.push(msg); return answer }
+
+  boxes.forEach(function (b) { b.checked = false })
+  boxes[0].checked = true
+  boxes[0].dispatchEvent(new Event("click", { bubbles: true }))
+
+  answer = false
+  submits = 0
+  document.getElementById("bulk-delete").click()
+  check("declining the confirmation cancels the bulk delete", submits === 0)
+  check("bulk confirmation states the count", /1 task/.test(asked[asked.length - 1] || ""))
+
+  answer = true
+  submits = 0
+  document.getElementById("bulk-delete").click()
+  check("accepting submits once", submits === 1)
+
+  // A per-row delete asks its own question, not the bulk one.
+  asked = []
+  answer = false
+  submits = 0
+  form.querySelector('.btn-delete[formaction="/app/tasks/t3/delete"]').click()
+  check("row delete asks about that row", (asked[0] || "").indexOf("Delete Three?") === 0)
+  check("declining a row delete cancels it", submits === 0)
+
+  var pre = document.createElement("pre")
+  pre.id = "results"
+  pre.textContent = out.join("\n") + "\nTOTAL_FAILURES=" + fail
+  document.body.appendChild(pre)
+})
+</script>
+</body></html>

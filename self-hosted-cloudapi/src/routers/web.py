@@ -26,7 +26,7 @@ from src.database import get_db
 from src.auth.web_session import WebUser, get_web_user_optional
 from src.models.task import Task, TaskMessage, TaskShare
 from src.models.organization import Membership
-from src.services.share_service import delete_shared_task
+from src.services.share_service import delete_shared_task, delete_tasks
 from src.services.metrics_service import (
     DEFAULT_PERIOD,
     PERIOD_LABELS,
@@ -476,6 +476,46 @@ async def delete_task(
 
     await delete_shared_task(db, task_id, user["user_id"])
     return RedirectResponse(url="/app", status_code=303)
+
+
+@router.post("/app/tasks/bulk-delete")
+async def bulk_delete_tasks(
+    request: Request,
+    user: Optional[WebUser] = Depends(get_web_user_optional),
+    db: AsyncSession = Depends(get_db),
+):
+    """Permanently delete every selected task the user owns.
+
+    Ownership is enforced per id inside ``delete_tasks``, not here: the form
+    posts a list, and a caller is free to put anything in it. Ids the user does
+    not own are dropped silently rather than rejected, so a tampered list
+    deletes exactly what the caller was entitled to delete and discloses nothing
+    about the rest.
+
+    Always redirects back to the list, so the POST is refresh-safe.
+    """
+    if user is None:
+        return RedirectResponse(url="/app/login", status_code=303)
+
+    form = await request.form()
+    task_ids = [t for t in form.getlist("task_ids") if isinstance(t, str) and t]
+    include_subtasks = form.get("include_subtasks") == "1"
+
+    deleted = 0
+    if task_ids:
+        deleted = await delete_tasks(
+            db, task_ids, user["user_id"], include_subtasks=include_subtasks
+        )
+        logger.info("[web] bulk delete: %s task(s) removed for %s", deleted, user["user_id"])
+
+    # Selecting on page 3 and deleting everything on it would otherwise leave the
+    # reader on a page that no longer exists.
+    scope = form.get("scope") or "roots"
+    query = form.get("q") or ""
+    target = f"/app?scope={scope}"
+    if query:
+        target += f"&q={query}"
+    return RedirectResponse(url=target, status_code=303)
 
 
 @router.get("/shared/{task_id}", response_class=HTMLResponse)
