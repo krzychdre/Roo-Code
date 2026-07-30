@@ -1693,3 +1693,282 @@ async def test_ancestor_walk_survives_a_cycle(db_session, session_factory):
         chain = await ancestors(s, task)
 
     assert len(chain) <= 2, "the walk must stop instead of looping forever"
+
+
+# --- session quality --------------------------------------------------------
+
+
+def _quality_msgs(**counts):
+    """Build a conversation containing the requested markers, in a valid order."""
+    msgs = [{"ts": 1, "type": "say", "say": "text", "text": "Do the thing"}]
+    ts = 10
+    for _ in range(counts.get("requests", 1)):
+        msgs.append({"ts": ts, "type": "say", "say": "api_req_started",
+                     "text": json.dumps({"tokensIn": 1000, "tokensOut": 100, "cost": 0.01})})
+        ts += 10
+    for _ in range(counts.get("errors", 0)):
+        msgs.append({"ts": ts, "type": "say", "say": "error", "text": "boom"}); ts += 10
+    for _ in range(counts.get("retries", 0)):
+        msgs.append({"ts": ts, "type": "say", "say": "api_req_retry_delayed", "text": "waiting"}); ts += 10
+    for _ in range(counts.get("condense", 0)):
+        msgs.append({"ts": ts, "type": "say", "say": "condense_context",
+                     "contextCondense": {"summary": "s", "cost": 0.001}}); ts += 10
+    for _ in range(counts.get("interventions", 0)):
+        # Preceded by a request, so it is a mid-run correction, not a rejection.
+        msgs.append({"ts": ts, "type": "say", "say": "api_req_started", "text": "{}"}); ts += 10
+        msgs.append({"ts": ts, "type": "say", "say": "user_feedback", "text": "no, like this"}); ts += 10
+    for path in counts.get("tool_paths", []):
+        msgs.append({"ts": ts, "type": "say", "say": "tool",
+                     "text": json.dumps({"tool": "readFile", "path": path})}); ts += 10
+    if counts.get("completed", True):
+        msgs.append({"ts": ts, "type": "say", "say": "completion_result", "text": "done"})
+    return msgs
+
+
+async def _backfill(client, task_id, messages):
+    files, data = _backfill_files(task_id, messages)
+    resp = client.post("/api/events/backfill", files=files, data=data)
+    assert resp.status_code == 200
+
+
+async def test_quality_counts_every_marker(client, db_session, session_factory):
+    from src.services.session_quality import quality_of
+
+    await _seed_user(db_session)
+    _override_current_user(client.app)
+    try:
+        await _backfill(client, "q-all", _quality_msgs(
+            requests=3, errors=2, retries=1, condense=1, interventions=2,
+            tool_paths=["a.py", "b.py", "a.py"],
+        ))
+    finally:
+        client.app.dependency_overrides.pop(get_current_user, None)
+
+    async with session_factory() as s:
+        task = (await s.execute(select(Task).where(Task.id == "q-all"))).scalar_one()
+        q = quality_of(task)
+
+    # 3 explicit + 2 that precede the interventions.
+    assert q.requests == 5
+    assert q.errors == 2
+    assert q.retries == 1
+    assert q.condense == 1
+    assert q.interventions == 2
+    assert q.completion_replies == 0
+    assert q.tools == 3
+    # a.py read twice → one repeat.
+    assert q.repeated_work == 1
+    assert q.completed is True
+
+
+async def test_reply_to_a_finished_result_is_not_a_mid_run_correction(
+    client, db_session, session_factory
+):
+    """A reply to a proposed result and a mid-run correction are both
+    `user_feedback`; only what precedes them tells them apart. They are counted
+    separately because they mean different things — and the reply is kept out of
+    the grade, since "now also do this" looks identical to "that is wrong"."""
+    from src.services.session_quality import quality_of
+
+    await _seed_user(db_session)
+    _override_current_user(client.app)
+    try:
+        await _backfill(client, "q-reject", [
+            {"ts": 1, "type": "say", "say": "text", "text": "Do it"},
+            {"ts": 2, "type": "say", "say": "api_req_started", "text": "{}"},
+            {"ts": 3, "type": "say", "say": "completion_result", "text": "All done"},
+            # No request/tool in between: the completion is still awaiting an answer.
+            {"ts": 4, "type": "say", "say": "user_feedback", "text": "no, it is not"},
+            {"ts": 5, "type": "say", "say": "api_req_started", "text": "{}"},
+            # This one follows a request, so it is an ordinary correction.
+            {"ts": 6, "type": "say", "say": "user_feedback", "text": "also change this"},
+            {"ts": 7, "type": "say", "say": "completion_result", "text": "Now done"},
+        ])
+    finally:
+        client.app.dependency_overrides.pop(get_current_user, None)
+
+    async with session_factory() as s:
+        task = (await s.execute(select(Task).where(Task.id == "q-reject"))).scalar_one()
+        q = quality_of(task)
+
+    assert q.completion_replies == 1, "a reply to an attempt_completion must be counted as one"
+    assert q.interventions == 1, "the mid-run correction must stay a correction"
+
+
+async def test_live_stream_detects_a_completion_reply_without_the_whole_conversation(
+    db_session, session_factory
+):
+    """The bridge delivers one message at a time, so the awaiting-completion
+    state has to come from what is already stored rather than from a walk."""
+    from src.services.session_quality import quality_of
+    from src.services.telemetry_service import upsert_task_message
+
+    await _seed_user(db_session)
+    stream = [
+        {"ts": 1, "type": "say", "say": "api_req_started", "text": "{}"},
+        {"ts": 2, "type": "say", "say": "completion_result", "text": "All done"},
+        {"ts": 3, "type": "say", "say": "user_feedback", "text": "no"},
+        {"ts": 4, "type": "say", "say": "api_req_started", "text": "{}"},
+        {"ts": 5, "type": "say", "say": "user_feedback", "text": "one more thing"},
+    ]
+    async with session_factory() as s:
+        for msg in stream:
+            await upsert_task_message(s, "q-live", "user_test", msg)
+        await s.commit()
+
+    async with session_factory() as s:
+        task = (await s.execute(select(Task).where(Task.id == "q-live"))).scalar_one()
+        q = quality_of(task)
+
+    assert q.completion_replies == 1
+    assert q.interventions == 1
+
+
+async def test_grade_rules(client, db_session, session_factory):
+    """Each grade must follow from a stated rule, not a weighting."""
+    from src.services.session_quality import quality_of
+
+    await _seed_user(db_session)
+    _override_current_user(client.app)
+    try:
+        await _backfill(client, "g-clean", _quality_msgs(requests=2))
+        await _backfill(client, "g-friction", _quality_msgs(requests=2, errors=1))
+        await _backfill(client, "g-unfinished", _quality_msgs(requests=2, completed=False))
+    finally:
+        client.app.dependency_overrides.pop(get_current_user, None)
+
+    async with session_factory() as s:
+        grades = {}
+        for tid in ("g-clean", "g-friction", "g-unfinished"):
+            task = (await s.execute(select(Task).where(Task.id == tid))).scalar_one()
+            grades[tid] = quality_of(task).grade
+
+    assert grades["g-clean"] == "clean"
+    assert grades["g-friction"] == "friction"
+    assert grades["g-unfinished"] == "unfinished"
+
+
+async def test_grade_reasons_name_what_happened(client, db_session, session_factory):
+    """A badge must never be a verdict the reader has to take on trust."""
+    from src.services.session_quality import quality_of
+
+    await _seed_user(db_session)
+    _override_current_user(client.app)
+    try:
+        await _backfill(client, "g-why", _quality_msgs(requests=1, errors=2, condense=1))
+    finally:
+        client.app.dependency_overrides.pop(get_current_user, None)
+
+    async with session_factory() as s:
+        task = (await s.execute(select(Task).where(Task.id == "g-why"))).scalar_one()
+        reasons = " ".join(quality_of(task).reasons())
+
+    assert "2 errors" in reasons
+    assert "context condensed 1 time" in reasons
+
+
+async def test_resharing_does_not_inflate_quality_counts(client, db_session, session_factory):
+    from src.services.session_quality import quality_of
+
+    await _seed_user(db_session)
+    _override_current_user(client.app)
+    msgs = _quality_msgs(requests=2, errors=1, tool_paths=["x.py"])
+    try:
+        for _ in range(3):
+            await _backfill(client, "q-idem", msgs)
+    finally:
+        client.app.dependency_overrides.pop(get_current_user, None)
+
+    async with session_factory() as s:
+        task = (await s.execute(select(Task).where(Task.id == "q-idem"))).scalar_one()
+        q = quality_of(task)
+
+    assert q.requests == 2
+    assert q.errors == 1
+    assert q.tools == 1
+
+
+async def test_quality_shows_on_list_detail_and_metrics(client, db_session, session_factory):
+    await _seed_user(db_session)
+    _override_current_user(client.app)
+    try:
+        await _backfill(client, "q-ui", _quality_msgs(requests=2, errors=1))
+    finally:
+        client.app.dependency_overrides.pop(get_current_user, None)
+
+    _override_web_user(client.app)
+    try:
+        lst = client.get("/app")
+        detail = client.get("/app/tasks/q-ui")
+        metrics = client.get("/app/metrics?period=all")
+    finally:
+        client.app.dependency_overrides.pop(get_web_user_optional, None)
+
+    assert 'class="grade grade-friction"' in lst.text
+    assert "Friction" in detail.text
+    assert "Your corrections" in detail.text
+    assert "Session quality" in metrics.text
+    assert "Roughest runs" in metrics.text
+
+
+async def test_quality_overview_excludes_subtasks(client, db_session, session_factory):
+    """A run and the subtasks it delegated to are one piece of work; grading both
+    would count it several times."""
+    await _seed_user(db_session)
+    _override_current_user(client.app)
+    try:
+        await _backfill(client, "qo-parent", _quality_msgs(requests=1))
+        await _backfill(client, "qo-child", _quality_msgs(requests=1))
+    finally:
+        client.app.dependency_overrides.pop(get_current_user, None)
+
+    async with session_factory() as s:
+        await s.execute(
+            Task.__table__.update().where(Task.id == "qo-child").values(parent_task_id="qo-parent")
+        )
+        await s.commit()
+
+    from src.routers.web import _quality_overview
+
+    async with session_factory() as s:
+        overview = await _quality_overview(s, "user_test", "all")
+
+    assert overview["total"] == 1, "only the run should be graded, not its subtask"
+
+
+async def test_replying_to_a_result_does_not_count_as_friction(
+    client, db_session, session_factory
+):
+    """Answering a finished result covers "that is wrong" and "now also do this"
+    equally, so it must not drag a run out of "clean".
+
+    Measured on the live corpus before this rule was fixed: counting it as
+    friction moved 17 of 236 runs from clean to friction on a reading the data
+    does not support. agent-bench says the same of its `rej_completion` column —
+    pushback or follow-up, not a defect count.
+    """
+    from src.services.session_quality import quality_of
+
+    await _seed_user(db_session)
+    _override_current_user(client.app)
+    try:
+        await _backfill(client, "q-followup", [
+            {"ts": 1, "type": "say", "say": "text", "text": "Do it"},
+            {"ts": 2, "type": "say", "say": "api_req_started", "text": "{}"},
+            {"ts": 3, "type": "say", "say": "completion_result", "text": "Done"},
+            {"ts": 4, "type": "say", "say": "user_feedback", "text": "great, now also add tests"},
+            {"ts": 5, "type": "say", "say": "api_req_started", "text": "{}"},
+            {"ts": 6, "type": "say", "say": "completion_result", "text": "Tests added"},
+        ])
+    finally:
+        client.app.dependency_overrides.pop(get_current_user, None)
+
+    async with session_factory() as s:
+        task = (await s.execute(select(Task).where(Task.id == "q-followup"))).scalar_one()
+        q = quality_of(task)
+
+    assert q.completion_replies == 1
+    assert q.friction_events == 0, "a reply to a result is not friction"
+    assert q.grade == "clean"
+    # It is still reported — just as context, after the grade's own reasons.
+    assert any("replied to 1 finished result" in r for r in q.reasons())

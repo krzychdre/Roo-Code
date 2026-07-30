@@ -40,10 +40,20 @@ import re
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
-from sqlalchemy import func, select, update
+from sqlalchemy import case, distinct, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.task import Task, TaskMessage
+from src.services.session_quality import (
+    KIND_COMPLETION,
+    KIND_CONDENSE,
+    KIND_ERROR,
+    KIND_INTERVENTION,
+    KIND_COMPLETION_REPLY,
+    KIND_REQUEST,
+    KIND_RETRY,
+    KIND_TOOL,
+)
 from src.utils.format import num
 
 # Titles are a single line; anything longer is truncated with an ellipsis.
@@ -180,6 +190,12 @@ async def refresh_task_summary(
     writes would be wasted work — but a backfill *replaces* the conversation
     wholesale and must be able to overwrite a stale placeholder.
     """
+    # One pass over the task's rows produces both the token totals and the
+    # quality counts: the markers are stored per message (see
+    # services/session_quality), so grading a run is a COUNT, not a re-read.
+    def _kind(kind: str):
+        return func.coalesce(func.sum(case((TaskMessage.q_kind == kind, 1), else_=0)), 0)
+
     aggregate = await db.execute(
         select(
             func.count(TaskMessage.id),
@@ -190,9 +206,23 @@ async def refresh_task_summary(
             func.coalesce(func.sum(TaskMessage.cost), 0.0),
             func.min(TaskMessage.message_ts),
             func.max(TaskMessage.message_ts),
+            _kind(KIND_REQUEST),
+            _kind(KIND_ERROR),
+            _kind(KIND_RETRY),
+            _kind(KIND_INTERVENTION),
+            _kind(KIND_COMPLETION_REPLY),
+            _kind(KIND_CONDENSE),
+            _kind(KIND_TOOL),
+            func.count(TaskMessage.tool_path),
+            func.count(distinct(TaskMessage.tool_path)),
+            _kind(KIND_COMPLETION),
         ).where(TaskMessage.task_id == task_id)
     )
-    count, t_in, t_out, c_read, c_write, cost, first_ts, last_ts = aggregate.one()
+    (
+        count, t_in, t_out, c_read, c_write, cost, first_ts, last_ts,
+        q_requests, q_errors, q_retries, q_interventions, q_completion_replies,
+        q_condense, q_tools, q_tool_paths, q_distinct_paths, q_completions,
+    ) = aggregate.one()
 
     values = {
         "message_count": int(count or 0),
@@ -203,6 +233,16 @@ async def refresh_task_summary(
         "cost": float(cost or 0.0),
         "first_ts": int(first_ts) if first_ts is not None else None,
         "last_ts": int(last_ts) if last_ts is not None else None,
+        "q_requests": int(q_requests or 0),
+        "q_errors": int(q_errors or 0),
+        "q_retries": int(q_retries or 0),
+        "q_interventions": int(q_interventions or 0),
+        "q_completion_replies": int(q_completion_replies or 0),
+        "q_condense": int(q_condense or 0),
+        "q_tools": int(q_tools or 0),
+        "q_tool_paths": int(q_tool_paths or 0),
+        "q_distinct_tool_paths": int(q_distinct_paths or 0),
+        "q_completed": bool(q_completions),
     }
 
     if title:

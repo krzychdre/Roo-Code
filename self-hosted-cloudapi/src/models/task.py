@@ -7,6 +7,7 @@ from sqlalchemy import (
     Text,
     Float,
     Integer,
+    Boolean,
     ForeignKey,
     DateTime,
     BigInteger,
@@ -59,6 +60,23 @@ class Task(Base, TimestampMixin):
     first_ts = Column(BigInteger, nullable=True)
     last_ts = Column(BigInteger, nullable=True)
 
+    # --- session quality ---------------------------------------------------
+    # Counts of deterministic markers in the conversation (services/
+    # session_quality), rolled up the same way as the token totals so a list can
+    # grade a run without reading it. Tokens say what a run cost; these say
+    # whether it went well.
+    q_requests = Column(Integer, nullable=False, default=0, server_default="0")
+    q_errors = Column(Integer, nullable=False, default=0, server_default="0")
+    q_retries = Column(Integer, nullable=False, default=0, server_default="0")
+    q_interventions = Column(Integer, nullable=False, default=0, server_default="0")
+    q_completion_replies = Column(Integer, nullable=False, default=0, server_default="0")
+    q_condense = Column(Integer, nullable=False, default=0, server_default="0")
+    q_tools = Column(Integer, nullable=False, default=0, server_default="0")
+    # Total and distinct (tool, path) pairs; their difference is repeated work.
+    q_tool_paths = Column(Integer, nullable=False, default=0, server_default="0")
+    q_distinct_tool_paths = Column(Integer, nullable=False, default=0, server_default="0")
+    q_completed = Column(Boolean, nullable=False, default=False, server_default="0")
+
     messages = relationship("TaskMessage", back_populates="task", cascade="all, delete-orphan")
     shares = relationship("TaskShare", back_populates="task", cascade="all, delete-orphan")
 
@@ -93,6 +111,17 @@ class TaskMessage(Base):
     cache_reads = Column(BigInteger, nullable=False, default=0, server_default="0")
     cache_writes = Column(BigInteger, nullable=False, default=0, server_default="0")
     cost = Column(Float, nullable=False, default=0.0, server_default="0")
+
+    # --- quality marker ----------------------------------------------------
+    # What this message says about how the run is going: request / error /
+    # retry / intervention / completion_reply / condense / tool / completion,
+    # or NULL
+    # for the majority that say nothing (see services/session_quality). Indexed
+    # because the task rollup counts by it.
+    q_kind = Column(String, nullable=True, index=True)
+    # For a tool message, the "<tool>:<path>" it touched. Counting these against
+    # their distinct values is how repeated work is measured.
+    tool_path = Column(String, nullable=True)
 
     # The bridge upserts a streaming message in place via ON CONFLICT on this
     # pair. NULL message_ts stays distinct, so legacy/backfilled rows still

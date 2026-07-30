@@ -6,6 +6,50 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.models.event import TelemetryEvent
 
 
+async def _live_quality_kind(db, task_id: str, message: dict, ts) -> str | None:
+    """Quality marker for a message arriving one at a time over the bridge.
+
+    All but one of the markers depend on the message alone. The exception is a
+    ``user_feedback``: it is an ordinary mid-run correction, unless an
+    ``attempt_completion`` was awaiting an answer, in which case it means the
+    result was turned down — the strongest quality signal there is.
+
+    A backfill sees the whole conversation and simply walks it; here there is
+    only this message, so the state has to come from what is already stored.
+    That costs one indexed lookup, and only for ``user_feedback`` messages,
+    which are rare (278 in a 53 000-message corpus).
+    """
+    from sqlalchemy import desc, select
+    from src.models.task import TaskMessage
+    from src.services.session_quality import (
+        KIND_COMPLETION,
+        KIND_INTERVENTION,
+        KIND_COMPLETION_REPLY,
+        KIND_REQUEST,
+        KIND_TOOL,
+        classify_message,
+    )
+
+    kind = classify_message(message, awaiting_completion=False)
+    if kind != KIND_INTERVENTION or ts is None:
+        return kind
+
+    # The most recent marker before this message that either sets or clears the
+    # "a completion is awaiting an answer" state.
+    result = await db.execute(
+        select(TaskMessage.q_kind)
+        .where(
+            TaskMessage.task_id == task_id,
+            TaskMessage.message_ts.is_not(None),
+            TaskMessage.message_ts < ts,
+            TaskMessage.q_kind.in_([KIND_COMPLETION, KIND_REQUEST, KIND_TOOL]),
+        )
+        .order_by(desc(TaskMessage.message_ts))
+        .limit(1)
+    )
+    return KIND_COMPLETION_REPLY if result.scalar_one_or_none() == KIND_COMPLETION else KIND_INTERVENTION
+
+
 async def _link_task_tree(db, task_id: str) -> None:
     """Wire a task into the subtask tree, in both directions.
 
@@ -101,15 +145,28 @@ async def backfill_messages(
     # The token/cost figures are parsed here, once, and stored alongside the
     # message so the task rollup is a numeric SUM rather than a re-parse of the
     # whole conversation on every page view (see services/task_summary).
-    parsed: list[dict] = []
+    from src.services.session_quality import classify_conversation
+
+    parsed: list[dict] = [m for m in messages if isinstance(m, dict)]
+    # Quality markers need the conversation in order (a user_feedback means
+    # something different when an attempt_completion is awaiting an answer), and
+    # a backfill has the whole thing in hand — so classify it in one walk. The
+    # marks line up with `parsed`, so a counter walks them alongside `messages`.
+    marks = classify_conversation(parsed)
+    next_mark = 0
+
     for msg in messages:
         is_dict = isinstance(msg, dict)
+        kind, tool_path = (None, None)
         if is_dict:
-            parsed.append(msg)
+            kind, tool_path = marks[next_mark]
+            next_mark += 1
         task_msg = TaskMessage(
             task_id=task_id,
             message_data=msg if isinstance(msg, str) else json.dumps(msg),
             message_ts=msg.get("ts") if is_dict else None,
+            q_kind=kind,
+            tool_path=tool_path,
             **message_metrics(msg if is_dict else {}).as_columns(),
         )
         db.add(task_msg)
@@ -163,6 +220,7 @@ async def upsert_task_message(
     """
     from sqlalchemy import func, select
     from src.models.task import Task, TaskMessage
+    from src.services.session_quality import tool_path_of
     from src.services.task_summary import derive_title, message_metrics, refresh_task_summary
 
     if not isinstance(message, dict):
@@ -171,6 +229,10 @@ async def upsert_task_message(
     ts = message.get("ts")
     payload = json.dumps(message)
     metrics = message_metrics(message).as_columns()
+    quality = {
+        "q_kind": await _live_quality_kind(db, task_id, message, ts),
+        "tool_path": tool_path_of(message),
+    }
 
     result = await db.execute(select(Task).where(Task.id == task_id))
     task = result.scalar_one_or_none()
@@ -195,16 +257,17 @@ async def upsert_task_message(
 
         is_final = not message.get("partial")
         base = _insert(TaskMessage).values(
-            task_id=task_id, message_data=payload, message_ts=ts, **metrics
+            task_id=task_id, message_data=payload, message_ts=ts, **metrics, **quality
         )
         on_conflict = dict(
             index_elements=["task_id", "message_ts"],
             set_={
                 "message_data": base.excluded.message_data,
-                # The metrics travel with the payload: an `api_req_started` only
-                # learns its real token/cost figures in its final revision, so a
-                # stale row must be corrected, not left behind.
-                **{name: getattr(base.excluded, name) for name in metrics},
+                # The metrics and quality marker travel with the payload: an
+                # `api_req_started` only learns its real token/cost figures in
+                # its final revision, so a stale row must be corrected, not left
+                # behind.
+                **{name: getattr(base.excluded, name) for name in (*metrics, *quality)},
             },
         )
         if not is_final:
@@ -223,7 +286,7 @@ async def upsert_task_message(
         return
 
     # ts is None (legacy/backfill) or an exotic dialect: just append.
-    db.add(TaskMessage(task_id=task_id, message_data=payload, message_ts=ts, **metrics))
+    db.add(TaskMessage(task_id=task_id, message_data=payload, message_ts=ts, **metrics, **quality))
     await db.flush()
     await _refresh_after_live_write(db, task_id, message, not message.get("partial"))
 

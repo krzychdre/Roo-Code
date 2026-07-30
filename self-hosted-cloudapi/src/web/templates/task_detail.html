@@ -41,6 +41,28 @@
 </div>
 {% endif %}
 
+{% if quality %}
+<section class="quality panel">
+  <div class="quality-head">
+    <span class="grade grade-{{ quality.grade }}">{{ quality.grade_label }}</span>
+    <span class="quality-why">{{ quality.reasons | join(' · ') }}</span>
+  </div>
+  <div class="quality-signals">
+    {% for s in quality.signals %}
+    <div class="signal{{ ' is-zero' if not s.value else ' tone-' ~ s.tone }}">
+      <span class="signal-value">{{ s.value }}</span>
+      <span class="signal-label">{{ s.label }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="quality-efficiency">
+    {% for e in quality.efficiency %}
+    <span class="eff"><span class="eff-label">{{ e.label }}</span> <b>{{ e.value }}</b></span>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
 {% if subtasks %}
 <section class="subtasks panel">
   <h2 class="chart-title">Subtasks <span class="count-pill">{{ subtasks|length }}</span></h2>
@@ -53,6 +75,7 @@
         <span class="cell-num">{{ s.duration or '' }}</span>
         <span class="cell-num">{{ s.tokens or '' }}{% if s.tokens %}<span class="unit">tok</span>{% endif %}</span>
         <span class="cell-num cell-cost">{{ s.cost or '' }}</span>
+        <span class="cell-grade"><span class="grade grade-{{ s.grade }}" title="{{ s.grade_title }}">{{ s.grade_label }}</span></span>
       </a>
     </li>
     {% endfor %}

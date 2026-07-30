@@ -31,6 +31,14 @@ from src.services.metrics_service import (
     DEFAULT_PERIOD,
     PERIOD_LABELS,
     compute_user_metrics,
+    period_start,
+)
+from src.services.session_quality import (
+    GRADE_CLEAN,
+    GRADE_FRICTION,
+    GRADE_LABELS,
+    GRADE_UNFINISHED,
+    quality_of,
 )
 from src.services.task_summary import DEFAULT_TITLE, derive_title, duration_ms
 from src.services.task_tree import ancestors, child_counts, children_of
@@ -84,6 +92,62 @@ def _workspace_label(path: str | None) -> str | None:
     return trimmed.rsplit("/", 1)[-1] or trimmed
 
 
+def _quality_fields(task: Task) -> dict:
+    """Grade + the account it was derived from, for a list row or a tree entry.
+
+    The reasons travel with the grade everywhere it is shown, so a badge is
+    never a verdict the reader has to take on trust.
+    """
+    q = quality_of(task)
+    return {
+        "grade": q.grade,
+        "grade_label": q.grade_label,
+        "grade_title": "; ".join(q.reasons()),
+    }
+
+
+def _quality_panel(task: Task) -> dict:
+    """Every quality signal for one task, for the detail page.
+
+    Efficiency figures sit alongside the friction counts because they answer the
+    other half of "how did this go?": tokens per turn and how much of the input
+    came from cache are what separate an expensive run from a wasteful one.
+    """
+    q = quality_of(task)
+    tokens_in = task.tokens_in or 0
+    cache_reads = task.cache_reads or 0
+    # `cacheReads` is a subset of `tokensIn` in every payload this deployment has
+    # stored (0 of 13 164 completions exceed it; the highest task-level ratio is
+    # 98%), so the share is taken over the input. Clamped anyway: the figures
+    # come from whichever provider the client used, and a share above 100% would
+    # be a nonsense number presented with full confidence.
+    cache_share = min(100, round(100 * cache_reads / tokens_in)) if tokens_in else None
+    per_request = round(tokens_in / q.requests) if q.requests else None
+    return {
+        "grade": q.grade,
+        "grade_label": q.grade_label,
+        "reasons": q.reasons(),
+        "signals": [
+            {"label": "Turns", "value": q.requests, "tone": "neutral"},
+            {"label": "Tool calls", "value": q.tools, "tone": "neutral"},
+            {"label": "Your corrections", "value": q.interventions, "tone": "bad"},
+            {"label": "Replies to a result", "value": q.completion_replies, "tone": "neutral"},
+            {"label": "Errors", "value": q.errors, "tone": "bad"},
+            {"label": "Provider retries", "value": q.retries, "tone": "bad"},
+            {"label": "Context condensed", "value": q.condense, "tone": "warn"},
+            {"label": "Repeated tool calls", "value": q.repeated_work, "tone": "warn"},
+        ],
+        "efficiency": [
+            {"label": "Tokens / turn", "value": f"{per_request:,}" if per_request else "—"},
+            {"label": "From cache", "value": f"{cache_share}%" if cache_share is not None else "—"},
+            {
+                "label": "Cost / turn",
+                "value": f"${task.cost / q.requests:.4f}" if q.requests and task.cost else "—",
+            },
+        ],
+    }
+
+
 def _tree_entry(task: Task) -> dict:
     """Compact view-model for a task shown as somebody else's relative.
 
@@ -99,6 +163,7 @@ def _tree_entry(task: Task) -> dict:
         "tokens": fmt_tokens(tokens) if tokens else None,
         "cost": f"${task.cost:.4f}" if (task.cost or 0) > 0 else None,
         "duration": fmt_duration(span) if span else None,
+        **_quality_fields(task),
     }
 
 
@@ -210,6 +275,7 @@ async def task_list(
                 "workspace_label": _workspace_label(task.workspace_path),
                 "child_count": counts.get(task.id, 0),
                 "is_subtask": task.parent_task_id is not None,
+                **_quality_fields(task),
             }
         )
 
@@ -257,6 +323,7 @@ async def metrics_page(
         {"key": key, "label": label, "active": key == metrics["period"]}
         for key, label in PERIOD_LABELS.items()
     ]
+    quality = await _quality_overview(db, user["user_id"], period)
     return templates.TemplateResponse(
         request,
         "metrics.html",
@@ -264,10 +331,78 @@ async def metrics_page(
             "user": user,
             "nav_active": "metrics",
             "metrics": metrics,
+            "quality": quality,
             "periods": periods,
             "chart_json": json.dumps(metrics["chart"]),
         },
     )
+
+
+async def _quality_overview(db: AsyncSession, user_id: str, period: str) -> dict:
+    """How the user's runs went over the period, in aggregate.
+
+    Reads the stored per-task counts, so this is one query over `tasks` rather
+    than a walk of any conversation. Subtasks are excluded: a run and the
+    subtasks it delegated to would otherwise each be graded, counting one piece
+    of work several times.
+
+    The period bound is on ``updated_at`` — when the task was last written —
+    which is the only time the task row itself carries.
+    """
+    filters = [Task.user_id == user_id, Task.parent_task_id.is_(None)]
+    start = period_start(period)
+    if start is not None:
+        filters.append(Task.updated_at >= start)
+
+    result = await db.execute(select(Task).where(*filters))
+    tasks = list(result.scalars().all())
+    if not tasks:
+        return {"has_data": False}
+
+    grades = {GRADE_CLEAN: 0, GRADE_FRICTION: 0, GRADE_UNFINISHED: 0}
+    totals = {
+        "interventions": 0,
+        "completion_replies": 0,
+        "errors": 0,
+        "retries": 0,
+        "condense": 0,
+        "repeated_work": 0,
+        "requests": 0,
+    }
+    ranked = []
+    for task in tasks:
+        q = quality_of(task)
+        grades[q.grade] += 1
+        for key in totals:
+            totals[key] += getattr(q, key)
+        if q.friction_events:
+            ranked.append(
+                {
+                    "id": task.id,
+                    "title": task.title or DEFAULT_TITLE,
+                    "friction": q.friction_events,
+                    "reasons": "; ".join(q.reasons()),
+                }
+            )
+    ranked.sort(key=lambda r: r["friction"], reverse=True)
+
+    total = len(tasks)
+    return {
+        "has_data": True,
+        "total": total,
+        "grades": [
+            {
+                "key": key,
+                "label": GRADE_LABELS[key],
+                "count": grades[key],
+                "share": round(100 * grades[key] / total),
+            }
+            for key in (GRADE_CLEAN, GRADE_FRICTION, GRADE_UNFINISHED)
+        ],
+        "totals": totals,
+        # Enough to act on, not a second full list.
+        "roughest": ranked[:8],
+    }
 
 
 @router.get("/app/tasks/{task_id}", response_class=HTMLResponse)
@@ -305,6 +440,7 @@ async def task_detail(
             "task": task,
             "ancestors": [_tree_entry(t) for t in trail],
             "subtasks": [_tree_entry(t) for t in await children_of(db, task_id)],
+            "quality": _quality_panel(task),
             # The stored title is authoritative; deriving it again is only a
             # fallback for a row written before the summary columns existed and
             # somehow missed the migration's backfill.

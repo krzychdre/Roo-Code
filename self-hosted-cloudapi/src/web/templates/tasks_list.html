@@ -36,6 +36,7 @@
       <span class="cell-num">{{ t.duration or '' }}</span>
       <span class="cell-num">{{ t.tokens or '' }}{% if t.tokens %}<span class="unit">tok</span>{% endif %}</span>
       <span class="cell-num cell-cost">{{ t.cost or '' }}</span>
+      <span class="cell-grade"><span class="grade grade-{{ t.grade }}" title="{{ t.grade_title }}">{{ t.grade_label }}</span></span>
       <span class="cell-date"{% if t.updated_at %} data-ts="{{ t.updated_at.isoformat() }}"{% endif %}>{{ t.updated_at.strftime('%Y-%m-%d %H:%M') if t.updated_at else '' }}</span>
     </a>
     <form class="task-delete" method="post" action="/app/tasks/{{ t.id }}/delete"

@@ -10,6 +10,61 @@
   </nav>
 </div>
 
+{% if quality.has_data %}
+<section class="quality-overview panel">
+  <h2 class="chart-title">Session quality <span class="count-pill">{{ quality.total }} run{{ '' if quality.total == 1 else 's' }}</span></h2>
+  {# A stacked bar rather than another doughnut: this is one whole divided
+     three ways, and the shares are meant to be compared to each other. #}
+  <div class="grade-bar" role="img"
+       aria-label="{% for g in quality.grades %}{{ g.count }} {{ g.label }}{{ ', ' if not loop.last }}{% endfor %}">
+    {% for g in quality.grades %}{% if g.count %}<span class="grade-seg seg-{{ g.key }}" style="flex: {{ g.count }}" title="{{ g.count }} {{ g.label }} ({{ g.share }}%)"></span>{% endif %}{% endfor %}
+  </div>
+  <div class="grade-legend">
+    {% for g in quality.grades %}
+    <span class="grade-key"><i class="seg-{{ g.key }}"></i>{{ g.label }} <b>{{ g.count }}</b> <span class="grade-share">{{ g.share }}%</span></span>
+    {% endfor %}
+  </div>
+
+  {% set t = quality.totals %}
+  <div class="quality-signals">
+    <div class="signal{{ ' is-zero' if not t.interventions else ' tone-bad' }}">
+      <span class="signal-value">{{ t.interventions }}</span><span class="signal-label">Your corrections</span>
+    </div>
+    <div class="signal{{ ' is-zero' if not t.completion_replies else '' }}">
+      <span class="signal-value">{{ t.completion_replies }}</span><span class="signal-label">Replies to a result</span>
+    </div>
+    <div class="signal{{ ' is-zero' if not t.errors else ' tone-bad' }}">
+      <span class="signal-value">{{ t.errors }}</span><span class="signal-label">Errors</span>
+    </div>
+    <div class="signal{{ ' is-zero' if not t.retries else ' tone-bad' }}">
+      <span class="signal-value">{{ t.retries }}</span><span class="signal-label">Provider retries</span>
+    </div>
+    <div class="signal{{ ' is-zero' if not t.condense else ' tone-warn' }}">
+      <span class="signal-value">{{ t.condense }}</span><span class="signal-label">Context condensed</span>
+    </div>
+    <div class="signal{{ ' is-zero' if not t.repeated_work else ' tone-warn' }}">
+      <span class="signal-value">{{ t.repeated_work }}</span><span class="signal-label">Repeated tool calls</span>
+    </div>
+  </div>
+
+  {% if quality.roughest %}
+  <h3 class="chart-title rough-title">Roughest runs</h3>
+  <ul class="rough-list">
+    {% for r in quality.roughest %}
+    <li>
+      <a class="rough-link" href="/app/tasks/{{ r.id }}">
+        <span class="cell-title">{{ r.title }}</span>
+        <span class="rough-why">{{ r.reasons }}</span>
+        <span class="cell-num">{{ r.friction }}</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endif %}
+
+
 {% if metrics.has_data %}
 {% set t = metrics.totals %}
 <section class="stat-grid">
