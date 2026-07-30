@@ -270,6 +270,9 @@ async def task_detail(
             "share_url": None,
             "live": live,
             "can_delete": True,
+            # A conversation is prose, so the page switches to the reading
+            # measure instead of the wider scanning column the list uses.
+            "read_measure": True,
             "live_config_json": json.dumps({"taskId": task_id, "bridgePath": settings.bridge_path}),
         },
     )
@@ -360,6 +363,7 @@ async def shared_task(
             "share_url": share.share_url,
             "live": live,
             "can_delete": is_owner,
+            "read_measure": True,
             "live_config_json": (
                 json.dumps({"taskId": task_id, "bridgePath": settings.bridge_path})
                 if live

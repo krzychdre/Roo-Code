@@ -480,8 +480,9 @@ async def test_app_list_shows_cost_and_tokens(client, db_session, session_factor
         app.dependency_overrides.pop(get_web_user_optional, None)
 
     assert resp.status_code == 200
-    # 96941 + 3365 = 100306 → "100.3k tokens"; cost rendered to 4 dp.
-    assert "100.3k tokens" in resp.text
+    # 96941 + 3365 = 100306 → "100.3k"; cost rendered to 4 dp. The unit is a
+    # separate element, so assert on the figure — that is what must be right.
+    assert "100.3k" in resp.text
     assert "$0.1234" in resp.text
     # Hover tooltip breakdown: in/out, cache, session duration, cost.
     assert "↑ In: 96,941" in resp.text
@@ -1023,9 +1024,9 @@ async def test_web_num_excludes_booleans(client, db_session, session_factory):
         app.dependency_overrides.pop(get_web_user_optional, None)
 
     assert resp.status_code == 200
-    # tokens_in should be 0 (bool excluded), tokens_out=100 → total 100
-    # "100 tokens" in the list, NOT "101 tokens"
-    assert "100 tokens" in resp.text
+    # tokens_in should be 0 (bool excluded), tokens_out=100 → total 100, so the
+    # list shows the figure 100 and never 101.
+    assert ">100<" in resp.text
     assert "101" not in resp.text
     # The tooltip should show In: 0 (not In: 1)
     assert "↑ In: 0" in resp.text

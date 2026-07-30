@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
   <title>{% block title %}Tumble Code{% endblock %}</title>
   <link rel="stylesheet" href="/static/app.css?v={{ asset_v }}">
 </head>
@@ -10,9 +11,9 @@
   <header class="topbar">
     <a class="brand" href="/app">Tumble&nbsp;Code <span class="brand-sub">Cloud</span></a>
     {% if user %}
-      <nav class="mainnav">
-        <a href="/app" class="{{ 'active' if nav_active == 'tasks' else '' }}">Tasks</a>
-        <a href="/app/metrics" class="{{ 'active' if nav_active == 'metrics' else '' }}">Metrics</a>
+      <nav class="mainnav" aria-label="Sections">
+        <a href="/app"{% if nav_active == 'tasks' %} class="active" aria-current="page"{% endif %}>Tasks</a>
+        <a href="/app/metrics"{% if nav_active == 'metrics' %} class="active" aria-current="page"{% endif %}>Metrics</a>
       </nav>
     {% endif %}
     <div class="spacer"></div>
@@ -23,7 +24,7 @@
       <a class="btn" href="/app/login">Sign in</a>
     {% endif %}
   </header>
-  <main class="content">
+  <main class="content{% if read_measure %} read{% endif %}">
     {% block content %}{% endblock %}
   </main>
   {% block scripts %}{% endblock %}

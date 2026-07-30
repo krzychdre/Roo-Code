@@ -13,22 +13,22 @@
 {% if metrics.has_data %}
 {% set t = metrics.totals %}
 <section class="stat-grid">
-  <div class="stat-card">
+  <div class="stat-card" data-metric="tokens">
     <div class="stat-label">Total tokens</div>
     <div class="stat-value">{{ t.total_tokens_fmt }}</div>
     <div class="stat-sub">↑ {{ "{:,}".format(t.input) }} in · ↓ {{ "{:,}".format(t.output) }} out</div>
   </div>
-  <div class="stat-card">
+  <div class="stat-card" data-metric="cache">
     <div class="stat-label">Cache tokens</div>
     <div class="stat-value">{{ "{:,}".format(t.cache_read + t.cache_write) }}</div>
-    <div class="stat-sub">⚡ {{ "{:,}".format(t.cache_write) }} write · {{ "{:,}".format(t.cache_read) }} read</div>
+    <div class="stat-sub">{{ "{:,}".format(t.cache_write) }} write · {{ "{:,}".format(t.cache_read) }} read</div>
   </div>
-  <div class="stat-card">
+  <div class="stat-card" data-metric="cost">
     <div class="stat-label">Cost</div>
     <div class="stat-value">${{ "%.4f"|format(t.cost) }}</div>
     <div class="stat-sub">{{ t.completions }} API completion{{ '' if t.completions == 1 else 's' }}</div>
   </div>
-  <div class="stat-card">
+  <div class="stat-card" data-metric="duration">
     <div class="stat-label">Session duration</div>
     <div class="stat-value">{{ metrics.duration }}</div>
     <div class="stat-sub">{{ metrics.task_count }} task{{ '' if metrics.task_count == 1 else 's' }}</div>

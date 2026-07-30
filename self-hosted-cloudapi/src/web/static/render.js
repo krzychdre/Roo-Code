@@ -87,7 +87,13 @@
 		return "<pre><code>" + escapeHtml(content) + "</code></pre>"
 	}
 
-	// Returns { role, label, icon, body(html) } or null to skip the message.
+	// Returns { role, label, detail?, body(html) } or null to skip the message.
+	//
+	// `label` is the ROLE word and is set in uppercase mono, like a panel label.
+	// `detail` is content — a shell command, a file path, a token count — and is
+	// kept verbatim. They are separate fields because the two are typeset
+	// differently: uppercasing a `label + " · " + content` string mangled real
+	// commands and paths ("uv run pytest" rendered as "UV RUN PYTEST").
 	function classify(m) {
 		const kind = m.say || m.ask || m.type
 
@@ -97,14 +103,13 @@
 		switch (kind) {
 			case "user_feedback":
 			case "user_feedback_diff":
-				return { role: "user", label: "You", icon: "\u{1F464}", body: userContentHtml(m.text) }
+				return { role: "user", label: "You", body: userContentHtml(m.text) }
 
 			case "text":
 				if (!m.text && !(m.images && m.images.length)) return null
 				return {
 					role: "assistant",
 					label: "Assistant",
-					icon: "\u{1F916}",
 					body: userContentHtml(m.text) + images(m),
 					fold: true,
 					activity: "Responding…",
@@ -115,7 +120,6 @@
 				return {
 					role: "reasoning",
 					label: "Reasoning",
-					icon: "\u{1F4AD}",
 					body: md(m.text || m.reasoning),
 					fold: true,
 					activity: "Thinking…",
@@ -125,13 +129,13 @@
 				// The result `say` carries the text; the trailing empty `ask` would
 				// otherwise render a redundant "Task completed." row — drop it.
 				if (!m.text) return null
-				return { role: "completion", label: "Result", icon: "✅", body: md(m.text) }
+				return { role: "completion", label: "Result", body: md(m.text) }
 
 			case "command":
 				return {
 					role: "command",
-					label: "Command · " + firstLine(m.text, 80),
-					icon: "\u{1F4BB}",
+					label: "Command",
+					detail: firstLine(m.text, 80),
 					body: codeBlock(m.text || ""),
 					fold: true,
 					activity: "Running command…",
@@ -139,14 +143,14 @@
 
 			case "command_output":
 				if (!m.text) return null
-				return { role: "output", label: "Output", icon: "≡", body: codeBlock(m.text), fold: true }
+				return { role: "output", label: "Output", body: codeBlock(m.text), fold: true }
 
 			case "error":
 			case "diff_error":
 			case "rooignore_error":
 			case "mistake_limit_reached":
 			case "api_req_failed":
-				return { role: "error", label: "Error", icon: "⚠", body: md(m.text) || "<em>An error occurred.</em>" }
+				return { role: "error", label: "Error", body: md(m.text) || "<em>An error occurred.</em>" }
 
 			case "api_req_started":
 				return apiReq(m)
@@ -161,13 +165,12 @@
 			case "mcp_server_request_started":
 			case "mcp_server_response":
 				if (!m.text) return null
-				return { role: "mcp", label: "MCP", icon: "\u{1F50C}", body: renderMaybeJson(m.text), fold: true }
+				return { role: "mcp", label: "MCP", body: renderMaybeJson(m.text), fold: true }
 
 			case "checkpoint_saved":
 				return {
 					role: "system",
 					label: "Checkpoint",
-					icon: "\u{1F4CD}",
 					body: "<span class='kv'>Checkpoint saved</span>",
 				}
 
@@ -175,7 +178,6 @@
 				return {
 					role: "system",
 					label: "Context condensed",
-					icon: "\u{1F5DC}",
 					body:
 						m.contextCondense && m.contextCondense.summary
 							? md(m.contextCondense.summary)
@@ -183,14 +185,14 @@
 				}
 
 			case "subtask_result":
-				return { role: "completion", label: "Subtask result", icon: "↳", body: md(m.text) }
+				return { role: "completion", label: "Subtask result", body: md(m.text) }
 
 			case "image":
-				return { role: "assistant", label: "Image", icon: "\u{1F5BC}", body: images(m) }
+				return { role: "assistant", label: "Image", body: images(m) }
 
 			default:
 				if (!m.text) return null
-				return { role: "system", label: kind || "Message", icon: "ℹ", body: renderMaybeJson(m.text) }
+				return { role: "system", label: kind || "Message", body: renderMaybeJson(m.text) }
 		}
 	}
 
@@ -220,15 +222,14 @@
 			bits.push("↑" + (obj.tokensIn || 0) + " ↓" + (obj.tokensOut || 0))
 		}
 		if (obj.cost != null) bits.push("$" + Number(obj.cost).toFixed(4))
-		// One-liner: stats live in the row label; the body holds only the optional
-		// folded request prompt. No cost yet → the request is still in flight.
-		const label = "API request" + (bits.length ? " · " + bits.join(" · ") : "")
+		// One-liner: the figures ride in the row's detail; the body holds only the
+		// optional folded request prompt. No cost yet → the request is in flight.
 		const body = obj.request ? md(obj.request) : ""
 		const active = obj.cost == null && obj.cancelReason == null && obj.streamingFailedMessage == null
 		return {
 			role: "api",
-			label: label,
-			icon: "⇅",
+			label: "API",
+			detail: bits.join("  "),
 			body: body,
 			fold: !!body,
 			active: active,
@@ -242,7 +243,6 @@
 			return {
 				role: "tool",
 				label: "Tool",
-				icon: "\u{1F527}",
 				body: md(m.text),
 				fold: true,
 				activity: "Running tool…",
@@ -254,8 +254,14 @@
 		else if (obj.content) inner += codeBlock(obj.content)
 		else if (obj.query) inner += '<div class="kv">query: ' + escapeHtml(obj.query) + "</div>"
 		if (!inner) inner = codeBlock(JSON.stringify(obj, null, 2))
-		const label = "Tool · " + name + (obj.path ? " · " + obj.path : "")
-		return { role: "tool", label: label, icon: "\u{1F527}", body: inner, fold: true, activity: "Running tool…" }
+		return {
+			role: "tool",
+			label: name,
+			detail: obj.path || "",
+			body: inner,
+			fold: true,
+			activity: "Running tool…",
+		}
 	}
 
 	function followup(m) {
@@ -278,7 +284,7 @@
 		} else {
 			body = md(m.text)
 		}
-		return { role: "assistant", label: "Question", icon: "❓", body: body }
+		return { role: "assistant", label: "Question", body: body }
 	}
 
 	function rowEl(info, ts, active) {
@@ -289,7 +295,11 @@
 		// Right-aligned meta: absolute time (+ step duration, backfilled later).
 		const time = ts != null ? '<span class="msg-time">' + escapeHtml(fmtTime(ts)) + "</span>" : ""
 		const meta = '<span class="msg-meta">' + time + '<span class="msg-dur"></span></span>'
-		const headInner = '<span class="msg-icon">' + info.icon + "</span>" + escapeHtml(info.label) + spinner + meta
+		// Role word and content are separate elements so the stylesheet can set
+		// the first as a panel label (uppercase, tracked) without mangling the
+		// second, which is a verbatim command, path or figure.
+		const detail = info.detail ? '<span class="msg-detail">' + escapeHtml(info.detail) + "</span>" : ""
+		const headInner = '<span class="msg-role">' + escapeHtml(info.label) + "</span>" + detail + spinner + meta
 		if (info.fold && info.body) {
 			// The summary IS the header — one collapsible line that expands in place,
 			// instead of a header row stacked on a redundant "Show…" summary.

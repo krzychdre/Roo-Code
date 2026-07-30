@@ -13,16 +13,19 @@
 <ul class="task-list">
   {% for t in tasks %}
   <li class="task-item">
-    <a class="task-link" href="/app/tasks/{{ t.id }}">
-      <span class="task-title">{{ t.title }}</span>
-      <span class="task-meta">
-        {% if t.workspace_label %}<span class="badge badge-workspace" title="{{ t.workspace }}">{{ t.workspace_label }}</span>{% endif %}
-        <span class="badge">{{ t.message_count }} message{{ '' if t.message_count == 1 else 's' }}</span>
-        {% if t.duration %}<span class="badge badge-muted" title="{{ t.metrics_title }}">{{ t.duration }}</span>{% endif %}
-        {% if t.tokens %}<span class="badge badge-muted" title="{{ t.metrics_title }}">{{ t.tokens }} tokens</span>{% endif %}
-        {% if t.cost %}<span class="badge badge-muted" title="{{ t.metrics_title }}">{{ t.cost }}</span>{% endif %}
-        {% if t.updated_at %}<span class="task-date" data-ts="{{ t.updated_at.isoformat() }}">{{ t.updated_at.strftime('%Y-%m-%d %H:%M') }}</span>{% endif %}
-      </span>
+    {#
+      Fixed grid, not a flex row: every cell is emitted even when empty, so the
+      numbers line up into scannable columns down the whole page. A row that
+      simply omits an absent value would shift every figure after it.
+    #}
+    <a class="task-link" href="/app/tasks/{{ t.id }}" title="{{ t.metrics_title }}">
+      <span class="cell-title">{{ t.title }}</span>
+      <span class="cell-workspace">{% if t.workspace_label %}<span class="badge badge-workspace" title="{{ t.workspace }}">{{ t.workspace_label }}</span>{% endif %}</span>
+      <span class="cell-num">{{ t.message_count }}<span class="unit">msg</span></span>
+      <span class="cell-num">{{ t.duration or '' }}</span>
+      <span class="cell-num">{{ t.tokens or '' }}{% if t.tokens %}<span class="unit">tok</span>{% endif %}</span>
+      <span class="cell-num cell-cost">{{ t.cost or '' }}</span>
+      <span class="cell-date"{% if t.updated_at %} data-ts="{{ t.updated_at.isoformat() }}"{% endif %}>{{ t.updated_at.strftime('%Y-%m-%d %H:%M') if t.updated_at else '' }}</span>
     </a>
     <form class="task-delete" method="post" action="/app/tasks/{{ t.id }}/delete"
           onsubmit="return confirm('Delete “{{ t.title }}” and its conversation permanently? This cannot be undone.');">
