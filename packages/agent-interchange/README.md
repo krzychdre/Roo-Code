@@ -26,13 +26,15 @@ pnpm --filter @roo-code/agent-interchange build   # produces dist/mcp-server.mjs
 
 ### Claude Code
 
-The repository ships a project-scoped `.mcp.json`, so inside this workspace it is
-already wired; Claude Code asks once whether to trust it. To use it in **every**
-project instead:
+Register it once, for every project:
 
 ```bash
 claude mcp add --scope user agent-interchange -- node /absolute/path/to/Roo-Code/packages/agent-interchange/dist/mcp-server.mjs
 ```
+
+The path has to be absolute. A project-scoped `.mcp.json` with a relative path
+would only resolve when Claude Code is started from the repository root, and it
+collides with the user-scope entry when both exist.
 
 ### Tumble Code
 
