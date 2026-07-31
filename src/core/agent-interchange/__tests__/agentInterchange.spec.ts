@@ -8,7 +8,7 @@ const showQuickPick = vi.fn()
 const showInputBox = vi.fn()
 const showInformationMessage = vi.fn()
 const showWarningMessage = vi.fn()
-const createTask = vi.fn(async () => ({ taskId: "new-task-1" }))
+const createTask = vi.fn(async (_text?: string) => ({ taskId: "new-task-1" }))
 const getCurrentTask = vi.fn()
 
 vi.mock("vscode", () => ({
@@ -152,7 +152,7 @@ describe("agent interchange commands", () => {
 		await pickUpAgentSession(context)
 
 		expect(createTask).toHaveBeenCalledTimes(1)
-		const prompt = createTask.mock.calls[0]![0] as unknown as string
+		const prompt = createTask.mock.calls[0]![0]!
 		expect(prompt).toContain("taking over work started in Claude Code")
 		expect(prompt).toContain("verify the current state of the files")
 		expect(prompt).toContain("# Strict checker")
@@ -173,7 +173,7 @@ describe("agent interchange commands", () => {
 		const { pickUpAgentSession } = await import("../index")
 		await pickUpAgentSession(context)
 
-		const prompt = createTask.mock.calls[0]![0] as unknown as string
+		const prompt = createTask.mock.calls[0]![0]!
 		expect(prompt).toContain("handed this task over to you")
 		expect(prompt).toContain("- [ ] Run the suite")
 
