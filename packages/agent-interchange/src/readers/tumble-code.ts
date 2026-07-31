@@ -1,7 +1,7 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 
-import { listDirectories, samePath, tumbleTaskRoots } from "../locate.js"
+import { isDirectory, listDirectories, samePath, tumbleTaskRoots } from "../locate.js"
 import { normalizeContent, oneLine } from "../normalize.js"
 import type { InterchangeMessage, ListOptions, ReadOptions, Session, SessionSummary } from "../types.js"
 
@@ -48,11 +48,31 @@ interface ApiMessageFile {
 	isSummary?: boolean
 }
 
-export function listTumbleSessions(options: ListOptions = {}): SessionSummary[] {
+/**
+ * Where to look for tasks.
+ *
+ * The extension knows its own storage directory exactly — including a
+ * `customStoragePath` the user set — so it passes it in rather than letting the
+ * discovery heuristics guess and possibly land on another editor's profile.
+ */
+export interface TumbleStoreOptions {
+	/** globalStorage directories (the ones containing `tasks/`). */
+	storageRoots?: string[]
+}
+
+function taskRootsFor(storageRoots: string[] | undefined): string[] {
+	if (!storageRoots || storageRoots.length === 0) {
+		return tumbleTaskRoots()
+	}
+
+	return storageRoots.map((root) => path.join(root, "tasks")).filter((dir) => isDirectory(dir))
+}
+
+export function listTumbleSessions(options: ListOptions & TumbleStoreOptions = {}): SessionSummary[] {
 	const summaries: SessionSummary[] = []
 	const seen = new Set<string>()
 
-	for (const root of tumbleTaskRoots()) {
+	for (const root of taskRootsFor(options.storageRoots)) {
 		for (const dir of listDirectories(root)) {
 			const summary = summarize(dir)
 
@@ -82,12 +102,12 @@ export function listTumbleSessions(options: ListOptions = {}): SessionSummary[] 
 	return options.limit ? summaries.slice(0, options.limit) : summaries
 }
 
-export function findTumbleTaskDir(id: string): string | undefined {
+export function findTumbleTaskDir(id: string, storageRoots?: string[]): string | undefined {
 	if (!/^[A-Za-z0-9._-]+$/.test(id)) {
 		return undefined
 	}
 
-	for (const root of tumbleTaskRoots()) {
+	for (const root of taskRootsFor(storageRoots)) {
 		const dir = path.join(root, id)
 
 		if (fs.existsSync(dir)) {
@@ -98,8 +118,11 @@ export function findTumbleTaskDir(id: string): string | undefined {
 	return undefined
 }
 
-export async function readTumbleSession(id: string, _options: ReadOptions = {}): Promise<Session | undefined> {
-	const dir = findTumbleTaskDir(id)
+export async function readTumbleSession(
+	id: string,
+	options: ReadOptions & TumbleStoreOptions = {},
+): Promise<Session | undefined> {
+	const dir = findTumbleTaskDir(id, options.storageRoots)
 
 	if (!dir) {
 		return undefined

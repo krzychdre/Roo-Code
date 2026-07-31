@@ -1,5 +1,5 @@
 import { listClaudeSessions, readClaudeSession } from "./readers/claude-code.js"
-import { listTumbleSessions, readTumbleSession } from "./readers/tumble-code.js"
+import { listTumbleSessions, readTumbleSession, type TumbleStoreOptions } from "./readers/tumble-code.js"
 import type { AgentKind, ListOptions, ReadOptions, Session, SessionSummary } from "./types.js"
 
 export * from "./types.js"
@@ -41,15 +41,20 @@ export {
 export { listPlans, readPlan, renderPlanList, type PlanDoc, type PlanSource } from "./plans.js"
 export { renderSearchHits, searchSessions, type SearchHit, type SearchOptions } from "./search.js"
 export { findClaudeSessionFile, listClaudeSessions, readClaudeSession } from "./readers/claude-code.js"
-export { findTumbleTaskDir, listTumbleSessions, readTumbleSession } from "./readers/tumble-code.js"
+export {
+	findTumbleTaskDir,
+	listTumbleSessions,
+	readTumbleSession,
+	type TumbleStoreOptions,
+} from "./readers/tumble-code.js"
 
 /** Sessions from both agents, newest first. */
-export function listSessions(options: ListOptions & { agent?: AgentKind } = {}): SessionSummary[] {
-	const { agent, limit, ...rest } = options
+export function listSessions(options: ListOptions & { agent?: AgentKind } & TumbleStoreOptions = {}): SessionSummary[] {
+	const { agent, limit, storageRoots, ...rest } = options
 
 	const summaries = [
 		...(agent === "tumble-code" ? [] : listClaudeSessions(rest)),
-		...(agent === "claude-code" ? [] : listTumbleSessions(rest)),
+		...(agent === "claude-code" ? [] : listTumbleSessions({ ...rest, storageRoots })),
 	].sort((a, b) => b.updatedAt - a.updatedAt)
 
 	return limit ? summaries.slice(0, limit) : summaries
@@ -64,9 +69,9 @@ export function listSessions(options: ListOptions & { agent?: AgentKind } = {}):
  */
 export async function readSession(
 	id: string,
-	options: ReadOptions & { agent?: AgentKind } = {},
+	options: ReadOptions & { agent?: AgentKind } & TumbleStoreOptions = {},
 ): Promise<Session | undefined> {
-	const { agent, ...rest } = options
+	const { agent, storageRoots, ...rest } = options
 
 	if (agent !== "tumble-code") {
 		const session = await readClaudeSession(id, rest)
@@ -77,7 +82,7 @@ export async function readSession(
 	}
 
 	if (agent !== "claude-code") {
-		const session = await readTumbleSession(id, rest)
+		const session = await readTumbleSession(id, { ...rest, storageRoots })
 
 		if (session) {
 			return session
