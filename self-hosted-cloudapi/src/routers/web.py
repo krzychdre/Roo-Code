@@ -57,6 +57,7 @@ from src.services.session_quality import (
 from src.services.task_summary import DEFAULT_TITLE, derive_title, duration_ms
 from src.services.task_tree import ancestors, child_counts, children_of
 from src.utils.format import fmt_duration, fmt_tokens
+from src.utils.pagination import page_window
 
 logger = logging.getLogger(__name__)
 
@@ -246,7 +247,10 @@ async def _load_task_messages(db: AsyncSession, task_id: str) -> list[dict]:
 @router.get("/app", response_class=HTMLResponse)
 async def task_list(
     request: Request,
-    page: int = Query(1, ge=1),
+    # Clamped below rather than validated: the pager lets a reader type a page
+    # number, and an out-of-range one should land on the nearest real page
+    # instead of replacing the list with a 422.
+    page: int = Query(1),
     q: str = Query("", max_length=200),
     scope: str = Query("roots"),
     user: Optional[WebUser] = Depends(get_web_user_optional),
@@ -278,7 +282,7 @@ async def task_list(
 
     total = await db.scalar(select(func.count(Task.id)).where(*filters)) or 0
     page_count = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
-    page = min(page, page_count)
+    page = min(max(page, 1), page_count)
 
     result = await db.execute(
         select(Task)
@@ -334,6 +338,9 @@ async def task_list(
             "scope": scope,
             "page": page,
             "page_count": page_count,
+            # Numbered links, so any page is one click away rather than N
+            # clicks of "Older"; None entries render as an ellipsis.
+            "pages": page_window(page, page_count),
             "total": total,
             "all_total": all_total,
             "has_prev": page > 1,

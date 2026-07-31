@@ -1,6 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Your tasks · Tumble Code{% endblock %}
 {% block content %}
+{# The search terms travel with every scope/page link, so neither switching
+   scope nor paging silently drops the filter the reader is looking at. Encoded
+   once here: a title search for "a&b" would otherwise truncate the URL. #}
+{% set page_q = '&q=' ~ query|urlencode if query else '' %}
 <div class="list-head">
   <h1 class="page-title">Your tasks{% if total %} <span class="count-pill">{{ total }}</span>{% endif %}</h1>
   <div class="list-tools">
@@ -8,9 +12,9 @@
        hidden by default; the flat list is one click away. #}
     <nav class="scope-control" aria-label="Which tasks to list">
       <a class="scope-opt{{ ' active' if scope == 'roots' else '' }}"
-         href="/app?scope=roots{% if query %}&q={{ query }}{% endif %}">Runs</a>
+         href="/app?scope=roots{{ page_q }}">Runs</a>
       <a class="scope-opt{{ ' active' if scope == 'all' else '' }}"
-         href="/app?scope=all{% if query %}&q={{ query }}{% endif %}">All {{ all_total }}</a>
+         href="/app?scope=all{{ page_q }}">All {{ all_total }}</a>
     </nav>
     <form class="search" method="get" action="/app" role="search">
       <input type="hidden" name="scope" value="{{ scope }}">
@@ -83,17 +87,47 @@
 </form>
 
 {% if page_count > 1 %}
-<nav class="pager" aria-label="Pagination">
+<nav class="pager" aria-label="Pagination, page {{ page }} of {{ page_count }}">
   {% if has_prev %}
-  <a class="pager-btn" href="/app?scope={{ scope }}&page={{ page - 1 }}{% if query %}&q={{ query }}{% endif %}">← Newer</a>
+  <a class="pager-btn" href="/app?scope={{ scope }}&page={{ page - 1 }}{{ page_q }}" rel="prev">← Newer</a>
   {% else %}
   <span class="pager-btn disabled">← Newer</span>
   {% endif %}
-  <span class="pager-status">Page {{ page }} of {{ page_count }}</span>
+
+  {# Numbered pages: any page in the window is one click away, the two ends are
+     always reachable, and a run that had to be elided says so with an ellipsis
+     rather than pretending the pages between are not there. #}
+  <ol class="pager-pages">
+    {% for p in pages %}
+    {% if p is none %}
+    <li><span class="pager-gap" aria-hidden="true">…</span></li>
+    {% elif p == page %}
+    <li><span class="pager-num current" aria-current="page">{{ p }}</span></li>
+    {% else %}
+    <li><a class="pager-num" href="/app?scope={{ scope }}&page={{ p }}{{ page_q }}" aria-label="Page {{ p }}">{{ p }}</a></li>
+    {% endif %}
+    {% endfor %}
+  </ol>
+
   {% if has_next %}
-  <a class="pager-btn" href="/app?scope={{ scope }}&page={{ page + 1 }}{% if query %}&q={{ query }}{% endif %}">Older →</a>
+  <a class="pager-btn" href="/app?scope={{ scope }}&page={{ page + 1 }}{{ page_q }}" rel="next">Older →</a>
   {% else %}
   <span class="pager-btn disabled">Older →</span>
+  {% endif %}
+
+  {# Only once the numbers stop covering the range: with 4 pages all four are
+     on screen and a box to type "3" into would be noise. #}
+  {% if page_count > pages|length %}
+  <form class="pager-jump" method="get" action="/app">
+    <input type="hidden" name="scope" value="{{ scope }}">
+    {% if query %}<input type="hidden" name="q" value="{{ query }}">{% endif %}
+    <label class="pager-jump-label" for="pager-jump">Go to</label>
+    <input id="pager-jump" type="number" name="page" value="{{ page }}"
+           min="1" max="{{ page_count }}" step="1" inputmode="numeric"
+           aria-label="Go to page number">
+    <span class="pager-of">of {{ page_count }}</span>
+    <button class="btn ghost" type="submit">Go</button>
+  </form>
   {% endif %}
 </nav>
 {% endif %}

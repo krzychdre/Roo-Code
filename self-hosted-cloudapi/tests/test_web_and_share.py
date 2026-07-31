@@ -1475,7 +1475,137 @@ async def test_task_list_is_paginated(client, db_session, session_factory):
     assert first.status_code == 200 and second.status_code == 200
     assert first.text.count('class="task-item"') == PAGE_SIZE
     assert second.text.count('class="task-item"') == 5
-    assert "Page 1 of 2" in first.text
+    assert 'aria-label="Pagination, page 1 of 2"' in first.text
+
+
+async def _seed_pages(session_factory, count, user_id="user_test", prefix="task-n"):
+    """``count`` tasks with distinct timestamps, so page N holds a known slice."""
+    from datetime import datetime, timezone, timedelta
+
+    base = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)
+    async with session_factory() as s:
+        for i in range(count):
+            s.add(
+                Task(
+                    id=f"{prefix}{i}",
+                    user_id=user_id,
+                    title=f"Task number {i}",
+                    # Newest first: task-n0 leads the list.
+                    updated_at=base - timedelta(minutes=i),
+                )
+            )
+        await s.commit()
+
+
+async def test_pager_links_every_page_in_the_window(client, session_factory, db_session, monkeypatch):
+    """Reaching page 5 must cost one click, not four of "Older"."""
+    from src.routers import web
+
+    monkeypatch.setattr(web, "PAGE_SIZE", 2)
+    await _seed_user(db_session)
+    await _seed_pages(session_factory, 20)  # 10 pages
+
+    _override_web_user(client.app)
+    try:
+        resp = client.get("/app")
+    finally:
+        client.app.dependency_overrides.pop(get_web_user_optional, None)
+
+    assert resp.status_code == 200
+    # The window around page 1, plus the far end, each as its own link.
+    for n in (2, 3, 4, 5, 10):
+        assert f'href="/app?scope=roots&page={n}"' in resp.text
+    # The page you are on is stated, not offered as a link to itself.
+    assert 'aria-current="page"' in resp.text
+    assert 'href="/app?scope=roots&page=1"' not in resp.text
+    # Pages 6..9 are elided rather than silently dropped.
+    assert "pager-gap" in resp.text
+
+
+async def test_pager_jump_box_appears_only_when_numbers_stop_covering_the_range(
+    client, session_factory, db_session, monkeypatch
+):
+    from src.routers import web
+
+    monkeypatch.setattr(web, "PAGE_SIZE", 2)
+    await _seed_user(db_session)
+    await _seed_pages(session_factory, 8)  # 4 pages: all four are on screen
+
+    _override_web_user(client.app)
+    try:
+        short = client.get("/app")
+        await _seed_pages(session_factory, 12, prefix="task-m")  # now 10 pages
+        long = client.get("/app")
+    finally:
+        client.app.dependency_overrides.pop(get_web_user_optional, None)
+
+    assert 'class="pager-jump"' not in short.text
+    assert 'class="pager-jump"' in long.text
+    assert 'max="10"' in long.text
+
+
+async def test_pager_jumps_straight_to_a_far_page(client, session_factory, db_session, monkeypatch):
+    from src.routers import web
+
+    monkeypatch.setattr(web, "PAGE_SIZE", 2)
+    await _seed_user(db_session)
+    await _seed_pages(session_factory, 20)
+
+    _override_web_user(client.app)
+    try:
+        resp = client.get("/app?page=7")
+    finally:
+        client.app.dependency_overrides.pop(get_web_user_optional, None)
+
+    assert resp.status_code == 200
+    # Page 7 of a 2-per-page list ordered newest-first: tasks 12 and 13.
+    assert "Task number 12" in resp.text and "Task number 13" in resp.text
+    assert "Task number 11" not in resp.text and "Task number 14" not in resp.text
+    assert 'aria-label="Pagination, page 7 of 10"' in resp.text
+
+
+async def test_pager_out_of_range_lands_on_the_nearest_real_page(
+    client, session_factory, db_session, monkeypatch
+):
+    """A typed page number or a stale bookmark must not replace the list with a 422."""
+    from src.routers import web
+
+    monkeypatch.setattr(web, "PAGE_SIZE", 2)
+    await _seed_user(db_session)
+    await _seed_pages(session_factory, 20)
+
+    _override_web_user(client.app)
+    try:
+        beyond = client.get("/app?page=999")
+        below = client.get("/app?page=0")
+    finally:
+        client.app.dependency_overrides.pop(get_web_user_optional, None)
+
+    assert beyond.status_code == 200
+    assert 'aria-label="Pagination, page 10 of 10"' in beyond.text
+    assert below.status_code == 200
+    assert 'aria-label="Pagination, page 1 of 10"' in below.text
+
+
+async def test_pager_links_carry_the_search_encoded(client, session_factory, db_session, monkeypatch):
+    """Paging must keep the filter, and a search containing & must not truncate
+    the URL at the ampersand."""
+    from src.routers import web
+
+    monkeypatch.setattr(web, "PAGE_SIZE", 2)
+    await _seed_user(db_session)
+    await _seed_pages(session_factory, 20)
+
+    _override_web_user(client.app)
+    try:
+        resp = client.get("/app", params={"q": "Task number 1"})
+        amp = client.get("/app", params={"q": "a&b"})
+    finally:
+        client.app.dependency_overrides.pop(get_web_user_optional, None)
+
+    assert "&amp;q=Task%20number%201" in resp.text  # page links keep the query
+    assert 'name="q" value="Task number 1"' in resp.text  # so does the jump form
+    assert "q=a%26b" in amp.text
 
 
 async def test_task_list_search_filters_by_title_and_workspace(client, db_session, session_factory):
