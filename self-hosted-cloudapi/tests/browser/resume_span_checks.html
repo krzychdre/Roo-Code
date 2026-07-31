@@ -1,0 +1,54 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
+<!-- A task reopened from history, in the shape the live corpus stores it: three
+     minutes of work, then a `resume_task` ask four hours later written when the
+     user came back. The server-side span already excludes that marker (see
+     services/task_summary); this pins the browser half — the timeline must not
+     turn it into a row, nor use it to close the duration of the step before it.
+     It currently cannot: an ask with no text is dropped by classify(). That is
+     load-bearing rather than incidental, so it is asserted. -->
+<div id="page"><div id="conversation"></div></div>
+<script id="messages-data" type="application/json">[
+ {"ts":1000,"type":"say","say":"text","text":"Fix the harness"},
+ {"ts":8000,"type":"say","say":"api_req_started","text":"{\"tokensIn\":100,\"tokensOut\":20,\"cost\":0.01}"},
+ {"ts":190000,"type":"say","say":"completion_result","text":"Done"},
+ {"ts":15966000,"type":"ask","ask":"resume_task"},
+ {"ts":15966001,"type":"ask","ask":"resume_completed_task"}
+]</script>
+<script src="../../src/web/static/vendor/marked.min.js"></script>
+<script src="../../src/web/static/vendor/purify.min.js"></script>
+<script src="../../src/web/static/render.js"></script>
+<script>
+window.addEventListener("load", function () {
+  var out = [], fail = 0
+  function check(name, cond) { out.push((cond ? "PASS " : "FAIL ") + name); if (!cond) fail++ }
+
+  var rows = document.querySelectorAll("#conversation .msg")
+  check("renders only the three real steps (got " + rows.length + ")", rows.length === 3)
+
+  var tsOf = function (r) { return r.getAttribute("data-ts") }
+  check("no row for the resume prompt",
+        !document.querySelector('#conversation .msg[data-ts="15966000"]'))
+  check("no row for the resume-completed prompt",
+        !document.querySelector('#conversation .msg[data-ts="15966001"]'))
+
+  // The defect this guards: a marker 4h23m after the run would have labelled
+  // the last real step with that gap.
+  var last = rows[rows.length - 1]
+  var dur = last && last.querySelector(".msg-dur")
+  check("the last real step carries no duration (got '" + (dur ? dur.textContent : "") + "')",
+        !!dur && dur.textContent === "")
+  check("the last real step is the result, not a marker", tsOf(last) === "190000")
+
+  // The steps that *are* real still get theirs — the guard must not have
+  // silenced step durations wholesale.
+  var first = rows[0].querySelector(".msg-dur")
+  check("a real step still shows its own duration (got '" + (first ? first.textContent : "") + "')",
+        !!first && /7(\.0)?s/.test(first.textContent))
+
+  var pre = document.createElement("pre")
+  pre.id = "results"
+  pre.textContent = out.join("\n") + "\nTOTAL_FAILURES=" + fail
+  document.body.appendChild(pre)
+})
+</script>
+</body></html>

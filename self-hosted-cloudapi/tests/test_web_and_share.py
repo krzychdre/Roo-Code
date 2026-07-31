@@ -24,6 +24,7 @@ from src.models.event import TelemetryEvent
 from src.realtime.hub import registry
 from src.services.settings_service import get_extension_settings
 from src.services.metrics_service import compute_user_metrics
+from src.services.task_summary import duration_ms
 
 
 # --- helpers ---------------------------------------------------------------
@@ -1389,6 +1390,130 @@ async def test_backfill_fills_the_task_summary_columns(client, db_session, sessi
         assert task.cost == pytest.approx(0.0125)
         assert task.first_ts == 10
         assert task.last_ts == 50
+
+
+# --- the session span (what counts as time the task ran) --------------------
+
+
+_HOUR = 3_600_000
+
+
+def _resume_ask(ts):
+    """What the extension stores when a task is reopened from history."""
+    return {"ts": ts, "type": "ask", "ask": "resume_task"}
+
+
+async def test_a_trailing_resume_marker_does_not_extend_the_session_span(
+    client, db_session, session_factory
+):
+    """Reopening a task hours later is not four hours of work.
+
+    The live shape that exposed this: 54 steps over 3m10s, then a `resume_task`
+    ask 4h23m after the last of them, and the list reported 4h26m. The span must
+    end at the last message of the run itself.
+    """
+    await _seed_user(db_session)
+    _override_current_user(client.app)
+    try:
+        await _backfill(client, "span-resume", [
+            {"ts": 10, "type": "say", "say": "text", "text": "Fix the harness"},
+            {"ts": 20, "type": "say", "say": "api_req_started", "text": "{}"},
+            {"ts": 190_252, "type": "say", "say": "completion_result", "text": "done"},
+            _resume_ask(190_252 + 4 * _HOUR),
+        ])
+    finally:
+        client.app.dependency_overrides.pop(get_current_user, None)
+
+    async with session_factory() as s:
+        task = (await s.execute(select(Task).where(Task.id == "span-resume"))).scalar_one()
+    assert task.first_ts == 10
+    assert task.last_ts == 190_252
+    assert duration_ms(task.first_ts, task.last_ts) == 190_242
+    # The marker is still a stored row — it is excluded from the span, not hidden.
+    assert task.message_count == 4
+
+
+async def test_time_spent_waiting_for_the_user_stays_in_the_span(
+    client, db_session, session_factory
+):
+    """Only the marker is dropped, never idle time.
+
+    A run that sat for an hour waiting for an answer and then carried on took
+    that hour: the task was open and the user was the thing it was blocked on.
+    So a resume marker *between* two real messages changes nothing, and neither
+    does the gap around it.
+    """
+    await _seed_user(db_session)
+    _override_current_user(client.app)
+    try:
+        await _backfill(client, "span-mid", [
+            {"ts": 10, "type": "say", "say": "text", "text": "Fix the harness"},
+            {"ts": 20, "type": "say", "say": "api_req_started", "text": "{}"},
+            _resume_ask(_HOUR),
+            {"ts": 2 * _HOUR, "type": "say", "say": "completion_result", "text": "done"},
+        ])
+    finally:
+        client.app.dependency_overrides.pop(get_current_user, None)
+
+    async with session_factory() as s:
+        task = (await s.execute(select(Task).where(Task.id == "span-mid"))).scalar_one()
+    assert task.first_ts == 10
+    assert task.last_ts == 2 * _HOUR
+    assert duration_ms(task.first_ts, task.last_ts) == 2 * _HOUR - 10
+
+
+async def test_a_task_of_nothing_but_resume_markers_reports_no_duration(
+    client, db_session, session_factory
+):
+    """No message of its own means no span to state — not a fabricated one."""
+    await _seed_user(db_session)
+    _override_current_user(client.app)
+    try:
+        await _backfill(client, "span-empty", [_resume_ask(10), _resume_ask(_HOUR)])
+    finally:
+        client.app.dependency_overrides.pop(get_current_user, None)
+
+    async with session_factory() as s:
+        task = (await s.execute(select(Task).where(Task.id == "span-empty"))).scalar_one()
+    assert task.first_ts is None
+    assert task.last_ts is None
+    assert duration_ms(task.first_ts, task.last_ts) == 0
+
+
+async def test_a_resume_marker_is_classified_but_is_not_a_quality_signal(
+    client, db_session, session_factory
+):
+    """It is stored as a kind so the span can exclude it on an indexed column.
+
+    That is all it is for: it must not reach any friction count, and a clean run
+    that was reopened is still a clean run.
+    """
+    from src.models.task import TaskMessage
+    from src.services.session_quality import KIND_RESUME, GRADE_CLEAN, quality_of
+
+    await _seed_user(db_session)
+    _override_current_user(client.app)
+    try:
+        await _backfill(client, "span-kind", [
+            {"ts": 10, "type": "say", "say": "text", "text": "Fix the harness"},
+            {"ts": 20, "type": "say", "say": "api_req_started", "text": "{}"},
+            {"ts": 30, "type": "say", "say": "completion_result", "text": "done"},
+            _resume_ask(40),
+        ])
+    finally:
+        client.app.dependency_overrides.pop(get_current_user, None)
+
+    async with session_factory() as s:
+        task = (await s.execute(select(Task).where(Task.id == "span-kind"))).scalar_one()
+        kinds = (await s.execute(
+            select(TaskMessage.q_kind).where(TaskMessage.task_id == "span-kind")
+        )).scalars().all()
+
+    assert kinds.count(KIND_RESUME) == 1
+    q = quality_of(task)
+    assert q.friction_events == 0
+    assert q.grade == GRADE_CLEAN
+    assert (q.errors, q.retries, q.interventions, q.condense) == (0, 0, 0, 0)
 
 
 # --- the opening prompt (hover excerpt) -------------------------------------

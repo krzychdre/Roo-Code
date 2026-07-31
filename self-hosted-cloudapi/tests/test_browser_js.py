@@ -32,6 +32,7 @@ _CANDIDATES = ("google-chrome", "chromium", "chromium-browser", "google-chrome-s
 # declares the number of checks it is expected to run at minimum.
 _MIN_CHECKS = {
     "render_checks.html": 26,
+    "resume_span_checks.html": 6,
     "tasklist_checks.html": 18,
 }
 

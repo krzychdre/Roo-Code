@@ -21,6 +21,13 @@ same one ``scripts/agent-bench/collect.py`` follows: test logs say "error" and
   tool          a tool or command invocation
   completion    a ``completion_result`` — the run reached an end
 
+One further marker is stored here without being a quality signal: ``resume``,
+the confirmation prompt written when a task is reopened from history. It is
+classified alongside the rest because classification happens once per message,
+in one place; what it is *for* is bounding the session span (see
+services/task_summary), since a marker written hours after the work stopped
+would otherwise be counted as the moment the task ended.
+
 Repeated work is measured from ``tool_path``: the file each tool call touched is
 stored alongside the message, so re-reading is ``total - distinct`` in the same
 rollup aggregate rather than a scan.
@@ -50,6 +57,18 @@ KIND_COMPLETION_REPLY = "completion_reply"
 KIND_CONDENSE = "condense"
 KIND_TOOL = "tool"
 KIND_COMPLETION = "completion"
+# Not a quality signal — no counter counts it and the grade never sees it. It
+# marks the rows that say "the user reopened this task": a `resume_task` ask is
+# the confirmation prompt the extension writes on resume, hours or days after
+# the run itself stopped. Stored as a kind so services/task_summary can exclude
+# them from the session span on an indexed column, without reading message text.
+KIND_RESUME = "resume"
+
+# Asks that are a resume prompt rather than part of the conversation. The
+# extension takes the same view of them: TaskResumption.cleanupStaleMessages()
+# splices trailing ones off the history, and taskMetadata skips them when
+# looking for the last real message.
+_RESUME_ASKS = {"resume_task", "resume_completed_task"}
 
 # `say` values that count as a failure the harness itself reported.
 _ERROR_SAYS = {"error", "diff_error", "rooignore_error", "api_req_failed"}
@@ -71,6 +90,8 @@ def _kind_of(msg: dict) -> Optional[str]:
     say = msg.get("say")
     ask = msg.get("ask")
 
+    if ask in _RESUME_ASKS:
+        return KIND_RESUME
     if ask in _ERROR_ASKS:
         return KIND_ERROR
     if say in _ERROR_SAYS:
