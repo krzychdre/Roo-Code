@@ -9,7 +9,9 @@
     <a href="/app">All tasks</a>
     {% for a in ancestors %}
     <span class="trail-sep">/</span>
-    <a href="/app/tasks/{{ a.id }}" title="{{ a.title }}">{{ a.title }}</a>
+    {# The hover carries the parent's own prompt; falling back to its title only
+       repeats the link text, which helps just when CSS truncated it. #}
+    <a href="/app/tasks/{{ a.id }}" title="{{ a.hover_title or a.title }}">{{ a.title }}</a>
     {% endfor %}
     <span class="trail-sep">/</span>
     <span class="trail-here">this subtask</span>
@@ -92,7 +94,7 @@
   <ul class="subtask-list">
     {% for s in subtasks %}
     <li>
-      <a class="subtask-link" href="/app/tasks/{{ s.id }}">
+      <a class="subtask-link" href="/app/tasks/{{ s.id }}"{% if s.hover_title %} title="{{ s.hover_title }}"{% endif %}>
         <span class="cell-title">{{ s.title }}</span>
         <span class="cell-num">{{ s.message_count }}<span class="unit">msg</span></span>
         <span class="cell-num">{{ s.duration or '' }}</span>

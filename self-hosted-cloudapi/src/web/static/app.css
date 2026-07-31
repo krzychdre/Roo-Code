@@ -1042,6 +1042,7 @@ textarea::placeholder {
 	display: flex;
 	align-items: center;
 	justify-content: center;
+	flex-wrap: wrap;
 	gap: var(--s4);
 	margin-top: var(--s5);
 }
@@ -1066,6 +1067,92 @@ textarea::placeholder {
 	font-family: var(--mono);
 	font-size: var(--t-micro);
 	color: var(--text-faint);
+}
+
+/* The numbered pages. Mono with tabular figures so the row does not reflow
+   as the digits change under the cursor, and every cell is the same width
+   whether it holds "7" or "16". */
+.pager-pages {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	/* Wraps rather than overflowing: on a phone the row of numbers is wider
+	   than the viewport, and the last page must not fall off the edge. */
+	flex-wrap: wrap;
+	min-width: 0;
+	gap: var(--s1);
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+.pager-num,
+.pager-gap {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 2rem;
+	height: 1.75rem;
+	padding: 0 var(--s1);
+	font-family: var(--mono);
+	font-variant-numeric: tabular-nums;
+	font-size: var(--t-micro);
+	border-radius: var(--r-sm);
+}
+.pager-num {
+	color: var(--text-dim);
+	border: 1px solid transparent;
+}
+.pager-num:hover {
+	background: var(--surface-2);
+	color: var(--text);
+	text-decoration: none;
+}
+/* The page you are on is the one reading you cannot click — the signal marks
+   position here, the same way it marks "live" everywhere else. */
+.pager-num.current {
+	background: var(--signal-wash);
+	border-color: var(--signal);
+	color: var(--text);
+	font-weight: 600;
+}
+.pager-gap {
+	color: var(--text-faint);
+	min-width: 1rem;
+}
+
+/* Past ~9 pages the numbers stop covering the range, so a page can also be
+   named outright instead of walked to. */
+.pager-jump {
+	display: flex;
+	align-items: center;
+	gap: var(--s2);
+	font-family: var(--mono);
+	font-size: var(--t-micro);
+	color: var(--text-faint);
+}
+.pager-jump input[type="number"] {
+	width: 4.5rem;
+	min-height: 26px;
+	padding: 0 var(--s1);
+	font-family: var(--mono);
+	font-variant-numeric: tabular-nums;
+	font-size: var(--t-micro);
+	text-align: center;
+}
+.pager-jump .btn {
+	min-height: 26px;
+	padding: 0 var(--s2);
+	font-size: var(--t-micro);
+}
+
+@media (max-width: 640px) {
+	/* Tighter cells so the window still fits on one line on a phone. */
+	.pager {
+		gap: var(--s3);
+	}
+	.pager-num {
+		min-width: 1.6rem;
+	}
 }
 
 .empty {

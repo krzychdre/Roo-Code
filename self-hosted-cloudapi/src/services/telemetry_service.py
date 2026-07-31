@@ -142,7 +142,12 @@ async def backfill_messages(
     """
     from sqlalchemy import select, delete
     from src.models.task import Task, TaskMessage
-    from src.services.task_summary import derive_title, message_metrics, refresh_task_summary
+    from src.services.task_summary import (
+        derive_prompt,
+        derive_title,
+        message_metrics,
+        refresh_task_summary,
+    )
 
     # Get-or-create the parent task, owned by the uploading user.
     result = await db.execute(select(Task).where(Task.id == task_id))
@@ -188,10 +193,17 @@ async def backfill_messages(
         db.add(task_msg)
     await db.flush()
 
-    # A re-share replaces the whole conversation, so the title is re-derived
-    # from scratch (force=True): the row may still carry the placeholder set
-    # when the live bridge created the task before any text-bearing message.
-    await refresh_task_summary(db, task_id, title=derive_title(parsed), force_title=True)
+    # A re-share replaces the whole conversation, so the title and its excerpt
+    # are re-derived from scratch (force=True): the row may still carry the
+    # placeholder set when the live bridge created the task before any
+    # text-bearing message.
+    await refresh_task_summary(
+        db,
+        task_id,
+        title=derive_title(parsed),
+        prompt=derive_prompt(parsed),
+        force_title=True,
+    )
 
 
 async def upsert_task_message(
@@ -329,9 +341,15 @@ async def _refresh_after_live_write(
     if not is_final:
         return
 
-    from src.services.task_summary import derive_title, refresh_task_summary
+    from src.services.task_summary import derive_prompt, derive_title, refresh_task_summary
 
     # Only a text-bearing message can supply a title, and only the first one
     # ever does — refresh_task_summary keeps an existing title as-is.
-    candidate = derive_title([message]) if message.get("text") else None
-    await refresh_task_summary(db, task_id, title=candidate)
+    has_text = bool(message.get("text"))
+    candidate = derive_title([message]) if has_text else None
+    await refresh_task_summary(
+        db,
+        task_id,
+        title=candidate,
+        prompt=derive_prompt([message]) if has_text else None,
+    )
