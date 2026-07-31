@@ -1,0 +1,22 @@
+{
+	"name": "@roo-code/agent-interchange",
+	"description": "Read, brief and hand off coding-agent sessions between Claude Code and Tumble Code.",
+	"version": "0.0.1",
+	"type": "module",
+	"exports": "./src/index.ts",
+	"scripts": {
+		"lint": "eslint src --ext=ts --max-warnings=0",
+		"check-types": "tsc --noEmit",
+		"test": "vitest run",
+		"clean": "rimraf .turbo"
+	},
+	"dependencies": {
+		"@roo-code/types": "workspace:^"
+	},
+	"devDependencies": {
+		"@roo-code/config-eslint": "workspace:^",
+		"@roo-code/config-typescript": "workspace:^",
+		"@types/node": "20.x",
+		"vitest": "^3.2.3"
+	}
+}
