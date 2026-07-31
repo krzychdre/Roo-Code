@@ -52,6 +52,7 @@ from src.services.session_quality import (
     KIND_INTERVENTION,
     KIND_COMPLETION_REPLY,
     KIND_REQUEST,
+    KIND_RESUME,
     KIND_RETRY,
     KIND_TOOL,
 )
@@ -245,6 +246,14 @@ async def refresh_task_summary(
     def _kind(kind: str):
         return func.coalesce(func.sum(case((TaskMessage.q_kind == kind, 1), else_=0)), 0)
 
+    # The span is measured over the run's own messages only. A `resume_task` ask
+    # is written when the user reopens a task from history — on the live corpus
+    # that landed 4h23m after the last real step of a run that took 3m10s, and
+    # the list reported the 4h26m. Idle time *inside* a run is deliberately kept:
+    # waiting for the user to answer is time the task took. What is dropped is
+    # only the marker that says the user came back, after the work had stopped.
+    span_ts = case((TaskMessage.q_kind.is_distinct_from(KIND_RESUME), TaskMessage.message_ts))
+
     aggregate = await db.execute(
         select(
             func.count(TaskMessage.id),
@@ -253,8 +262,8 @@ async def refresh_task_summary(
             func.coalesce(func.sum(TaskMessage.cache_reads), 0),
             func.coalesce(func.sum(TaskMessage.cache_writes), 0),
             func.coalesce(func.sum(TaskMessage.cost), 0.0),
-            func.min(TaskMessage.message_ts),
-            func.max(TaskMessage.message_ts),
+            func.min(span_ts),
+            func.max(span_ts),
             _kind(KIND_REQUEST),
             _kind(KIND_ERROR),
             _kind(KIND_RETRY),
@@ -317,7 +326,11 @@ async def refresh_task_summary(
 
 
 def duration_ms(first_ts: Optional[int], last_ts: Optional[int]) -> int:
-    """Span between a task's first and last message timestamp, clamped at 0."""
+    """Span between a task's first and last message timestamp, clamped at 0.
+
+    Which messages bound it is decided in ``refresh_task_summary`` (resume
+    markers do not), so every reader of the stored columns gets the same answer.
+    """
     if first_ts is None or last_ts is None:
         return 0
     return max(0, int(last_ts - first_ts))
