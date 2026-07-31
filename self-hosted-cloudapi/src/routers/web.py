@@ -12,6 +12,7 @@ by static/render.js from the embedded ClineMessage[] JSON.
 
 import json
 import logging
+import textwrap
 from pathlib import Path
 from typing import Optional
 
@@ -178,12 +179,54 @@ def _tree_entry(task: Task) -> dict:
         "tokens": fmt_tokens(tokens) if tokens else None,
         "cost": f"${task.cost:.4f}" if (task.cost or 0) > 0 else None,
         "duration": fmt_duration(span) if span else None,
+        # Same hover as a list row: a subtask's title is the least informative
+        # of all, since a delegated run is usually named by one instruction.
+        "hover_title": _row_tooltip(task),
         **_quality_fields(task),
     }
 
 
-def _metrics_tooltip(task: Task) -> str:
-    """Multi-line hover breakdown (native title tooltips honour the newlines).
+# A native tooltip does not wrap, so a paragraph-long excerpt would render as
+# one line wider than the screen. Wrapped here rather than at write time: the
+# stored excerpt stays raw text, and the width is a rendering decision.
+_PROMPT_WRAP_COLS = 78
+_PROMPT_WRAP_LINES = 14
+
+
+def _wrap_prompt(prompt: Optional[str]) -> list[str]:
+    """Lay the stored excerpt out for a fixed-width tooltip.
+
+    Each authored line is wrapped in place (so a bulleted brief keeps its
+    bullets), and the whole thing is capped in height — an excerpt of 30 short
+    lines is within the character cap but taller than the hover should be.
+    """
+    if not prompt:
+        return []
+    lines: list[str] = []
+    for line in prompt.splitlines():
+        if not line.strip():
+            lines.append("")
+            continue
+        # break_on_hyphens off: a URL or a kebab-case path is one token to a
+        # reader, and "local-inference-\nlab/..." reads as a hyphenation that
+        # isn't there. Long words are still broken — a 1000-character token with
+        # no whitespace has to be bounded somehow.
+        lines.extend(
+            textwrap.wrap(line, width=_PROMPT_WRAP_COLS, break_on_hyphens=False) or [""]
+        )
+        if len(lines) > _PROMPT_WRAP_LINES:
+            break
+    if len(lines) > _PROMPT_WRAP_LINES:
+        lines = lines[:_PROMPT_WRAP_LINES]
+        if not lines[-1].endswith("…"):
+            # Room made for the mark rather than taken: a full-width last line
+            # plus an ellipsis is the one line that would exceed the column.
+            lines[-1] = lines[-1][: _PROMPT_WRAP_COLS - 1].rstrip() + "…"
+    return lines
+
+
+def _metrics_tooltip(task: Task) -> list[str]:
+    """The token/cost breakdown, one figure per line.
 
     Reads the denormalized columns on the task row — the whole point of
     services/task_summary is that the list never re-derives these.
@@ -198,7 +241,27 @@ def _metrics_tooltip(task: Task) -> str:
     if span:
         lines.append(f"⏱ Session: {fmt_duration(span)}")
     lines.append(f"$ Cost: ${task.cost:.4f}")
-    return "\n".join(lines)
+    return lines
+
+
+def _row_tooltip(task: Task) -> Optional[str]:
+    """What hovering a task row says: the request, then what it cost.
+
+    The prompt leads because it is the thing the row cannot show — the title
+    column carries only its first line, cut at 100 characters. Both halves come
+    off the task row itself, so this costs the list nothing (native title
+    tooltips honour the newlines).
+
+    ``None`` when there is neither an excerpt nor a figure to report, so the
+    row gets no empty tooltip.
+    """
+    blocks = []
+    prompt = _wrap_prompt(task.prompt_excerpt)
+    if prompt:
+        blocks.append("\n".join(prompt))
+    if (task.tokens_in or 0) or (task.tokens_out or 0) or (task.cost or 0):
+        blocks.append("\n".join(_metrics_tooltip(task)))
+    return "\n\n".join(blocks) or None
 
 
 def _parse_messages(rows: list[TaskMessage]) -> list[dict]:
@@ -299,7 +362,6 @@ async def task_list(
     items = []
     for task in page_tasks:
         total_tokens = (task.tokens_in or 0) + (task.tokens_out or 0)
-        has_metrics = total_tokens > 0 or (task.cost or 0) > 0
         span = duration_ms(task.first_ts, task.last_ts)
         items.append(
             {
@@ -310,7 +372,9 @@ async def task_list(
                 "tokens": fmt_tokens(total_tokens) if total_tokens else None,
                 "cost": f"${task.cost:.4f}" if (task.cost or 0) > 0 else None,
                 "duration": fmt_duration(span) if span else None,
-                "metrics_title": _metrics_tooltip(task) if has_metrics else None,
+                # The prompt the run started from, then its figures: the one
+                # thing a row 100 characters wide cannot show.
+                "hover_title": _row_tooltip(task),
                 "workspace": task.workspace_path,
                 "workspace_label": _workspace_label(task.workspace_path),
                 # Read straight off the row: the list must never parse an event

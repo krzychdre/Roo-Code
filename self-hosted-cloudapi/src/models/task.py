@@ -48,6 +48,12 @@ class Task(Base, TimestampMixin):
     # whole message corpus per page view. Nullable/zero-defaulted: rows written
     # before this existed are filled by the migration's backfill.
     title = Column(String, nullable=True)
+    # The opening user query, capped (services/task_summary.PROMPT_MAX) — what
+    # the title is a single truncated line of. Stored rather than read from the
+    # first message because that message is the largest row in the conversation
+    # (it carries the extension's <environment_details> appendix), and the list
+    # shows it on every row's hover.
+    prompt_excerpt = Column(String, nullable=True)
     message_count = Column(Integer, nullable=False, default=0, server_default="0")
     tokens_in = Column(BigInteger, nullable=False, default=0, server_default="0")
     tokens_out = Column(BigInteger, nullable=False, default=0, server_default="0")

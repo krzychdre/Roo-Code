@@ -53,7 +53,10 @@
         numbers line up into scannable columns down the whole page. A row that
         simply omits an absent value would shift every figure after it.
       #}
-      <a class="task-link" href="/app/tasks/{{ t.id }}" title="{{ t.metrics_title }}">
+      {# Attribute omitted rather than empty when there is nothing to say: a
+         bare `title="{{ … }}"` renders the string "None" for a task with no
+         prompt and no figures. #}
+      <a class="task-link" href="/app/tasks/{{ t.id }}"{% if t.hover_title %} title="{{ t.hover_title }}"{% endif %}>
         <span class="cell-title">{% if t.is_subtask %}<span class="subtask-mark" title="Subtask of another run">↳</span>{% endif %}{{ t.title }}{% if t.child_count %}<span class="child-count" title="{{ t.child_count }} subtask{{ '' if t.child_count == 1 else 's' }}">{{ t.child_count }}</span>{% endif %}</span>
         <span class="cell-workspace">{% if t.workspace_label %}<span class="badge badge-workspace" title="{{ t.workspace }}">{{ t.workspace_label }}</span>{% endif %}</span>
         <span class="cell-model">{% if t.models %}<span class="badge badge-model" title="{{ t.models.title }}"><span class="badge-name">{{ t.models.name }}</span>{% if t.models.more %}<span class="badge-more">{{ t.models.more }}</span>{% endif %}</span>{% endif %}</span>

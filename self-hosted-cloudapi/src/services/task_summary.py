@@ -61,6 +61,14 @@ from src.utils.format import num
 TITLE_MAX = 100
 DEFAULT_TITLE = "Untitled task"
 
+# The excerpt keeps the shape of the request the title flattened: roughly ten
+# wrapped lines, enough for a paragraph or a short brief whole and for the first
+# screen of a long specification. Capped so a 40 KB prompt costs the row nothing.
+PROMPT_MAX = 1000
+# Blank-line runs are collapsed to one: a pasted stack trace or a form-fed brief
+# can carry a dozen, and in a hover tooltip they are only lost height.
+_BLANK_RUN_RE = re.compile(r"\n\s*\n(?:\s*\n)+")
+
 # Roo Code's first user turn can reach the cloud in API-prompt form: the typed
 # text wrapped in <user_message>/<task>/<feedback>, trailed by a machine-built
 # <environment_details> block (current mode, open tabs, file tree, cost…). None
@@ -86,24 +94,59 @@ def strip_task_wrappers(text: str) -> str:
     return cleaned.strip()
 
 
-def derive_title(messages: Iterable[dict]) -> str:
-    """Pick a human-readable title from the conversation (first text-bearing msg).
+def first_user_query(messages: Iterable[dict]) -> str:
+    """The opening human-authored request, machine framing stripped.
 
-    The first candidate is unwrapped to the user's query (machine framing such as
-    ``<environment_details>`` is dropped) so the title reflects what the user
-    actually typed, not the current mode/file tree the extension appended.
+    What both the title and the excerpt are made of: the first text-bearing
+    message, unwrapped (``<environment_details>`` dropped, ``<task>`` unwrapped)
+    so what comes back is what the user typed, not the mode/file tree the
+    extension appended. Empty when the conversation holds no such message.
+
+    Messages whose text opens with ``{`` are skipped: those are the JSON
+    payloads (``api_req_started`` and friends), never prose.
     """
     for msg in messages:
         text = (msg.get("text") or "").strip()
         if not text or text.startswith("{"):
             continue
         query = strip_task_wrappers(text)
-        if not query:
-            continue
-        first_line = query.splitlines()[0].strip()
-        if first_line:
-            return first_line[:TITLE_MAX] + ("…" if len(first_line) > TITLE_MAX else "")
-    return DEFAULT_TITLE
+        if query:
+            return query
+    return ""
+
+
+def derive_title(messages: Iterable[dict]) -> str:
+    """Pick a human-readable title from the conversation (first text-bearing msg).
+
+    A single line — the first one of the opening query — so the list's title
+    column stays one row tall. The rest of that query is kept by
+    ``derive_prompt``.
+    """
+    first_line = first_user_query(messages).splitlines()[:1]
+    if not first_line:
+        return DEFAULT_TITLE
+    line = first_line[0].strip()
+    if not line:
+        return DEFAULT_TITLE
+    return line[:TITLE_MAX] + ("…" if len(line) > TITLE_MAX else "")
+
+
+def derive_prompt(messages: Iterable[dict]) -> str:
+    """The opening query in full, to ``PROMPT_MAX`` — what the title truncated.
+
+    Newlines survive (a prompt's shape is half of how it reads); an over-long
+    one is cut back to the last word boundary so the excerpt never ends mid-word.
+    """
+    query = _BLANK_RUN_RE.sub("\n\n", first_user_query(messages))
+    if len(query) <= PROMPT_MAX:
+        return query
+    head = query[:PROMPT_MAX]
+    # Only honour a word boundary that is actually near the end — a 1000-char
+    # prompt with no whitespace at all (a pasted blob) must still be cut.
+    boundary = max(head.rfind(" "), head.rfind("\n"))
+    if boundary > PROMPT_MAX - 120:
+        head = head[:boundary]
+    return head.rstrip() + "…"
 
 
 @dataclass(frozen=True)
@@ -178,6 +221,7 @@ async def refresh_task_summary(
     task_id: str,
     *,
     title: Optional[str] = None,
+    prompt: Optional[str] = None,
     force_title: bool = False,
 ) -> None:
     """Roll the task's message rows up onto the task row.
@@ -190,6 +234,10 @@ async def refresh_task_summary(
     which never changes within a conversation, so re-deriving it on later live
     writes would be wasted work — but a backfill *replaces* the conversation
     wholesale and must be able to overwrite a stale placeholder.
+
+    ``prompt`` (the same message at more length, see ``derive_prompt``) rides
+    with the title under that one decision, so the two can never end up
+    describing different messages.
     """
     # One pass over the task's rows produces both the token totals and the
     # quality counts: the markers are stored per message (see
@@ -247,13 +295,17 @@ async def refresh_task_summary(
     }
 
     if title:
-        if force_title:
-            values["title"] = title
-        else:
+        applies = force_title
+        if not applies:
             existing = await db.execute(select(Task.title).where(Task.id == task_id))
             current = existing.scalar_one_or_none()
-            if not current or current == DEFAULT_TITLE:
-                values["title"] = title
+            applies = not current or current == DEFAULT_TITLE
+        if applies:
+            values["title"] = title
+            # Written together with the title even when empty: a re-share that
+            # replaced the opening message must not leave the previous
+            # conversation's excerpt behind.
+            values["prompt_excerpt"] = prompt or None
 
     await db.execute(update(Task).where(Task.id == task_id).values(**values))
 

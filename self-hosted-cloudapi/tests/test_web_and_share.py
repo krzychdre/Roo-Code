@@ -95,7 +95,7 @@ async def _summarize(session, *task_ids: str) -> None:
     The counterpart of the refresh that ``backfill_messages`` /
     ``upsert_task_message`` perform after every write.
     """
-    from src.services.task_summary import derive_title, refresh_task_summary
+    from src.services.task_summary import derive_prompt, derive_title, refresh_task_summary
 
     await session.flush()
     for task_id in task_ids:
@@ -112,7 +112,11 @@ async def _summarize(session, *task_ids: str) -> None:
                 messages.append(parsed)
         messages.sort(key=lambda m: m.get("ts") or 0)
         await refresh_task_summary(
-            session, task_id, title=derive_title(messages), force_title=True
+            session,
+            task_id,
+            title=derive_title(messages),
+            prompt=derive_prompt(messages),
+            force_title=True,
         )
 
 
@@ -1385,6 +1389,201 @@ async def test_backfill_fills_the_task_summary_columns(client, db_session, sessi
         assert task.cost == pytest.approx(0.0125)
         assert task.first_ts == 10
         assert task.last_ts == 50
+
+
+# --- the opening prompt (hover excerpt) -------------------------------------
+
+
+_LONG_PROMPT = (
+    "<task>\n"
+    "Rewrite the pager so every page is reachable, not just the next one.\n"
+    "\n"
+    "\n"
+    "It should keep the search terms when paging, and take a page number\n"
+    "once the numbers stop covering the range.\n"
+    "</task>\n"
+    "<environment_details># VSCode Visible Files\nsrc/routers/web.py\n"
+    "# Current Mode\ncode\n</environment_details>"
+)
+
+
+def test_derive_prompt_keeps_what_the_title_flattened():
+    """The title is one line of the request; the excerpt is the request.
+
+    Same source message, same stripping of the extension's machine framing —
+    the title just cuts it down to a single line for the list's title column.
+    """
+    from src.services.task_summary import derive_prompt, derive_title
+
+    messages = [{"ts": 1, "type": "say", "say": "text", "text": _LONG_PROMPT}]
+
+    assert derive_title(messages) == (
+        "Rewrite the pager so every page is reachable, not just the next one."
+    )
+    prompt = derive_prompt(messages)
+    assert prompt.startswith("Rewrite the pager")
+    # The second paragraph — invisible in the title — is the whole point.
+    assert "take a page number" in prompt
+    # Machine framing never reaches the reader.
+    assert "environment_details" not in prompt
+    assert "<task>" not in prompt
+    # The shape is kept, and a run of blank lines is collapsed to one.
+    assert "\n\n" in prompt
+    assert "\n\n\n" not in prompt
+
+
+def test_derive_prompt_caps_a_long_request_at_a_word_boundary():
+    """A 40 KB prompt must not become a 40 KB column, nor end mid-word."""
+    from src.services.task_summary import PROMPT_MAX, derive_prompt
+
+    text = "Refactor the scheduler carefully " * 200
+    prompt = derive_prompt([{"ts": 1, "type": "say", "say": "text", "text": text}])
+
+    assert len(prompt) <= PROMPT_MAX + 1  # the cap, plus the ellipsis
+    assert prompt.endswith("…")
+    # Whatever word the cap landed in the middle of was dropped, not shown as a
+    # fragment ("…the sched…").
+    assert prompt[:-1].split()[-1] in {"Refactor", "the", "scheduler", "carefully"}
+
+
+def test_derive_prompt_cuts_a_blob_with_no_word_boundary():
+    """A pasted blob (a base64 payload, a minified file) has nowhere to break;
+    the cap must hold anyway rather than falling back to the whole string."""
+    from src.services.task_summary import PROMPT_MAX, derive_prompt
+
+    blob = "x" * (PROMPT_MAX * 3)
+    prompt = derive_prompt([{"ts": 1, "type": "say", "say": "text", "text": blob}])
+
+    assert len(prompt) == PROMPT_MAX + 1
+    assert prompt.endswith("…")
+
+
+async def test_backfill_stores_the_prompt_excerpt(client, db_session, session_factory):
+    """The list reads the excerpt off the task row, so the write path must fill
+    it — reading 25 opening messages per page view is exactly the N+1 the
+    summary columns exist to prevent."""
+    await _seed_user(db_session)
+    _override_current_user(client.app)
+    messages = [{"ts": 10, "type": "say", "say": "text", "text": _LONG_PROMPT}]
+    files, data = _backfill_files("task-prompt", messages)
+    try:
+        assert client.post("/api/events/backfill", files=files, data=data).status_code == 200
+    finally:
+        client.app.dependency_overrides.pop(get_current_user, None)
+
+    async with session_factory() as s:
+        task = (await s.execute(select(Task).where(Task.id == "task-prompt"))).scalar_one()
+        assert "take a page number" in task.prompt_excerpt
+        assert "environment_details" not in task.prompt_excerpt
+
+
+async def test_resharing_replaces_the_prompt_excerpt(client, db_session, session_factory):
+    """A re-share replaces the conversation wholesale; the excerpt must follow
+    the title rather than describe a message that is no longer stored."""
+    await _seed_user(db_session)
+    _override_current_user(client.app)
+    try:
+        first = [{"ts": 1, "type": "say", "say": "text", "text": "Wire up the old thing"}]
+        files, data = _backfill_files("task-reshare-prompt", first)
+        assert client.post("/api/events/backfill", files=files, data=data).status_code == 200
+
+        second = [{"ts": 1, "type": "say", "say": "text", "text": "Wire up the new thing"}]
+        files, data = _backfill_files("task-reshare-prompt", second)
+        assert client.post("/api/events/backfill", files=files, data=data).status_code == 200
+    finally:
+        client.app.dependency_overrides.pop(get_current_user, None)
+
+    async with session_factory() as s:
+        task = (
+            await s.execute(select(Task).where(Task.id == "task-reshare-prompt"))
+        ).scalar_one()
+        assert task.prompt_excerpt == "Wire up the new thing"
+
+
+async def test_task_row_hover_shows_the_prompt_and_the_figures(
+    client, db_session, session_factory
+):
+    """Hovering a row must answer "what did I ask?", not only "what did it cost?"."""
+    await _seed_user(db_session)
+    async with session_factory() as s:
+        s.add(
+            Task(
+                id="task-hover",
+                user_id="user_test",
+                title="Rewrite the pager so every page is reachable, not just the next one",
+                prompt_excerpt=(
+                    "Rewrite the pager so every page is reachable, not just the next one.\n"
+                    "\n"
+                    "It should keep the search terms when paging."
+                ),
+                tokens_in=1200,
+                tokens_out=300,
+                cost=0.0125,
+            )
+        )
+        await s.commit()
+
+    _override_web_user(client.app)
+    try:
+        resp = client.get("/app")
+    finally:
+        client.app.dependency_overrides.pop(get_web_user_optional, None)
+
+    assert resp.status_code == 200
+    # The sentence the title column cannot show, inside the row's hover.
+    assert "It should keep the search terms when paging." in resp.text
+    # The figures still travel with it.
+    assert "↑ In: 1,200" in resp.text
+    assert "$ Cost: $0.0125" in resp.text
+
+
+async def test_hover_wraps_a_paragraph_and_caps_its_height():
+    """Native tooltips do not wrap: an unbroken 1000-character paragraph would
+    render one line wider than the screen. And a prompt of many short lines is
+    within the character cap but taller than a hover should be."""
+    from src.routers.web import _PROMPT_WRAP_COLS, _PROMPT_WRAP_LINES, _wrap_prompt
+
+    lines = _wrap_prompt("Refactor the scheduler carefully. " * 30)
+    assert max(len(line) for line in lines) <= _PROMPT_WRAP_COLS
+
+    tall = _wrap_prompt("\n".join(f"step {i}" for i in range(40)))
+    assert len(tall) == _PROMPT_WRAP_LINES
+    assert tall[-1].endswith("…")
+
+    # The elision mark is made room for, not appended past the column: a
+    # full-width last line plus "…" is the one line that would overflow.
+    dense = _wrap_prompt("wrap me around and around " * 200)
+    assert len(dense) == _PROMPT_WRAP_LINES
+    assert max(len(line) for line in dense) <= _PROMPT_WRAP_COLS
+
+
+async def test_a_task_with_no_figures_still_gets_a_hover(client, db_session, session_factory):
+    """A run that never reached the model has nothing to report but its request —
+    which is when reading it back matters most. The old tooltip was suppressed
+    entirely, and rendered the literal string "None"."""
+    await _seed_user(db_session)
+    async with session_factory() as s:
+        s.add(
+            Task(
+                id="task-nometrics",
+                user_id="user_test",
+                title="Try the thing",
+                prompt_excerpt="Try the thing, then tell me whether the socket reconnects.",
+            )
+        )
+        s.add(Task(id="task-bare", user_id="user_test", title="Nothing known"))
+        await s.commit()
+
+    _override_web_user(client.app)
+    try:
+        resp = client.get("/app")
+    finally:
+        client.app.dependency_overrides.pop(get_web_user_optional, None)
+
+    assert resp.status_code == 200
+    assert "whether the socket reconnects" in resp.text
+    # A row with neither a prompt nor figures carries no tooltip at all.
+    assert 'title="None"' not in resp.text
 
 
 async def test_resharing_a_task_does_not_double_count(client, db_session, session_factory):
