@@ -4,19 +4,27 @@
 	"version": "0.0.1",
 	"type": "module",
 	"exports": "./src/index.ts",
+	"bin": {
+		"agent-interchange-mcp": "./dist/mcp-server.mjs"
+	},
 	"scripts": {
+		"build": "node esbuild.mjs",
 		"lint": "eslint src --ext=ts --max-warnings=0",
 		"check-types": "tsc --noEmit",
 		"test": "vitest run",
-		"clean": "rimraf .turbo"
+		"clean": "rimraf dist .turbo"
 	},
 	"dependencies": {
-		"@roo-code/types": "workspace:^"
+		"@modelcontextprotocol/sdk": "1.26.0",
+		"@roo-code/types": "workspace:^",
+		"zod": "3.25.76"
 	},
 	"devDependencies": {
 		"@roo-code/config-eslint": "workspace:^",
 		"@roo-code/config-typescript": "workspace:^",
 		"@types/node": "20.x",
+		"esbuild": "^0.25.0",
+		"rimraf": "^6.0.1",
 		"vitest": "^3.2.3"
 	}
 }

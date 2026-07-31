@@ -1,0 +1,9 @@
+{
+	"mcpServers": {
+		"agent-interchange": {
+			"command": "node",
+			"args": ["packages/agent-interchange/dist/mcp-server.mjs"],
+			"env": {}
+		}
+	}
+}
