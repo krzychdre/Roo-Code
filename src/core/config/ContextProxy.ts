@@ -29,7 +29,12 @@ type GlobalStateKey = keyof GlobalState
 type SecretStateKey = keyof SecretState
 type RooCodeSettingsKey = keyof RooCodeSettings
 
-const PASS_THROUGH_STATE_KEYS = ["autoMemoryEnabled", "autoDreamEnabled", "memoryRecallEnabled"]
+const PASS_THROUGH_STATE_KEYS = [
+	"autoMemoryEnabled",
+	"autoDreamEnabled",
+	"memoryRecallEnabled",
+	"autoMemoryShareWithClaudeCode",
+]
 
 export const isPassThroughStateKey = (key: string) => PASS_THROUGH_STATE_KEYS.includes(key)
 

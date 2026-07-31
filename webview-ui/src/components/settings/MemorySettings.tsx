@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Slider }
 type MemorySettingsProps = HTMLAttributes<HTMLDivElement> & {
 	autoMemoryEnabled?: boolean
 	autoMemoryDirectory?: string
+	autoMemoryShareWithClaudeCode?: boolean
 	memoryRecallEnabled?: boolean
 	autoDreamEnabled?: boolean
 	autoDreamMinHours?: number
@@ -23,6 +24,7 @@ type MemorySettingsProps = HTMLAttributes<HTMLDivElement> & {
 	setCachedStateField: SetCachedStateField<
 		| "autoMemoryEnabled"
 		| "autoMemoryDirectory"
+		| "autoMemoryShareWithClaudeCode"
 		| "memoryRecallEnabled"
 		| "autoDreamEnabled"
 		| "autoDreamMinHours"
@@ -46,6 +48,7 @@ const DEFAULT_DREAM_SESSIONS = 5
 export const MemorySettings = ({
 	autoMemoryEnabled,
 	autoMemoryDirectory,
+	autoMemoryShareWithClaudeCode,
 	memoryRecallEnabled,
 	autoDreamEnabled,
 	autoDreamMinHours,
@@ -116,6 +119,27 @@ export const MemorySettings = ({
 							/>
 							<div className="text-vscode-descriptionForeground text-sm mt-1">
 								{t("settings:memory.directory.description")}
+							</div>
+						</SearchableSetting>
+
+						<SearchableSetting
+							settingId="memory-share-claude-code"
+							section="memory"
+							label={t("settings:memory.shareWithClaudeCode.label")}
+							className="mt-4">
+							<VSCodeCheckbox
+								checked={autoMemoryShareWithClaudeCode ?? false}
+								disabled={!!autoMemoryDirectory}
+								onChange={(e: any) => {
+									setCachedStateField("autoMemoryShareWithClaudeCode", e.target.checked)
+								}}
+								data-testid="memory-share-claude-code-checkbox">
+								<span className="font-medium">{t("settings:memory.shareWithClaudeCode.label")}</span>
+							</VSCodeCheckbox>
+							<div className="text-vscode-descriptionForeground text-sm mt-1">
+								{autoMemoryDirectory
+									? t("settings:memory.shareWithClaudeCode.overridden")
+									: t("settings:memory.shareWithClaudeCode.description")}
 							</div>
 						</SearchableSetting>
 

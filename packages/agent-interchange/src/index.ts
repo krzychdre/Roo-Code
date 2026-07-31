@@ -40,7 +40,12 @@ export {
 } from "./handoffs.js"
 export { listPlans, readPlan, renderPlanList, type PlanDoc, type PlanSource } from "./plans.js"
 export { renderSearchHits, searchSessions, type SearchHit, type SearchOptions } from "./search.js"
-export { findClaudeSessionFile, listClaudeSessions, readClaudeSession } from "./readers/claude-code.js"
+export {
+	claudeProjectCwd,
+	findClaudeSessionFile,
+	listClaudeSessions,
+	readClaudeSession,
+} from "./readers/claude-code.js"
 export {
 	findTumbleTaskDir,
 	listTumbleSessions,

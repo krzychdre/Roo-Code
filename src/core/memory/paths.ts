@@ -1,6 +1,8 @@
 import * as path from "path"
 import { homedir } from "os"
 
+import { claudeConfigDir, claudeProjectCwd, claudeSlug } from "@roo-code/agent-interchange"
+
 import { logger } from "../../utils/logging"
 
 /**
@@ -35,6 +37,7 @@ export interface MemoryConfig {
 	autoDreamMinHours?: number
 	autoDreamMinSessions?: number
 	memoryRecallEnabled?: boolean
+	autoMemoryShareWithClaudeCode?: boolean
 }
 
 interface MemoryPathsState {
@@ -66,6 +69,7 @@ export function initMemoryPaths(globalStoragePath: string, getConfig: () => Memo
 export function resetMemoryPaths(): void {
 	_state = undefined
 	getAutoMemPathCache.clear()
+	collisionChecked.clear()
 }
 
 function requireState(): MemoryPathsState {
@@ -136,16 +140,74 @@ const getAutoMemPathCache = new Map<string, string>()
 /**
  * The per-workspace memory directory, WITH a trailing separator, NFC-normalized.
  * `<memoryBase>/projects/<sanitizedCwd>/memory/`.
+ *
+ * With `autoMemoryShareWithClaudeCode` on, it is Claude Code's directory for the
+ * same workspace instead — `<claudeConfigDir>/projects/<claudeSlug(cwd)>/memory/`
+ * — so both agents read and write one set of memories. The two layouts differ
+ * only in the base and the per-project segment, which is what makes sharing a
+ * path substitution rather than a migration.
  */
 export function getAutoMemPath(cwd: string): string {
-	const cached = getAutoMemPathCache.get(cwd)
+	const segments = memorySegmentsFor(cwd)
+	// Keyed by the resolved layout, not just the cwd: toggling the sharing
+	// setting (or the directory override) has to take effect without a reload.
+	const cacheKey = segments.join("\u0000")
+	const cached = getAutoMemPathCache.get(cacheKey)
 	if (cached) return cached
-	const dir = (path.join(getMemoryBaseDir(), "projects", sanitizeCwd(cwd), AUTO_MEM_DIRNAME) + path.sep).normalize(
-		"NFC",
-	)
-	getAutoMemPathCache.set(cwd, dir)
+	const dir = (path.join(...segments, AUTO_MEM_DIRNAME) + path.sep).normalize("NFC")
+	getAutoMemPathCache.set(cacheKey, dir)
 	return dir
 }
+
+/** `[base, "projects", <per-project segment>]` for the active layout. */
+function memorySegmentsFor(cwd: string): [string, string, string] {
+	if (isSharedWithClaudeCode()) {
+		const base = claudeConfigDir()
+		const segment = claudeSlug(cwd)
+		warnOnSlugCollision(cwd, path.join(base, "projects", segment))
+		return [base, "projects", segment]
+	}
+
+	return [getMemoryBaseDir(), "projects", sanitizeCwd(cwd)]
+}
+
+/**
+ * Sharing is off unless asked for, and an explicit `autoMemoryDirectory` always
+ * wins: a user who named a path meant that path.
+ */
+function isSharedWithClaudeCode(): boolean {
+	const config = _state?.getConfig() ?? {}
+	if (config.autoMemoryDirectory && config.autoMemoryDirectory.trim()) return false
+	return config.autoMemoryShareWithClaudeCode === true
+}
+
+/**
+ * Claude Code's slug is lossy — `k3s_2025` and `k3s-2025` produce the same
+ * directory name — so two workspaces can land on one shared memory dir. We
+ * cannot prevent it (the directory is Claude Code's to name), but we can say so
+ * once, when the directory demonstrably belongs to a different workspace.
+ */
+function warnOnSlugCollision(cwd: string, projectDir: string): void {
+	if (collisionChecked.has(cwd)) return
+	collisionChecked.add(cwd)
+
+	try {
+		const recorded = claudeProjectCwd(projectDir)
+
+		if (recorded && path.resolve(recorded) !== path.resolve(cwd)) {
+			logger.warn(
+				`[memory] shared memory dir ${projectDir} was created by Claude Code for ${recorded}, ` +
+					`not ${cwd} — their paths collapse to the same directory name, so both workspaces ` +
+					`share one MEMORY.md. Turn off autoMemoryShareWithClaudeCode, or set autoMemoryDirectory, ` +
+					`if that is not what you want.`,
+			)
+		}
+	} catch {
+		// A store we cannot read is not evidence of a collision.
+	}
+}
+
+const collisionChecked = new Set<string>()
 
 /** Path to the `MEMORY.md` index for a given cwd. */
 export function getAutoMemEntrypoint(cwd: string): string {

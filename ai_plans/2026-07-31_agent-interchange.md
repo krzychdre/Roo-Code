@@ -1,7 +1,11 @@
 # Agent Interchange — Claude Code ⇄ Tumble Code
 
 **Date:** 2026-07-31
-**Branches:** `feat/agent-interchange-core` → `feat/agent-interchange-mcp` → `feat/agent-interchange-vscode` (stacked), plus `feat/shared-memory-with-claude-code` (independent, off `main`)
+**Branches:** `feat/agent-interchange-core` → `feat/agent-interchange-mcp` → `feat/agent-interchange-vscode` → `feat/shared-memory-with-claude-code` (stacked, merge in that order)
+
+The memory branch was planned as independent, but sharing needs Claude Code's
+slug rule and its project-directory reader, and one definition of that rule is
+worth more than a second copy of it — so it stacks on the core package too.
 
 ## The ask
 
@@ -85,7 +89,7 @@ vs. two JSON arrays), the metadata, and the tool vocabulary
 
 ## Design
 
-```
+```text
 packages/agent-interchange/          ← core, no VS Code dependency
   src/types.ts                       canonical session/message model
   src/locate.ts                      find both stores; CC slug; VS Code variants

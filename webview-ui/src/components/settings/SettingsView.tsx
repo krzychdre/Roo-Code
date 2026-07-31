@@ -175,6 +175,7 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 		checkpointTimeout,
 		autoMemoryEnabled,
 		autoMemoryDirectory,
+		autoMemoryShareWithClaudeCode,
 		memoryRecallEnabled,
 		autoDreamEnabled,
 		autoDreamMinHours,
@@ -403,6 +404,7 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 					checkpointTimeout: checkpointTimeout ?? DEFAULT_CHECKPOINT_TIMEOUT_SECONDS,
 					autoMemoryEnabled: autoMemoryEnabled ?? true,
 					autoMemoryDirectory: autoMemoryDirectory || undefined,
+					autoMemoryShareWithClaudeCode,
 					memoryRecallEnabled: memoryRecallEnabled ?? true,
 					autoDreamEnabled: autoDreamEnabled ?? true,
 					autoDreamMinHours: autoDreamMinHours ?? 24,
@@ -848,6 +850,7 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 							<MemorySettings
 								autoMemoryEnabled={autoMemoryEnabled}
 								autoMemoryDirectory={autoMemoryDirectory}
+								autoMemoryShareWithClaudeCode={autoMemoryShareWithClaudeCode}
 								memoryRecallEnabled={memoryRecallEnabled}
 								autoDreamEnabled={autoDreamEnabled}
 								autoDreamMinHours={autoDreamMinHours}

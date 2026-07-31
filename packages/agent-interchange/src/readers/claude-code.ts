@@ -63,6 +63,27 @@ export function listClaudeSessions(options: ListOptions = {}): SessionSummary[] 
 	return options.limit ? summaries.slice(0, options.limit) : summaries
 }
 
+/**
+ * The workspace a Claude Code project directory actually belongs to.
+ *
+ * The directory name is a lossy slug, so this is how a caller confirms that the
+ * directory it resolved is the one it meant. Reads the head of one session
+ * file, not the whole store.
+ */
+export function claudeProjectCwd(projectDir: string): string | undefined {
+	for (const file of sessionFilesIn(projectDir)) {
+		for (const line of readHeadLines(file)) {
+			const cwd = parseLine<ClaudeRecord>(line)?.cwd
+
+			if (cwd) {
+				return cwd
+			}
+		}
+	}
+
+	return undefined
+}
+
 export function findClaudeSessionFile(id: string): string | undefined {
 	if (!/^[A-Za-z0-9._-]+$/.test(id)) {
 		return undefined

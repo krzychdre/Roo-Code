@@ -193,4 +193,22 @@ describe("MemorySettings", () => {
 			expect(setCachedStateField).toHaveBeenCalledWith("memoryWriterApiConfigId", undefined)
 		})
 	})
+	it("toggles sharing the memory directory with Claude Code", async () => {
+		const setCachedStateField = vi.fn()
+		render(<MemorySettings {...defaultProps} setCachedStateField={setCachedStateField} />)
+
+		fireEvent.click(screen.getByTestId("memory-share-claude-code-checkbox").querySelector("input")!)
+
+		await waitFor(() => {
+			expect(setCachedStateField).toHaveBeenCalledWith("autoMemoryShareWithClaudeCode", true)
+		})
+	})
+
+	it("explains that a custom directory overrides sharing", () => {
+		const { rerender } = render(<MemorySettings {...defaultProps} />)
+		expect(screen.getByText("settings:memory.shareWithClaudeCode.description")).toBeInTheDocument()
+
+		rerender(<MemorySettings {...defaultProps} autoMemoryDirectory="/srv/memories" />)
+		expect(screen.getByText("settings:memory.shareWithClaudeCode.overridden")).toBeInTheDocument()
+	})
 })
