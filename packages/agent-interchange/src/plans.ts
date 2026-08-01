@@ -7,7 +7,9 @@ import { claudePlansDir } from "./locate.js"
  * Plan documents, from wherever each agent leaves them.
  *
  * Claude Code writes plan-mode artifacts to `~/.claude/plans/*.md` under
- * generated names with no workspace attached, so those are listed globally.
+ * generated names with no workspace attached. Those are available only to a
+ * server explicitly started with cross-workspace access; ordinary servers see
+ * workspace-contained plans only.
  * Tumble Code has no plan store of its own — in this repository plans are
  * committed under `ai_plans/`, which is where both agents actually look.
  */
@@ -25,8 +27,16 @@ export interface PlanDoc {
 /** Workspace-relative directories searched for plan documents, in order. */
 const WORKSPACE_PLAN_DIRS = ["ai_plans", "docs/plans", ".plans"]
 
-export function listPlans(options: { cwd?: string; query?: string; limit?: number } = {}): PlanDoc[] {
-	const docs: PlanDoc[] = [...claudePlans(), ...workspacePlans(options.cwd)]
+export interface PlanAccessOptions {
+	cwd?: string
+	allowClaudeGlobal?: boolean
+}
+
+export function listPlans(options: PlanAccessOptions & { query?: string; limit?: number } = {}): PlanDoc[] {
+	const docs: PlanDoc[] = [
+		...(options.allowClaudeGlobal === true ? claudePlans() : []),
+		...workspacePlans(options.cwd),
+	]
 
 	const filtered = options.query
 		? docs.filter((doc) => {
@@ -46,9 +56,13 @@ export function listPlans(options: { cwd?: string; query?: string; limit?: numbe
  * The path is validated against the roots that produced it, so a caller cannot
  * turn this into a general file reader.
  */
-export function readPlan(file: string, cwd?: string): { doc: PlanDoc; markdown: string } | undefined {
+export function readPlan(
+	file: string,
+	options: PlanAccessOptions = {},
+): { doc: PlanDoc; markdown: string } | undefined {
 	const resolved = path.resolve(file)
-	const roots = [claudePlansDir(), ...planDirsIn(cwd)]
+	const workspaceRoots = planDirsIn(options.cwd)
+	const roots = [...(options.allowClaudeGlobal === true ? [claudePlansDir()] : []), ...workspaceRoots]
 
 	if (!roots.some((root) => isInside(resolved, root))) {
 		return undefined
@@ -62,7 +76,10 @@ export function readPlan(file: string, cwd?: string): { doc: PlanDoc; markdown: 
 		return undefined
 	}
 
-	const doc = describe(resolved, isInside(resolved, claudePlansDir()) ? "claude-code" : "workspace")
+	const doc = describe(
+		resolved,
+		options.allowClaudeGlobal === true && isInside(resolved, claudePlansDir()) ? "claude-code" : "workspace",
+	)
 
 	return doc ? { doc, markdown } : undefined
 }

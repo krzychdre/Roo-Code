@@ -194,8 +194,9 @@ export function createInterchangeServer(
 		"list_agent_plans",
 		{
 			title: "List plan documents",
-			description:
-				"List plan documents from both worlds: Claude Code's plan-mode artifacts in ~/.claude/plans and the plans committed in the workspace (ai_plans/, docs/plans/).",
+			description: allowCrossWorkspace
+				? "List workspace plan documents and Claude Code's machine-global plan-mode artifacts. This server was explicitly started with cross-workspace access."
+				: "List plan documents contained in this workspace (ai_plans/, docs/plans/, .plans/). Claude Code's machine-global plan store is hidden in workspace-isolated mode.",
 			inputSchema: {
 				workspace,
 				query: z.string().optional().describe("Substring the title or path must contain."),
@@ -203,7 +204,16 @@ export function createInterchangeServer(
 			},
 		},
 		async ({ workspace: cwd, query, limit }) =>
-			text(renderPlanList(listPlans({ cwd: resolveCwd(cwd), query, limit: limit ?? 30 }))),
+			text(
+				renderPlanList(
+					listPlans({
+						cwd: resolveCwd(cwd),
+						query,
+						limit: limit ?? 30,
+						allowClaudeGlobal: allowCrossWorkspace,
+					}),
+				),
+			),
 	)
 
 	server.registerTool(
@@ -217,7 +227,10 @@ export function createInterchangeServer(
 			},
 		},
 		async ({ path: file, workspace: cwd }) => {
-			const plan = readPlan(file, resolveCwd(cwd))
+			const plan = readPlan(file, {
+				cwd: resolveCwd(cwd),
+				allowClaudeGlobal: allowCrossWorkspace,
+			})
 
 			return text(
 				plan

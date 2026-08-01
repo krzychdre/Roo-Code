@@ -1,7 +1,7 @@
 import * as path from "path"
 import { homedir } from "os"
 
-import { claudeConfigDir, claudeProjectCwd, claudeSlug } from "@roo-code/agent-interchange"
+import { claudeConfigDir, claudeProjectCwds, claudeSlug } from "@roo-code/agent-interchange"
 
 import { logger } from "../../utils/logging"
 
@@ -191,11 +191,12 @@ function isSharedWithClaudeCode(): boolean {
  */
 function hasSlugCollision(cwd: string, projectDir: string): boolean {
 	const cacheKey = `${path.resolve(cwd)}\u0000${path.resolve(projectDir)}`
-	const cached = collisionResults.get(cacheKey)
-	if (cached !== undefined) return cached
+	if (collisionResults.has(cacheKey)) return true
 
 	try {
-		const recorded = claudeProjectCwd(projectDir)
+		const recorded = claudeProjectCwds(projectDir).find(
+			(candidate) => path.resolve(candidate) !== path.resolve(cwd),
+		)
 
 		if (recorded && path.resolve(recorded) !== path.resolve(cwd)) {
 			logger.warn(
@@ -204,18 +205,19 @@ function hasSlugCollision(cwd: string, projectDir: string): boolean {
 					`isolated memory directory for this workspace. Rename one workspace to restore sharing, ` +
 					`or set autoMemoryDirectory to choose an explicit isolated location.`,
 			)
-			collisionResults.set(cacheKey, true)
+			collisionResults.add(cacheKey)
 			return true
 		}
 	} catch {
 		// A store we cannot read is not evidence of a collision.
 	}
 
-	collisionResults.set(cacheKey, false)
 	return false
 }
 
-const collisionResults = new Map<string, boolean>()
+// Positive collisions are permanent for this process. Safe/empty results are
+// deliberately not cached because Claude Code may add a colliding session later.
+const collisionResults = new Set<string>()
 
 /** Path to the `MEMORY.md` index for a given cwd. */
 export function getAutoMemEntrypoint(cwd: string): string {

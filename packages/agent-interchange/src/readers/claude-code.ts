@@ -64,24 +64,33 @@ export function listClaudeSessions(options: ListOptions = {}): SessionSummary[] 
 }
 
 /**
- * The workspace a Claude Code project directory actually belongs to.
+ * The workspaces represented in a Claude Code project directory.
  *
  * The directory name is a lossy slug, so this is how a caller confirms that the
- * directory it resolved is the one it meant. Reads the head of one session
- * file, not the whole store.
+ * directory it resolved is the one it meant. Every session head is checked:
+ * lossy slugs can put sessions from multiple workspaces in one directory.
  */
-export function claudeProjectCwd(projectDir: string): string | undefined {
+export function claudeProjectCwds(projectDir: string): string[] {
+	const cwds = new Set<string>()
+
 	for (const file of sessionFilesIn(projectDir)) {
 		for (const line of readHeadLines(file)) {
 			const cwd = parseLine<ClaudeRecord>(line)?.cwd
 
 			if (cwd) {
-				return cwd
+				cwds.add(cwd)
+				break
 			}
 		}
 	}
 
-	return undefined
+	return [...cwds]
+}
+
+/** Backward-compatible single-workspace view; mixed directories are ambiguous. */
+export function claudeProjectCwd(projectDir: string): string | undefined {
+	const cwds = claudeProjectCwds(projectDir)
+	return cwds.length === 1 ? cwds[0] : undefined
 }
 
 export function findClaudeSessionFile(id: string): string | undefined {

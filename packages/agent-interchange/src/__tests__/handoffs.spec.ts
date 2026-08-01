@@ -174,8 +174,8 @@ describe("plans", () => {
 		fs.rmSync(workspace, { recursive: true, force: true })
 	})
 
-	it("lists both agents' plan documents, titled by their first heading", () => {
-		const docs = listPlans({ cwd: workspace })
+	it("lists privileged global and workspace plan documents, titled by their first heading", () => {
+		const docs = listPlans({ cwd: workspace, allowClaudeGlobal: true })
 
 		expect(docs.map((doc) => doc.title).sort()).toEqual(["Refactor the router", "The thing"])
 		expect(docs.find((doc) => doc.title === "Refactor the router")!.source).toBe("claude-code")
@@ -185,11 +185,11 @@ describe("plans", () => {
 	it("reads a plan by the path the listing returned", () => {
 		const doc = listPlans({ cwd: workspace }).find((entry) => entry.source === "workspace")!
 
-		expect(readPlan(doc.path, workspace)!.markdown).toContain("# The thing")
+		expect(readPlan(doc.path, { cwd: workspace })!.markdown).toContain("# The thing")
 	})
 
 	it("will not read a file outside the plan directories", () => {
-		expect(readPlan(path.join(workspace, "secret.md"), workspace)).toBeUndefined()
-		expect(readPlan("/etc/passwd", workspace)).toBeUndefined()
+		expect(readPlan(path.join(workspace, "secret.md"), { cwd: workspace })).toBeUndefined()
+		expect(readPlan("/etc/passwd", { cwd: workspace })).toBeUndefined()
 	})
 })

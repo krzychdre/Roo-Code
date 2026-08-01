@@ -1,4 +1,5 @@
 import * as fs from "node:fs"
+import * as path from "node:path"
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
@@ -33,11 +34,13 @@ describe("agent-interchange MCP server", () => {
 	let claudeDir: string
 	let tumbleDir: string
 	let handoffRoot: string
+	let workspaceDir: string
 
 	beforeEach(() => {
 		claudeDir = makeTempDir("mcp-cc")
 		tumbleDir = makeTempDir("mcp-tc")
 		handoffRoot = makeTempDir("mcp-handoff")
+		workspaceDir = makeTempDir("mcp-workspace")
 
 		process.env.CLAUDE_CONFIG_DIR = claudeDir
 		process.env.AGENT_INTERCHANGE_TUMBLE_STORAGE = tumbleDir
@@ -45,6 +48,10 @@ describe("agent-interchange MCP server", () => {
 
 		writeClaudeSession(claudeDir, { id: "cc-1", cwd: WORKSPACE, aiTitle: "Retry determinism" })
 		writeTumbleTask(tumbleDir, { id: "tc-1", workspace: WORKSPACE, task: "Port the checker", mode: "code" })
+		fs.mkdirSync(path.join(claudeDir, "plans"), { recursive: true })
+		fs.writeFileSync(path.join(claudeDir, "plans", "private-global.md"), "# Private global plan\nsecret\n")
+		fs.mkdirSync(path.join(workspaceDir, "ai_plans"), { recursive: true })
+		fs.writeFileSync(path.join(workspaceDir, "ai_plans", "workspace.md"), "# Workspace plan\nvisible\n")
 	})
 
 	afterEach(() => {
@@ -52,7 +59,7 @@ describe("agent-interchange MCP server", () => {
 		delete process.env.AGENT_INTERCHANGE_TUMBLE_STORAGE
 		delete process.env.AGENT_INTERCHANGE_DIR
 
-		for (const dir of [claudeDir, tumbleDir, handoffRoot]) {
+		for (const dir of [claudeDir, tumbleDir, handoffRoot, workspaceDir]) {
 			fs.rmSync(dir, { recursive: true, force: true })
 		}
 	})
@@ -257,6 +264,47 @@ describe("agent-interchange MCP server", () => {
 		const output = textOf(await client.callTool({ name: "read_agent_plan", arguments: { path: "/etc/passwd" } }))
 
 		expect(output).toContain("not a plan document")
+
+		await close()
+	})
+
+	it("lists only workspace-contained plans in ordinary workspace-isolated mode", async () => {
+		const { client, close } = await connect(workspaceDir)
+
+		const output = textOf(await client.callTool({ name: "list_agent_plans", arguments: {} }))
+
+		expect(output).toContain("Workspace plan")
+		expect(output).not.toContain("Private global plan")
+		expect(output).not.toContain(path.join(claudeDir, "plans"))
+
+		await close()
+	})
+
+	it("rejects direct known-path and known-name attempts for Claude-global plans by default", async () => {
+		const { client, close } = await connect(workspaceDir)
+		const privatePlan = path.join(claudeDir, "plans", "private-global.md")
+
+		for (const attemptedPath of [privatePlan, "private-global.md"]) {
+			const output = textOf(
+				await client.callTool({ name: "read_agent_plan", arguments: { path: attemptedPath } }),
+			)
+			expect(output).toContain("not a plan document this tool may read")
+			expect(output).not.toContain("secret")
+		}
+
+		await close()
+	})
+
+	it("lists and directly reads Claude-global plans only after startup opt-in", async () => {
+		const { client, close } = await connect(workspaceDir, true)
+		const privatePlan = path.join(claudeDir, "plans", "private-global.md")
+
+		expect(textOf(await client.callTool({ name: "list_agent_plans", arguments: {} }))).toContain(
+			"Private global plan",
+		)
+		expect(textOf(await client.callTool({ name: "read_agent_plan", arguments: { path: privatePlan } }))).toContain(
+			"secret",
+		)
 
 		await close()
 	})

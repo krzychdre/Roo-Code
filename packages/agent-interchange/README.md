@@ -9,12 +9,12 @@ over MCP, so either agent can pick up where the other stopped.
 
 ## What it reads
 
-| store       | location                                               | notes                                                                                                                                 |
-| ----------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Claude Code | `~/.claude/projects/<slug>/<sessionId>.jsonl`          | `$CLAUDE_CONFIG_DIR` is honoured; subagent turns are kept separate                                                                    |
-| Tumble Code | `<globalStorage>/qub-it.tumble-code/tasks/<taskId>/`   | also finds `rooveterinaryinc.roo-cline`, remote servers, VSCodium, Cursor, Windsurf, and a `customStoragePath` set in `settings.json` |
-| Plans       | `~/.claude/plans/*.md` and the workspace's `ai_plans/` | read-only                                                                                                                             |
-| Handoffs    | `~/.local/share/agent-interchange/handoffs/`           | override with `$AGENT_INTERCHANGE_DIR`                                                                                                |
+| store       | location                                             | notes                                                                                                                                 |
+| ----------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code | `~/.claude/projects/<slug>/<sessionId>.jsonl`        | `$CLAUDE_CONFIG_DIR` is honoured; subagent turns are kept separate                                                                    |
+| Tumble Code | `<globalStorage>/qub-it.tumble-code/tasks/<taskId>/` | also finds `rooveterinaryinc.roo-cline`, remote servers, VSCodium, Cursor, Windsurf, and a `customStoragePath` set in `settings.json` |
+| Plans       | workspace `ai_plans/`, `docs/plans/`, `.plans/`      | read-only; machine-global `~/.claude/plans/*.md` requires the explicit cross-workspace server opt-in                                  |
+| Handoffs    | `~/.local/share/agent-interchange/handoffs/`         | override with `$AGENT_INTERCHANGE_DIR`                                                                                                |
 
 Nothing is ever written into either agent's own store.
 
@@ -79,7 +79,7 @@ The extension also ships native commands that do not need the server:
 | `list_agent_sessions`                               | what the other agent has been doing, newest first         |
 | `read_agent_session`                                | `briefing` (default) or a paginated `transcript`          |
 | `search_agent_sessions`                             | find a session by text in its conversation                |
-| `list_agent_plans` / `read_agent_plan`              | plan documents from both worlds                           |
+| `list_agent_plans` / `read_agent_plan`              | workspace plans; global Claude plans only when privileged |
 | `create_handoff`                                    | freeze a session into a document the other agent picks up |
 | `list_handoffs` / `read_handoff` / `update_handoff` | the pick-up lifecycle                                     |
 
@@ -88,7 +88,9 @@ is the workspace in both clients. Empty workspace arguments are rejected, and
 known session/handoff ids from another workspace are hidden. Administrators who
 deliberately need machine-wide access may start a separate server registration
 with `AGENT_INTERCHANGE_ALLOW_CROSS_WORKSPACE=1`; only that server accepts
-`workspace: ""`. Do not auto-approve that privileged registration.
+`workspace: ""` or exposes Claude Code's machine-global plan store. Direct plan
+paths are checked against the same boundary. Do not auto-approve that privileged
+registration.
 
 ## Why a briefing and not a replayed session
 

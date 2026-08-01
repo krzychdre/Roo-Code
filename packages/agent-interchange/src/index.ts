@@ -42,6 +42,7 @@ export { listPlans, readPlan, renderPlanList, type PlanDoc, type PlanSource } fr
 export { renderSearchHits, searchSessions, type SearchHit, type SearchOptions } from "./search.js"
 export {
 	claudeProjectCwd,
+	claudeProjectCwds,
 	findClaudeSessionFile,
 	listClaudeSessions,
 	readClaudeSession,

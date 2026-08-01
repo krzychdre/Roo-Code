@@ -123,6 +123,46 @@ describe("memory shared with Claude Code", () => {
 		expect(firstPath).not.toBe(secondPath)
 	})
 
+	it("detects a conflict in any session head, not only the first session", () => {
+		const projectDir = path.join(claudeDir, "projects", "-home-user-my-project")
+		fs.mkdirSync(projectDir, { recursive: true })
+		fs.writeFileSync(
+			path.join(projectDir, "a-matching.jsonl"),
+			JSON.stringify({ type: "user", cwd: CWD, sessionId: "matching" }) + "\n",
+			"utf8",
+		)
+		fs.writeFileSync(
+			path.join(projectDir, "z-conflicting.jsonl"),
+			JSON.stringify({ type: "user", cwd: "/home/user/my_project", sessionId: "conflicting" }) + "\n",
+			"utf8",
+		)
+
+		initMemoryPaths(GLOBAL_STORAGE, () => ({ autoMemoryShareWithClaudeCode: true }))
+
+		expect(getAutoMemPath(CWD)).toContain(GLOBAL_STORAGE)
+	})
+
+	it("rechecks an initially safe directory when a colliding session appears later", () => {
+		const projectDir = path.join(claudeDir, "projects", "-home-user-my-project")
+		fs.mkdirSync(projectDir, { recursive: true })
+		fs.writeFileSync(
+			path.join(projectDir, "matching.jsonl"),
+			JSON.stringify({ type: "user", cwd: CWD, sessionId: "matching" }) + "\n",
+			"utf8",
+		)
+
+		initMemoryPaths(GLOBAL_STORAGE, () => ({ autoMemoryShareWithClaudeCode: true }))
+		expect(getAutoMemPath(CWD)).toContain(claudeDir)
+
+		fs.writeFileSync(
+			path.join(projectDir, "later-collision.jsonl"),
+			JSON.stringify({ type: "user", cwd: "/home/user/my_project", sessionId: "later" }) + "\n",
+			"utf8",
+		)
+
+		expect(getAutoMemPath(CWD)).toContain(GLOBAL_STORAGE)
+	})
+
 	it("stays quiet when the directory belongs to this workspace", () => {
 		const warn = vi.spyOn(logger, "warn").mockImplementation(() => {})
 		const projectDir = path.join(claudeDir, "projects", "-home-user-my-project")
