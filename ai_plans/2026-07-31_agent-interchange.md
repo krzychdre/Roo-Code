@@ -98,7 +98,7 @@ packages/agent-interchange/          ← core, no VS Code dependency
   src/tools.ts                       tool-vocabulary map (both directions)
   src/briefing.ts                    canonical → briefing markdown (deterministic)
   src/transcript.ts                  canonical → paginated readable transcript
-  src/plans.ts                       ~/.claude/plans + <repo>/ai_plans, read-only
+  src/plans.ts                       workspace plans; global CC plans privileged
   src/handoffs.ts                    handoff store + lifecycle
   src/search.ts                      cross-store text search
   src/mcp/server.ts                  stdio MCP server exposing the above
@@ -131,14 +131,14 @@ the factual skeleton never depends on a model having been honest about what it d
 **MCP tools** (descriptions written for weak models — few parameters, defaults
 everywhere, compact markdown returns):
 
-| tool                                                | purpose                                                  |
-| --------------------------------------------------- | -------------------------------------------------------- |
-| `list_sessions`                                     | both agents' sessions for a cwd, newest first            |
-| `read_session`                                      | `briefing` (default) \| `transcript` \| `raw`, paginated |
-| `search_sessions`                                   | text search across both stores, with snippets            |
-| `list_plans` / `read_plan`                          | `~/.claude/plans` + repo `ai_plans/`                     |
-| `create_handoff`                                    | freeze a session into a handoff document                 |
-| `list_handoffs` / `read_handoff` / `update_handoff` | the pick-up lifecycle                                    |
+| tool                                                | purpose                                                   |
+| --------------------------------------------------- | --------------------------------------------------------- |
+| `list_sessions`                                     | both agents' sessions for a cwd, newest first             |
+| `read_session`                                      | `briefing` (default) \| `transcript` \| `raw`, paginated  |
+| `search_sessions`                                   | text search across both stores, with snippets             |
+| `list_plans` / `read_plan`                          | workspace plans; global CC plans only with startup opt-in |
+| `create_handoff`                                    | freeze a session into a handoff document                  |
+| `list_handoffs` / `read_handoff` / `update_handoff` | the pick-up lifecycle                                     |
 
 **VS Code side** (`src/`):
 
@@ -202,3 +202,18 @@ Validation is package-local Vitest, typecheck, lint and build for
 `@roo-code/agent-interchange`, focused extension memory tests, and extension
 typecheck/lint/build where practical. The repository requests Node 20; the local
 runtime used for this pass is recorded in the final report if it differs.
+
+## 2026-08-01 final-review remediation
+
+- Ordinary workspace-isolated MCP servers list and read only plans contained in
+  the startup workspace. Claude Code's machine-global plan store is included
+  only when the server starts with `AGENT_INTERCHANGE_ALLOW_CROSS_WORKSPACE=1`;
+  the same gate protects direct known-path reads.
+- Shared-memory collision detection scans every Claude session head in the slug
+  directory. Only proven collisions are cached, so a directory that was empty or
+  safe is rechecked and falls back immediately if a conflicting session appears.
+- The installer preflights all inputs and applies bundle/config mutations as one
+  rollback-capable operation. Failure-injection tests exercise install, update,
+  and uninstall without touching live user configuration.
+- Manual configuration examples use the durable installed bundle location, not
+  a build artifact inside a checkout.

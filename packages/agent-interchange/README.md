@@ -62,12 +62,16 @@ Add the same command to the MCP settings (`MCP Servers → Edit Global MCP`):
 	"mcpServers": {
 		"agent-interchange": {
 			"command": "node",
-			"args": ["/absolute/path/to/Roo-Code/packages/agent-interchange/dist/mcp-server.mjs"],
+			"args": ["/home/you/.local/share/agent-interchange/mcp-server.mjs"],
 			"alwaysAllow": ["list_agent_sessions", "read_agent_session", "list_handoffs", "read_handoff"]
 		}
 	}
 }
 ```
+
+Use the installer's durable destination (by default the path above on Linux,
+with your real home directory), or the absolute `--destination` override passed
+at install time. Do not point this registration at `dist/` inside a checkout.
 
 The extension also ships native commands that do not need the server:
 **Tumble Code: Pick Up Agent Session…** and **Tumble Code: Hand Off Current Task…**.

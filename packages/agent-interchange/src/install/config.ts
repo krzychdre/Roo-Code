@@ -51,21 +51,26 @@ export function removeRegistration(config: McpConfig): McpConfig {
 	return { ...config, mcpServers: servers }
 }
 
+export async function readConfig(file: string, allowMissing: boolean): Promise<McpConfig> {
+	let config: McpConfig
+	try {
+		config = JSON.parse(await fs.readFile(file, "utf8")) as McpConfig
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT" || !allowMissing) throw error
+		config = {}
+	}
+
+	if (!isRecord(config)) throw new Error(`MCP config must contain a JSON object: ${file}`)
+	return config
+}
+
 export async function updateConfig(
 	file: string,
 	update: (config: McpConfig) => McpConfig,
 	allowMissing: boolean,
 ): Promise<boolean> {
 	return withLockedJsonTransaction(file, file, async (writeJson) => {
-		let config: McpConfig
-		try {
-			config = JSON.parse(await fs.readFile(file, "utf8")) as McpConfig
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "ENOENT" || !allowMissing) throw error
-			config = {}
-		}
-
-		if (!isRecord(config)) throw new Error(`MCP config must contain a JSON object: ${file}`)
+		const config = await readConfig(file, allowMissing)
 		const next = update(config)
 		if (next === config) return false
 		await writeJson(next, { prettyPrint: true })
