@@ -67,7 +67,11 @@ The extension also ships native commands that do not need the server:
 | `list_handoffs` / `read_handoff` / `update_handoff` | the pick-up lifecycle                                     |
 
 Workspace-scoped tools default to the directory the server was started in, which
-is the workspace in both clients. Pass `workspace: ""` to search all of them.
+is the workspace in both clients. Empty workspace arguments are rejected, and
+known session/handoff ids from another workspace are hidden. Administrators who
+deliberately need machine-wide access may start a separate server registration
+with `AGENT_INTERCHANGE_ALLOW_CROSS_WORKSPACE=1`; only that server accepts
+`workspace: ""`. Do not auto-approve that privileged registration.
 
 ## Why a briefing and not a replayed session
 

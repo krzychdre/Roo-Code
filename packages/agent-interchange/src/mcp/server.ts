@@ -1,3 +1,5 @@
+import * as path from "node:path"
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { z } from "zod"
 
@@ -30,7 +32,16 @@ const agentEnum = z.enum(["claude-code", "tumble-code"])
 
 const VERSION = "0.0.1"
 
-export function createInterchangeServer(defaultCwd: string = process.cwd()): McpServer {
+export interface InterchangeServerOptions {
+	/** Deliberate administrator opt-in; ordinary tool calls cannot enable this. */
+	allowCrossWorkspace?: boolean
+}
+
+export function createInterchangeServer(
+	defaultCwd: string = process.cwd(),
+	options: InterchangeServerOptions = {},
+): McpServer {
+	const allowCrossWorkspace = options.allowCrossWorkspace === true
 	const server = new McpServer(
 		{ name: "agent-interchange", version: VERSION },
 		{
@@ -52,11 +63,23 @@ export function createInterchangeServer(defaultCwd: string = process.cwd()): Mcp
 
 	const workspace = z
 		.string()
+		.min(allowCrossWorkspace ? 0 : 1, "workspace must not be empty")
+		.refine(
+			(value) => allowCrossWorkspace || sameWorkspace(value, defaultCwd),
+			"workspace must match the workspace this server was started in",
+		)
 		.optional()
-		.describe(`Absolute workspace path. Defaults to ${defaultCwd}. Pass "" to search every workspace.`)
+		.describe(
+			allowCrossWorkspace
+				? `Absolute workspace path. Defaults to ${defaultCwd}. This server was explicitly started with cross-workspace access; pass "" for every workspace.`
+				: `Absolute workspace path. Defaults to ${defaultCwd}. Empty values are rejected.`,
+		)
 
 	const resolveCwd = (value: string | undefined): string | undefined =>
-		value === "" ? undefined : (value ?? defaultCwd)
+		allowCrossWorkspace && value === "" ? undefined : (value ?? defaultCwd)
+
+	const sessionInWorkspace = (session: { cwd?: string }, cwd: string | undefined): boolean =>
+		cwd === undefined || sameWorkspace(session.cwd, cwd)
 
 	server.registerTool(
 		"list_agent_sessions",
@@ -91,6 +114,7 @@ export function createInterchangeServer(defaultCwd: string = process.cwd()): Mcp
 				"Read one session by id. The default `briefing` format gives the request, the plan, the files changed, the commands run, the open questions and the outcome — that is normally all you need to take the task over. Use `transcript` only for the raw conversation; it is paginated.",
 			inputSchema: {
 				session_id: z.string().describe("The id from list_agent_sessions."),
+				workspace,
 				format: z
 					.enum(["briefing", "transcript"])
 					.optional()
@@ -118,10 +142,11 @@ export function createInterchangeServer(defaultCwd: string = process.cwd()): Mcp
 					.describe("Transcript only: show the subagent turns instead of the main thread. Default false."),
 			},
 		},
-		async ({ session_id, format, offset, limit, include_thinking, subagents }) => {
+		async ({ session_id, workspace: cwd, format, offset, limit, include_thinking, subagents }) => {
 			const session = await readSession(session_id)
+			const allowedCwd = resolveCwd(cwd)
 
-			if (!session) {
+			if (!session || !sessionInWorkspace(session, allowedCwd)) {
 				return text(`No session with id \`${session_id}\`. Call list_agent_sessions to see what exists.`)
 			}
 
@@ -210,6 +235,7 @@ export function createInterchangeServer(defaultCwd: string = process.cwd()): Mcp
 				"Freeze a session into a handoff document the other agent can pick up: the briefing plus the next steps you name. Use this when the user wants work continued elsewhere.",
 			inputSchema: {
 				session_id: z.string().describe("Session being handed over, from list_agent_sessions."),
+				workspace,
 				to: agentEnum.describe("Which agent should pick this up."),
 				next_steps: z
 					.array(z.string())
@@ -221,10 +247,11 @@ export function createInterchangeServer(defaultCwd: string = process.cwd()): Mcp
 					.describe("Anything the transcript does not show: constraints, traps, decisions already made."),
 			},
 		},
-		async ({ session_id, to, next_steps, notes }) => {
+		async ({ session_id, workspace: cwd, to, next_steps, notes }) => {
 			const session = await readSession(session_id)
+			const allowedCwd = resolveCwd(cwd)
 
-			if (!session) {
+			if (!session || !sessionInWorkspace(session, allowedCwd)) {
 				return text(`No session with id \`${session_id}\`.`)
 			}
 
@@ -275,12 +302,20 @@ export function createInterchangeServer(defaultCwd: string = process.cwd()): Mcp
 		{
 			title: "Read a handoff",
 			description: "Read the full handoff document: briefing, next steps, notes and log.",
-			inputSchema: { handoff_id: z.string().describe("The id from list_handoffs.") },
+			inputSchema: {
+				handoff_id: z.string().describe("The id from list_handoffs."),
+				workspace,
+			},
 		},
-		async ({ handoff_id }) => {
+		async ({ handoff_id, workspace: cwd }) => {
 			const handoff = readHandoff(handoff_id)
+			const allowedCwd = resolveCwd(cwd)
 
-			return text(handoff ? handoff.markdown : `No handoff with id \`${handoff_id}\`.`)
+			return text(
+				handoff && sessionInWorkspace(handoff, allowedCwd)
+					? handoff.markdown
+					: `No handoff with id \`${handoff_id}\`.`,
+			)
 		},
 	)
 
@@ -292,19 +327,25 @@ export function createInterchangeServer(defaultCwd: string = process.cwd()): Mcp
 				"Record progress on a handoff: `picked-up` when you start it, `done` when it is finished, `abandoned` if it is dropped. Add a `note` to explain.",
 			inputSchema: {
 				handoff_id: z.string().describe("The id from list_handoffs."),
+				workspace,
 				status: z.enum(["open", "picked-up", "done", "abandoned"]).optional().describe("New lifecycle state."),
 				note: z.string().optional().describe("One line for the log."),
 				picked_up_by: agentEnum.optional().describe("Which agent took it."),
 				picked_up_session_id: z.string().optional().describe("The session that is continuing the work."),
 			},
 		},
-		async ({ handoff_id, status, note, picked_up_by, picked_up_session_id }) => {
-			const handoff = updateHandoff(handoff_id, {
-				status: status as HandoffStatus | undefined,
-				note,
-				pickedUpBy: picked_up_by as AgentKind | undefined,
-				pickedUpSessionId: picked_up_session_id,
-			})
+		async ({ handoff_id, workspace: cwd, status, note, picked_up_by, picked_up_session_id }) => {
+			const allowedCwd = resolveCwd(cwd)
+			const existing = readHandoff(handoff_id)
+			const handoff =
+				existing && sessionInWorkspace(existing, allowedCwd)
+					? updateHandoff(handoff_id, {
+							status: status as HandoffStatus | undefined,
+							note,
+							pickedUpBy: picked_up_by as AgentKind | undefined,
+							pickedUpSessionId: picked_up_session_id,
+						})
+					: undefined
 
 			return text(
 				handoff
@@ -319,4 +360,8 @@ export function createInterchangeServer(defaultCwd: string = process.cwd()): Mcp
 
 function text(markdown: string) {
 	return { content: [{ type: "text" as const, text: markdown }] }
+}
+
+function sameWorkspace(recorded: string | undefined, allowed: string): boolean {
+	return recorded !== undefined && path.resolve(recorded) === path.resolve(allowed)
 }

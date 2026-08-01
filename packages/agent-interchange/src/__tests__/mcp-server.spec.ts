@@ -14,8 +14,8 @@ import { makeTempDir, writeClaudeSession, writeTumbleTask } from "./fixtures.js"
 
 const WORKSPACE = "/tmp/interchange-workspace"
 
-async function connect(defaultCwd = WORKSPACE) {
-	const server = createInterchangeServer(defaultCwd)
+async function connect(defaultCwd = WORKSPACE, allowCrossWorkspace = false) {
+	const server = createInterchangeServer(defaultCwd, { allowCrossWorkspace })
 	const client = new Client({ name: "test", version: "0.0.0" })
 	const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
 
@@ -90,7 +90,7 @@ describe("agent-interchange MCP server", () => {
 		await close()
 	})
 
-	it("filters to one agent, and to no workspace at all", async () => {
+	it("filters to one agent and rejects an empty workspace by default", async () => {
 		writeClaudeSession(claudeDir, { id: "cc-2", cwd: "/tmp/elsewhere", aiTitle: "Different project" })
 
 		const { client, close } = await connect()
@@ -102,8 +102,38 @@ describe("agent-interchange MCP server", () => {
 		expect(onlyClaude).not.toContain("Port the checker")
 		expect(onlyClaude).not.toContain("Different project")
 
+		const everywhere = await client.callTool({ name: "list_agent_sessions", arguments: { workspace: "" } })
+		expect(everywhere.isError).toBe(true)
+		expect(textOf(everywhere)).toContain("workspace must not be empty")
+
+		await close()
+	})
+
+	it("only permits cross-workspace listing after a server startup opt-in", async () => {
+		writeClaudeSession(claudeDir, { id: "cc-2", cwd: "/tmp/elsewhere", aiTitle: "Different project" })
+		const { client, close } = await connect(WORKSPACE, true)
+
 		const everywhere = textOf(await client.callTool({ name: "list_agent_sessions", arguments: { workspace: "" } }))
 		expect(everywhere).toContain("Different project")
+
+		await close()
+	})
+
+	it("does not read or hand off a known session from another workspace", async () => {
+		writeClaudeSession(claudeDir, { id: "foreign", cwd: "/tmp/elsewhere", aiTitle: "Private project" })
+		const { client, close } = await connect()
+
+		expect(
+			textOf(await client.callTool({ name: "read_agent_session", arguments: { session_id: "foreign" } })),
+		).toContain("No session with id")
+		expect(
+			textOf(
+				await client.callTool({
+					name: "create_handoff",
+					arguments: { session_id: "foreign", to: "tumble-code" },
+				}),
+			),
+		).toContain("No session with id")
 
 		await close()
 	})
@@ -178,6 +208,35 @@ describe("agent-interchange MCP server", () => {
 		expect(textOf(await client.callTool({ name: "list_handoffs", arguments: { status: "open" } }))).toBe(
 			"No handoffs.",
 		)
+
+		await close()
+	})
+
+	it("does not read or update a known handoff from another workspace", async () => {
+		writeTumbleTask(tumbleDir, {
+			id: "foreign-task",
+			workspace: "/tmp/elsewhere",
+			task: "Private handoff",
+			mode: "code",
+		})
+		const privileged = await connect(WORKSPACE, true)
+		const created = textOf(
+			await privileged.client.callTool({
+				name: "create_handoff",
+				arguments: { session_id: "foreign-task", workspace: "/tmp/elsewhere", to: "claude-code" },
+			}),
+		)
+		const id = /Handoff `([^`]+)`/.exec(created)![1]!
+		await privileged.close()
+
+		const { client, close } = await connect()
+
+		expect(textOf(await client.callTool({ name: "read_handoff", arguments: { handoff_id: id } }))).toContain(
+			"No handoff with id",
+		)
+		expect(
+			textOf(await client.callTool({ name: "update_handoff", arguments: { handoff_id: id, status: "done" } })),
+		).toContain("No handoff with id")
 
 		await close()
 	})

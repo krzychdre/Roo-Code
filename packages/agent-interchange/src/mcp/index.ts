@@ -11,7 +11,9 @@ import { createInterchangeServer } from "./server.js"
  * to stdout except protocol frames — diagnostics go to stderr.
  */
 async function main(): Promise<void> {
-	const server = createInterchangeServer(process.cwd())
+	const server = createInterchangeServer(process.cwd(), {
+		allowCrossWorkspace: process.env.AGENT_INTERCHANGE_ALLOW_CROSS_WORKSPACE === "1",
+	})
 	const transport = new StdioServerTransport()
 
 	await server.connect(transport)

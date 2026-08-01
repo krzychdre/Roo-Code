@@ -176,3 +176,29 @@ agents read and write one `MEMORY.md` set. Guarded by the existing
 - Handoff lifecycle tests (create → list → pick up → complete).
 - Memory path tests for the shared-root mode, including the collision warning and
   the `validateMemoryPath` rejections.
+
+## 2026-08-01 review hardening
+
+The accumulated stack review identified four release-blocking gaps. This pass is
+strictly limited to them:
+
+1. Scope every ordinary MCP list/read/handoff operation to the server's startup
+   workspace. Empty workspace arguments are rejected, and session/handoff ids
+   found in global stores are re-checked against that workspace. Deliberate
+   cross-workspace operation requires a startup environment opt-in rather than a
+   tool-call argument a model can invent.
+2. Add a reproducible installer that copies the built bundle to durable user
+   storage and merges/removes only the owned `agent-interchange` registration in
+   Claude Code and Tumble Code configuration. Configuration writes are atomic;
+   unrelated keys and servers survive install, update, and uninstall.
+3. Treat a proven Claude project-slug collision as unsafe for shared memory.
+   Preserve sharing for an unclaimed or matching directory, but fall back to the
+   ordinary Tumble-isolated path and emit an actionable warning for a mismatch.
+4. Serialize same-process handoff mutations and replace in-place rewrites with
+   temp-file + fsync + rename atomic replacement. Tests cover competing updates
+   and failed replacement without accepting a truncated destination.
+
+Validation is package-local Vitest, typecheck, lint and build for
+`@roo-code/agent-interchange`, focused extension memory tests, and extension
+typecheck/lint/build where practical. The repository requests Node 20; the local
+runtime used for this pass is recorded in the final report if it differs.
