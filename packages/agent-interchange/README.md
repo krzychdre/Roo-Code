@@ -18,6 +18,14 @@ over MCP, so either agent can pick up where the other stopped.
 
 Nothing is ever written into either agent's own store.
 
+A handoff is `<id>.md` plus, while updates are in flight, a `<id>.md.updates/`
+directory beside it. Independent processes never write the same file: each
+update publishes one immutable operation into that directory, and the next
+update folds them into the Markdown and removes the ones it absorbed. Copy or
+back up the two together — a `.md` on its own can be missing the newest updates.
+Leftover `.tmp` files are from writers that died mid-publish and are safe to
+delete.
+
 ## The MCP server
 
 Build and install once from the package directory. The installer copies the MCP
