@@ -133,9 +133,66 @@ describe("handoff lifecycle", () => {
 		])
 
 		const final = readHandoff(created.id)!
-		expect(final.status).toBe("done")
+		// Whichever revision sorts last decides the status; both log entries survive.
+		expect(["picked-up", "done"]).toContain(final.status)
 		expect(final.body).toContain("first concurrent note")
 		expect(final.body).toContain("second concurrent note")
+	})
+
+	it("lets a later update move the status back, including out of done", async () => {
+		const created = await createHandoff({ session: source, to: "claude-code" })
+
+		await updateHandoff(created.id, { status: "done", note: "finished" })
+		const reopened = await updateHandoff(created.id, { status: "open", note: "not actually finished" })
+		expect(reopened!.status).toBe("open")
+
+		const resumed = await updateHandoff(created.id, { status: "picked-up" })
+		expect(resumed!.status).toBe("picked-up")
+		expect(resumed!.body).toContain("finished")
+		expect(resumed!.body).toContain("not actually finished")
+	})
+
+	it("folds the journal into the document instead of leaving the file stale", async () => {
+		const created = await createHandoff({ session: source, to: "claude-code" })
+
+		await updateHandoff(created.id, { status: "picked-up", pickedUpBy: "claude-code", note: "started" })
+
+		const onDisk = fs.readFileSync(created.path, "utf8")
+		expect(onDisk).toContain("status: picked-up")
+		expect(onDisk).toContain("pickedUpBy: claude-code")
+		expect(onDisk).toContain("started")
+		// Folded operations are spent, so the journal does not grow without bound.
+		expect(fs.readdirSync(`${created.path}.updates`).filter((name) => name.endsWith(".json"))).toEqual([])
+		expect(readHandoff(created.id)!.status).toBe("picked-up")
+	})
+
+	it("ignores an operation that lands after a newer one was already folded", async () => {
+		const created = await createHandoff({ session: source, to: "claude-code" })
+		await updateHandoff(created.id, { status: "done", note: "finished first" })
+
+		// A writer that stalled before its rename: published late, but older than
+		// the revision the document already carries.
+		const stale = {
+			revision: "1999-01-01T000000000Z-00000000-0000-4000-8000-000000000000",
+			created: "1999-01-01T00:00:00.000Z",
+			status: "picked-up",
+			note: "note from the stalled writer",
+		}
+		fs.writeFileSync(path.join(`${created.path}.updates`, `${stale.revision}.json`), JSON.stringify(stale), "utf8")
+
+		const final = readHandoff(created.id)!
+		expect(final.status).toBe("done")
+		// Its log entry is still kept — the log is append-only, the status is not.
+		expect(final.body).toContain("note from the stalled writer")
+	})
+
+	it("does not publish a revision for an update that carries nothing", async () => {
+		const created = await createHandoff({ session: source, to: "claude-code" })
+
+		const unchanged = await updateHandoff(created.id, {})
+
+		expect(unchanged!.status).toBe("open")
+		expect(fs.existsSync(`${created.path}.updates`)).toBe(false)
 	})
 
 	it("serializes updates made by independent Node processes", async () => {

@@ -263,3 +263,35 @@ The two remaining findings replace parts of the preceding blocking design:
    orphaned `.tmp` files may be deleted at any time. Multiprocess tests cover a
    delayed writer, a killed writer paused before publication, surviving updates,
    and failed atomic publication. No native dependency is introduced.
+
+## 2026-08-02 review of the unreviewed tail
+
+The three commits that closed the races (`64b0a21a3`, `6b7e7587c`, `ce5e426b7`)
+never had a review pass of their own — the last one replaced the lock design the
+previous review rejected. Reviewing them found no security hole, and five defects
+where the system reported something untrue. What changed:
+
+1. **A handoff can move backwards again.** Resolving statuses by the monotone
+   order `open < picked-up < abandoned < done` also applied to _sequential_
+   updates, so a task marked done by mistake could never be reopened, and
+   `update_handoff` answered `is now done` to a caller that asked for `open`.
+   Every mutable field is now a last-writer-wins register: the operation with the
+   highest revision to name a field wins, whatever order operations arrive in.
+   The total order over revisions already made that deterministic for competing
+   writers, so ranking statuses bought nothing and cost reversibility.
+2. **The base document is folded, not left stale.** Nothing rewrote `<id>.md`
+   after creation, so its frontmatter said `status: open` for finished work and
+   no log entry ever reached the file people actually open. Each update now folds
+   the journal into the document and deletes the operations it has absorbed.
+   Correctness across compaction is why the registers are stored in the
+   frontmatter (`statusRevision`, `pickedUpByRevision`,
+   `pickedUpSessionIdRevision`) next to `foldedRevisions`: an operation whose
+   `rename` lands after a compaction is _older_ than what the document carries,
+   and applying it on top would let a stalled writer win by being late — a
+   regression the existing multiprocess test caught during this work. Deletion is
+   guarded by the fold the document on disk actually claims, so a competing
+   compaction cannot delete an operation it never absorbed. A reader that sees
+   the base replaced under it restarts.
+3. **Empty updates publish nothing.** An update carrying no status, note or
+   pick-up detail wrote a revision that folded to nothing, so a retrying model
+   grew the journal for free.

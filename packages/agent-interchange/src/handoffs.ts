@@ -73,14 +73,43 @@ interface HandoffUpdateOperation {
 	note?: string
 }
 
+/**
+ * The base document, what it already carries, and how it got there.
+ *
+ * Every mutable field is a last-writer-wins register: the document records the
+ * revision that last set it, so folding is independent of the order operations
+ * arrive in. Without that, an operation whose `rename` lands after a compaction
+ * — a stalled writer, a skewed clock — would be applied on top of revisions
+ * newer than itself and would win by being late.
+ *
+ * `foldedRevisions` is a membership set rather than a high-water mark for the
+ * same reason: it says which log entries the Markdown already carries and which
+ * operation files are therefore spent.
+ */
+interface BaseDocument {
+	handoff: Handoff
+	foldedRevisions: Set<string>
+	registers: FieldRegisters
+}
+
+/** Revision that last set each field; `""` when the base document set it. */
+interface FieldRegisters {
+	status: string
+	pickedUpBy: string
+	pickedUpSessionId: string
+}
+
+interface FoldResult {
+	handoff: Handoff
+	registers: FieldRegisters
+}
+
+const REGISTER_KEYS = ["status", "pickedUpBy", "pickedUpSessionId"] as const
+
 const defaultIo: HandoffIo = { rename: fsPromises.rename }
 
-const STATUS_ORDER: Record<HandoffStatus, number> = {
-	open: 0,
-	"picked-up": 1,
-	abandoned: 2,
-	done: 3,
-}
+/** How many times a read restarts because a compaction replaced the base under it. */
+const READ_ATTEMPTS = 3
 
 const FRONTMATTER_KEYS: Array<keyof HandoffMeta> = [
 	"id",
@@ -182,6 +211,12 @@ export async function updateHandoff(
 	const file = path.join(handoffDir(), `${id}.md`)
 	if (!readBaseHandoffFile(file)) return undefined
 
+	// An update that carries nothing would publish a revision that folds to
+	// nothing. A model retrying a call must not grow the journal for free.
+	if (!update.status && !update.note && !update.pickedUpBy && !update.pickedUpSessionId) {
+		return readHandoffFile(file)
+	}
+
 	const created = new Date().toISOString()
 	const revision = `${created.replace(/[:.]/g, "")}-${randomUUID()}`
 	const operation: HandoffUpdateOperation = {
@@ -195,6 +230,7 @@ export async function updateHandoff(
 	const operationFile = path.join(updateDir(file), `${revision}.json`)
 
 	await atomicWrite(operationFile, `${JSON.stringify(operation)}\n`, io)
+	await compact(file, io)
 
 	return readHandoffFile(file)
 }
@@ -229,14 +265,46 @@ function metaSummaryLines(handoff: Handoff): string[] {
 	]
 }
 
+/**
+ * The current state: the base document with every operation it does not yet
+ * carry folded on top.
+ *
+ * A compaction landing between reading the base and listing the journal would
+ * otherwise hide operations that the older base does not contain — the base is
+ * replaced by `rename`, so a changed identity means "start over".
+ */
 function readHandoffFile(file: string): Handoff | undefined {
-	const base = readBaseHandoffFile(file)
-	if (!base) return undefined
+	for (let attempt = 0; attempt < READ_ATTEMPTS; attempt++) {
+		const identity = fileIdentity(file)
+		const base = readBaseDocument(file)
 
-	return foldOperations(base, readUpdateOperations(file))
+		if (!base) return undefined
+
+		const operations = readUpdateOperations(file, base.foldedRevisions)
+
+		if (fileIdentity(file) === identity) {
+			return foldOperations(base.handoff, operations, base.registers).handoff
+		}
+	}
+
+	const base = readBaseDocument(file)
+
+	return base
+		? foldOperations(base.handoff, readUpdateOperations(file, base.foldedRevisions), base.registers).handoff
+		: undefined
 }
 
-function readBaseHandoffFile(file: string): Handoff | undefined {
+/** `undefined` when the file is absent; the identity changes on every replacement. */
+function fileIdentity(file: string): string | undefined {
+	try {
+		const stat = fs.statSync(file)
+		return `${stat.ino}:${stat.size}:${stat.mtimeMs}`
+	} catch {
+		return undefined
+	}
+}
+
+function readBaseDocument(file: string): BaseDocument | undefined {
 	let raw: string
 
 	try {
@@ -251,7 +319,27 @@ function readBaseHandoffFile(file: string): Handoff | undefined {
 		return undefined
 	}
 
-	const { fields, body } = parsed
+	return {
+		handoff: baseHandoff(file, raw, parsed.fields, parsed.body),
+		foldedRevisions: new Set(
+			(parsed.fields.foldedRevisions ?? "")
+				.split(",")
+				.map((revision) => revision.trim())
+				.filter(Boolean),
+		),
+		registers: {
+			status: parsed.fields.statusRevision ?? "",
+			pickedUpBy: parsed.fields.pickedUpByRevision ?? "",
+			pickedUpSessionId: parsed.fields.pickedUpSessionIdRevision ?? "",
+		},
+	}
+}
+
+function readBaseHandoffFile(file: string): Handoff | undefined {
+	return readBaseDocument(file)?.handoff
+}
+
+function baseHandoff(file: string, raw: string, fields: Record<string, string>, body: string): Handoff {
 	const id = fields.id ?? path.basename(file, ".md")
 
 	return {
@@ -273,18 +361,20 @@ function readBaseHandoffFile(file: string): Handoff | undefined {
 	}
 }
 
-function readUpdateOperations(file: string): HandoffUpdateOperation[] {
-	let names: string[]
+function readUpdateOperations(file: string, folded: Set<string> = new Set()): HandoffUpdateOperation[] {
+	return operationFileNames(file)
+		.map((name) => readUpdateOperation(path.join(updateDir(file), name)))
+		.filter((operation): operation is HandoffUpdateOperation => operation !== undefined)
+		.filter((operation) => !folded.has(operation.revision))
+		.sort((a, b) => a.revision.localeCompare(b.revision))
+}
+
+function operationFileNames(file: string): string[] {
 	try {
-		names = fs.readdirSync(updateDir(file)).filter((name) => name.endsWith(".json"))
+		return fs.readdirSync(updateDir(file)).filter((name) => name.endsWith(".json"))
 	} catch {
 		return []
 	}
-
-	return names
-		.map((name) => readUpdateOperation(path.join(updateDir(file), name)))
-		.filter((operation): operation is HandoffUpdateOperation => operation !== undefined)
-		.sort((a, b) => a.revision.localeCompare(b.revision))
 }
 
 function readUpdateOperation(file: string): HandoffUpdateOperation | undefined {
@@ -306,19 +396,38 @@ function readUpdateOperation(file: string): HandoffUpdateOperation | undefined {
 	}
 }
 
-function foldOperations(base: Handoff, operations: HandoffUpdateOperation[]): Handoff {
+function foldOperations(
+	base: Handoff,
+	operations: HandoffUpdateOperation[],
+	baseRegisters: FieldRegisters = emptyRegisters(),
+): FoldResult {
 	let status = base.status
 	let pickedUpBy = base.pickedUpBy
 	let pickedUpSessionId = base.pickedUpSessionId
 	let updated = base.updated
 	let body = base.body
+	const registers = { ...baseRegisters }
 
 	for (const operation of operations) {
-		if (operation.status && STATUS_ORDER[operation.status] > STATUS_ORDER[status]) {
+		// The newest revision to name a field wins, whenever it arrives. Ranking
+		// statuses instead would make the document one-way: a task marked done by
+		// mistake could never be reopened, and the tool would answer "done" to a
+		// caller that asked for "open".
+		if (operation.status !== undefined && operation.revision > registers.status) {
 			status = operation.status
+			registers.status = operation.revision
 		}
-		pickedUpBy = operation.pickedUpBy ?? pickedUpBy
-		pickedUpSessionId = operation.pickedUpSessionId ?? pickedUpSessionId
+
+		if (operation.pickedUpBy !== undefined && operation.revision > registers.pickedUpBy) {
+			pickedUpBy = operation.pickedUpBy
+			registers.pickedUpBy = operation.revision
+		}
+
+		if (operation.pickedUpSessionId !== undefined && operation.revision > registers.pickedUpSessionId) {
+			pickedUpSessionId = operation.pickedUpSessionId
+			registers.pickedUpSessionId = operation.revision
+		}
+
 		updated = operation.created > updated ? operation.created : updated
 		const logEntry = operation.note
 			? `- ${operation.created} — ${operation.note}`
@@ -330,7 +439,11 @@ function foldOperations(base: Handoff, operations: HandoffUpdateOperation[]): Ha
 
 	const meta: HandoffMeta = { ...base, status, pickedUpBy, pickedUpSessionId, updated }
 	const markdown = `${serializeFrontmatter(meta)}\n${body}`
-	return { ...meta, markdown, body }
+	return { handoff: { ...meta, markdown, body }, registers }
+}
+
+function emptyRegisters(): FieldRegisters {
+	return { status: "", pickedUpBy: "", pickedUpSessionId: "" }
 }
 
 function updateDir(file: string): string {
@@ -338,11 +451,53 @@ function updateDir(file: string): string {
 }
 
 /**
+ * Fold the journal into the base document so the file on disk says what the
+ * tools say. Best effort: the journal remains the source of truth, so a failed
+ * compaction costs nothing but a stale Markdown file.
+ *
+ * Spent operation files are removed only when the document *currently on disk*
+ * claims them. A competing compaction may have published an older fold, and
+ * deleting what it does not contain would lose an update.
+ */
+async function compact(file: string, io: HandoffIo): Promise<void> {
+	try {
+		const base = readBaseDocument(file)
+
+		if (!base) return
+
+		const pending = readUpdateOperations(file, base.foldedRevisions)
+
+		if (pending.length === 0) return
+
+		const folded = foldOperations(base.handoff, pending, base.registers)
+		const revisions = new Set([...base.foldedRevisions, ...pending.map((operation) => operation.revision)])
+
+		await atomicWrite(
+			file,
+			`${serializeFrontmatter(folded.handoff, revisions, folded.registers)}\n${folded.handoff.body}`,
+			io,
+		)
+
+		const durable = readBaseDocument(file)?.foldedRevisions
+
+		if (!durable) return
+
+		for (const name of operationFileNames(file)) {
+			if (durable.has(path.basename(name, ".json"))) {
+				await fsPromises.rm(path.join(updateDir(file), name), { force: true }).catch(() => undefined)
+			}
+		}
+	} catch {
+		// The journal still holds every update; readers fold it either way.
+	}
+}
+
+/**
  * Frontmatter is written and read by this module alone, so a flat `key: value`
  * subset of YAML is enough — no nesting, no anchors. Values are quoted when
  * they could otherwise be misread.
  */
-function serializeFrontmatter(meta: HandoffMeta): string {
+function serializeFrontmatter(meta: HandoffMeta, foldedRevisions?: Set<string>, registers?: FieldRegisters): string {
 	const lines = ["---"]
 
 	for (const key of FRONTMATTER_KEYS) {
@@ -353,6 +508,18 @@ function serializeFrontmatter(meta: HandoffMeta): string {
 		}
 
 		lines.push(`${key}: ${quote(String(value))}`)
+	}
+
+	// Bookkeeping the fold needs and a reader can ignore: which revisions the
+	// prose already carries, and which revision last set each field.
+	if (foldedRevisions && foldedRevisions.size > 0) {
+		lines.push(`foldedRevisions: ${quote([...foldedRevisions].sort().join(","))}`)
+	}
+
+	for (const key of registers ? REGISTER_KEYS : []) {
+		if (registers![key]) {
+			lines.push(`${key}Revision: ${quote(registers![key])}`)
+		}
 	}
 
 	lines.push("---")
