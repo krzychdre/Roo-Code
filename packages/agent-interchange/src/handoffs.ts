@@ -64,7 +64,27 @@ interface HandoffIo {
 	rename(source: string, destination: string): Promise<void>
 }
 
+interface LockMetadata {
+	token: string
+	pid: number
+	createdAt: number
+}
+
+interface HeldLock {
+	file: string
+	token: string
+	dev: number
+	ino: number
+	handle: fsPromises.FileHandle
+	heartbeat: NodeJS.Timeout
+}
+
 const defaultIo: HandoffIo = { rename: fsPromises.rename }
+
+const LOCK_STALE_MS = 10_000
+const LOCK_WAIT_MS = 15_000
+const LOCK_RETRY_MIN_MS = 20
+const LOCK_RETRY_MAX_MS = 100
 
 const FRONTMATTER_KEYS: Array<keyof HandoffMeta> = [
 	"id",
@@ -123,7 +143,7 @@ export async function createHandoff(options: CreateHandoffOptions): Promise<Hand
 
 	const markdown = `${serializeFrontmatter(meta)}\n${body}`
 
-	await atomicWrite(meta.path, markdown)
+	await serializeWrite(meta.path, () => withFileLock(meta.path, () => atomicWrite(meta.path, markdown)))
 
 	return { ...meta, markdown, body }
 }
@@ -164,35 +184,37 @@ export async function updateHandoff(
 ): Promise<Handoff | undefined> {
 	if (!/^[A-Za-z0-9._-]+$/.test(id)) return undefined
 	const file = path.join(handoffDir(), `${id}.md`)
-	return serializeWrite(file, async () => {
-		const existing = readHandoffFile(file)
+	return serializeWrite(file, () =>
+		withFileLock(file, async () => {
+			const existing = readHandoffFile(file)
 
-		if (!existing) {
-			return undefined
-		}
+			if (!existing) {
+				return undefined
+			}
 
-		const now = new Date().toISOString()
-		const meta: HandoffMeta = {
-			...existing,
-			status: update.status ?? existing.status,
-			pickedUpBy: update.pickedUpBy ?? existing.pickedUpBy,
-			pickedUpSessionId: update.pickedUpSessionId ?? existing.pickedUpSessionId,
-			updated: now,
-		}
+			const now = new Date().toISOString()
+			const meta: HandoffMeta = {
+				...existing,
+				status: update.status ?? existing.status,
+				pickedUpBy: update.pickedUpBy ?? existing.pickedUpBy,
+				pickedUpSessionId: update.pickedUpSessionId ?? existing.pickedUpSessionId,
+				updated: now,
+			}
 
-		const logEntry = update.note
-			? `- ${now} — ${update.note}`
-			: update.status
-				? `- ${now} — status → ${update.status}`
-				: undefined
+			const logEntry = update.note
+				? `- ${now} — ${update.note}`
+				: update.status
+					? `- ${now} — status → ${update.status}`
+					: undefined
 
-		const body = logEntry ? appendToLog(existing.body, logEntry) : existing.body
-		const markdown = `${serializeFrontmatter(meta)}\n${body}`
+			const body = logEntry ? appendToLog(existing.body, logEntry) : existing.body
+			const markdown = `${serializeFrontmatter(meta)}\n${body}`
 
-		await atomicWrite(meta.path, markdown, io)
+			await atomicWrite(meta.path, markdown, io)
 
-		return { ...meta, markdown, body }
-	})
+			return { ...meta, markdown, body }
+		}),
+	)
 }
 
 /** One-line-per-handoff listing for tool output. */
@@ -371,6 +393,167 @@ function serializeWrite<T>(file: string, operation: () => Promise<T>): Promise<T
 	return current.finally(() => {
 		if (writeQueues.get(file) === current) writeQueues.delete(file)
 	})
+}
+
+async function withFileLock<T>(target: string, operation: () => Promise<T>): Promise<T> {
+	const lock = await acquireFileLock(`${target}.lock`)
+
+	try {
+		return await operation()
+	} finally {
+		await releaseFileLock(lock)
+	}
+}
+
+async function acquireFileLock(file: string): Promise<HeldLock> {
+	await fsPromises.mkdir(path.dirname(file), { recursive: true })
+	const deadline = Date.now() + LOCK_WAIT_MS
+	let attempt = 0
+
+	while (true) {
+		const token = randomUUID()
+		let handle: fsPromises.FileHandle | undefined
+		let createdStat: fs.Stats | undefined
+
+		try {
+			handle = await fsPromises.open(file, "wx", 0o600)
+			createdStat = await handle.stat()
+			const metadata: LockMetadata = { token, pid: process.pid, createdAt: Date.now() }
+			await handle.writeFile(JSON.stringify(metadata), "utf8")
+			await handle.sync()
+
+			const heartbeat = setInterval(
+				() => {
+					const now = new Date()
+					void handle?.utimes(now, now).catch(() => undefined)
+				},
+				Math.max(1_000, Math.floor(LOCK_STALE_MS / 3)),
+			)
+			heartbeat.unref()
+
+			return { file, token, dev: createdStat.dev, ino: createdStat.ino, handle, heartbeat }
+		} catch (error) {
+			await handle?.close().catch(() => undefined)
+
+			if (!isAlreadyExists(error)) {
+				if (createdStat) {
+					await unlinkMatchingInode(file, createdStat.dev, createdStat.ino).catch(() => undefined)
+				}
+				throw error
+			}
+		}
+
+		if (await recoverStaleLock(file)) {
+			continue
+		}
+
+		const remaining = deadline - Date.now()
+		if (remaining <= 0) {
+			throw new Error(`Timed out waiting ${LOCK_WAIT_MS}ms for handoff lock: ${file}`)
+		}
+
+		const backoff = Math.min(LOCK_RETRY_MAX_MS, LOCK_RETRY_MIN_MS * 2 ** Math.min(attempt++, 3))
+		await sleep(Math.min(remaining, backoff + Math.floor(Math.random() * LOCK_RETRY_MIN_MS)))
+	}
+}
+
+async function releaseFileLock(lock: HeldLock): Promise<void> {
+	clearInterval(lock.heartbeat)
+
+	try {
+		const [stat, metadata] = await Promise.all([fsPromises.lstat(lock.file), readLockMetadata(lock.file)])
+
+		if (stat.dev === lock.dev && stat.ino === lock.ino && metadata?.token === lock.token) {
+			await fsPromises.unlink(lock.file)
+		}
+	} catch (error) {
+		if (!isMissing(error)) {
+			throw error
+		}
+	} finally {
+		await lock.handle.close().catch(() => undefined)
+	}
+}
+
+async function unlinkMatchingInode(file: string, dev: number, ino: number): Promise<void> {
+	const stat = await fsPromises.lstat(file)
+	if (stat.dev === dev && stat.ino === ino) {
+		await fsPromises.unlink(file)
+	}
+}
+
+async function recoverStaleLock(file: string): Promise<boolean> {
+	let initialStat: fs.Stats
+	let initialMetadata: LockMetadata | undefined
+
+	try {
+		;[initialStat, initialMetadata] = await Promise.all([fsPromises.lstat(file), readLockMetadata(file)])
+	} catch (error) {
+		return isMissing(error)
+	}
+
+	const timestamp = Math.max(initialStat.mtimeMs, initialMetadata?.createdAt ?? 0)
+	if (Date.now() - timestamp <= LOCK_STALE_MS) {
+		return false
+	}
+
+	const claim = `${file}.recovery-${process.pid}-${randomUUID()}`
+
+	try {
+		await fsPromises.link(file, claim)
+		const [lockStat, claimStat, claimMetadata] = await Promise.all([
+			fsPromises.lstat(file),
+			fsPromises.lstat(claim),
+			readLockMetadata(claim),
+		])
+		const sameLock =
+			lockStat.dev === initialStat.dev &&
+			lockStat.ino === initialStat.ino &&
+			claimStat.dev === initialStat.dev &&
+			claimStat.ino === initialStat.ino &&
+			claimStat.nlink === 2 &&
+			claimMetadata?.token === initialMetadata?.token &&
+			Date.now() - Math.max(lockStat.mtimeMs, claimMetadata?.createdAt ?? 0) > LOCK_STALE_MS
+
+		if (!sameLock) {
+			return false
+		}
+
+		// The hard-link claim pins the validated inode. A replacement cannot occupy
+		// the lock path until this exact inode is unlinked, and competing reclaimers
+		// observe nlink > 2 and leave it alone.
+		await fsPromises.unlink(file)
+		return true
+	} catch (error) {
+		return isMissing(error)
+	} finally {
+		await fsPromises.rm(claim, { force: true }).catch(() => undefined)
+	}
+}
+
+async function readLockMetadata(file: string): Promise<LockMetadata | undefined> {
+	try {
+		const parsed = JSON.parse(await fsPromises.readFile(file, "utf8")) as Partial<LockMetadata>
+		return typeof parsed.token === "string" &&
+			typeof parsed.pid === "number" &&
+			typeof parsed.createdAt === "number"
+			? (parsed as LockMetadata)
+			: undefined
+	} catch {
+		return undefined
+	}
+}
+
+function isAlreadyExists(error: unknown): boolean {
+	return (error as NodeJS.ErrnoException).code === "EEXIST"
+}
+
+function isMissing(error: unknown): boolean {
+	return (error as NodeJS.ErrnoException).code === "ENOENT"
+}
+
+function sleep(milliseconds: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
 
 async function atomicWrite(file: string, content: string, io: HandoffIo = defaultIo): Promise<void> {

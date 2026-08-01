@@ -1,5 +1,8 @@
+import { spawn } from "node:child_process"
 import * as fs from "node:fs"
 import * as path from "node:path"
+
+import { build } from "esbuild"
 
 import { createHandoff, listHandoffs, readHandoff, renderHandoffList, updateHandoff } from "../handoffs.js"
 import { listPlans, readPlan } from "../plans.js"
@@ -135,6 +138,54 @@ describe("handoff lifecycle", () => {
 		expect(final.body).toContain("second concurrent note")
 	})
 
+	it("serializes updates made by independent Node processes", async () => {
+		const created = await createHandoff({ session: source, to: "claude-code" })
+		const worker = path.join(dir, "handoff-update-worker.mjs")
+		const marker = path.join(dir, "first-writer-at-rename")
+
+		await build({
+			entryPoints: [path.join(import.meta.dirname, "fixtures", "handoff-update-worker.ts")],
+			outfile: worker,
+			bundle: true,
+			format: "esm",
+			platform: "node",
+		})
+
+		const first = runUpdateWorker(worker, {
+			HANDOFF_ID: created.id,
+			HANDOFF_STATUS: "picked-up",
+			HANDOFF_NOTE: "first process note",
+			HANDOFF_RENAME_MARKER: marker,
+			HANDOFF_RENAME_DELAY_MS: "300",
+		})
+		await waitForFile(marker)
+		const second = runUpdateWorker(worker, {
+			HANDOFF_ID: created.id,
+			HANDOFF_STATUS: "done",
+			HANDOFF_NOTE: "second process note",
+		})
+
+		await Promise.all([first, second])
+
+		const final = readHandoff(created.id)!
+		expect(final.status).toBe("done")
+		expect(final.body).toContain("first process note")
+		expect(final.body).toContain("second process note")
+	})
+
+	it("recovers a timestamp-stale lock even when its PID is currently alive", async () => {
+		const created = await createHandoff({ session: source, to: "claude-code" })
+		const lock = `${created.path}.lock`
+		const old = Date.now() - 60_000
+		fs.writeFileSync(lock, JSON.stringify({ token: "crashed-writer", pid: process.pid, createdAt: old }), "utf8")
+		fs.utimesSync(lock, old / 1_000, old / 1_000)
+
+		const updated = await updateHandoff(created.id, { status: "done", note: "recovered stale lock" })
+
+		expect(updated?.body).toContain("recovered stale lock")
+		expect(fs.existsSync(lock)).toBe(false)
+	})
+
 	it("keeps the previous complete file when atomic replacement fails", async () => {
 		const created = await createHandoff({ session: source, to: "claude-code" })
 		const before = fs.readFileSync(created.path, "utf8")
@@ -148,8 +199,34 @@ describe("handoff lifecycle", () => {
 		).rejects.toThrow("simulated rename failure")
 		expect(fs.readFileSync(created.path, "utf8")).toBe(before)
 		expect(fs.readdirSync(path.dirname(created.path)).filter((name) => name.endsWith(".tmp"))).toEqual([])
+		expect(fs.existsSync(`${created.path}.lock`)).toBe(false)
 	})
 })
+
+function runUpdateWorker(worker: string, environment: Record<string, string>): Promise<void> {
+	return new Promise((resolve, reject) => {
+		const child = spawn(process.execPath, [worker], {
+			env: { ...process.env, ...environment },
+			stdio: ["ignore", "ignore", "pipe"],
+		})
+		let stderr = ""
+		child.stderr.setEncoding("utf8")
+		child.stderr.on("data", (chunk: string) => (stderr += chunk))
+		child.once("error", reject)
+		child.once("exit", (code, signal) => {
+			if (code === 0) resolve()
+			else reject(new Error(`Worker exited with ${code ?? signal}: ${stderr}`))
+		})
+	})
+}
+
+async function waitForFile(file: string): Promise<void> {
+	const deadline = Date.now() + 5_000
+	while (!fs.existsSync(file)) {
+		if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${file}`)
+		await new Promise((resolve) => setTimeout(resolve, 10))
+	}
+}
 
 describe("plans", () => {
 	let claudeDir: string
