@@ -232,3 +232,34 @@ runtime used for this pass is recorded in the final report if it differs.
    ownership-safe release/recovery rather than trusting PID liveness. Retain
    atomic temp-write/fsync/rename, and prove independent Node writers preserve
    both updates plus stale-lock and error cleanup behavior.
+
+## 2026-08-01 final security/concurrency closure
+
+The two remaining findings replace parts of the preceding blocking design:
+
+1. **Immutable startup identity.** Server construction resolves the startup
+   workspace exactly once with `realpath` and retains that canonical directory as
+   the default and security root. A symlink used at startup therefore identifies
+   its original target, and retargeting that pathname later cannot move session,
+   handoff, or plan access. Ordinary explicit workspace arguments must resolve to
+   that same canonical path. The deliberate cross-workspace startup opt-in keeps
+   its broader path-based behavior. Workspace-isolated plan listing and reading
+   require verification of the path behind the opened descriptor: Linux uses
+   `/proc/self/fd/<fd>`; other platforms fail closed until an equivalent supported
+   API exists. Tests cover symlink startup, post-start retarget, Linux containment,
+   and the platform-gated fail-closed result.
+2. **Immutable handoff update journal.** The stale pathname lock is removed; it
+   cannot fence a paused owner that resumes after another process revokes it.
+   Creation still atomically publishes the compatible `<id>.md` base document.
+   Every update instead atomically publishes one unique immutable JSON operation
+   under `<id>.md.updates/<timestamp>-<uuid>.json`. Readers ignore malformed and
+   orphaned `.tmp` files, sort complete operations by revision, preserve every log
+   entry, merge pick-up metadata deterministically, and resolve statuses by the
+   monotone order `open < picked-up < abandoned < done`. Independent writers
+   never replace one another's revisions; a crash before rename leaves only a
+   harmless cleanable temp file, while a crash after rename leaves a complete
+   durable operation. Existing handoffs need no migration: an absent sidecar is
+   an empty journal. Sidecars must be retained with their base Markdown file;
+   orphaned `.tmp` files may be deleted at any time. Multiprocess tests cover a
+   delayed writer, a killed writer paused before publication, surviving updates,
+   and failed atomic publication. No native dependency is introduced.

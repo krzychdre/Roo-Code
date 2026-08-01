@@ -173,17 +173,43 @@ describe("handoff lifecycle", () => {
 		expect(final.body).toContain("second process note")
 	})
 
-	it("recovers a timestamp-stale lock even when its PID is currently alive", async () => {
+	it("does not let a crashed paused writer block or erase a later process update", async () => {
 		const created = await createHandoff({ session: source, to: "claude-code" })
-		const lock = `${created.path}.lock`
-		const old = Date.now() - 60_000
-		fs.writeFileSync(lock, JSON.stringify({ token: "crashed-writer", pid: process.pid, createdAt: old }), "utf8")
-		fs.utimesSync(lock, old / 1_000, old / 1_000)
+		const worker = path.join(dir, "handoff-crash-worker.mjs")
+		const marker = path.join(dir, "paused-before-publish")
+		await build({
+			entryPoints: [path.join(import.meta.dirname, "fixtures", "handoff-update-worker.ts")],
+			outfile: worker,
+			bundle: true,
+			format: "esm",
+			platform: "node",
+		})
+		const paused = spawn(process.execPath, [worker], {
+			env: {
+				...process.env,
+				HANDOFF_ID: created.id,
+				HANDOFF_STATUS: "picked-up",
+				HANDOFF_NOTE: "crashed process note",
+				HANDOFF_RENAME_MARKER: marker,
+				HANDOFF_RENAME_DELAY_MS: "30000",
+			},
+			stdio: ["ignore", "ignore", "pipe"],
+		})
+		await waitForFile(marker)
+		paused.kill("SIGKILL")
+		await waitForExit(paused)
 
-		const updated = await updateHandoff(created.id, { status: "done", note: "recovered stale lock" })
+		await runUpdateWorker(worker, {
+			HANDOFF_ID: created.id,
+			HANDOFF_STATUS: "done",
+			HANDOFF_NOTE: "surviving process note",
+		})
 
-		expect(updated?.body).toContain("recovered stale lock")
-		expect(fs.existsSync(lock)).toBe(false)
+		const final = readHandoff(created.id)!
+		expect(final.status).toBe("done")
+		expect(final.body).toContain("surviving process note")
+		expect(final.body).not.toContain("crashed process note")
+		expect(fs.readdirSync(`${created.path}.updates`).some((name) => name.endsWith(".tmp"))).toBe(true)
 	})
 
 	it("keeps the previous complete file when atomic replacement fails", async () => {
@@ -198,8 +224,8 @@ describe("handoff lifecycle", () => {
 			),
 		).rejects.toThrow("simulated rename failure")
 		expect(fs.readFileSync(created.path, "utf8")).toBe(before)
-		expect(fs.readdirSync(path.dirname(created.path)).filter((name) => name.endsWith(".tmp"))).toEqual([])
-		expect(fs.existsSync(`${created.path}.lock`)).toBe(false)
+		expect(fs.readdirSync(`${created.path}.updates`).filter((name) => name.endsWith(".tmp"))).toEqual([])
+		expect(readHandoff(created.id)?.status).toBe("open")
 	})
 })
 
@@ -226,6 +252,13 @@ async function waitForFile(file: string): Promise<void> {
 		if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${file}`)
 		await new Promise((resolve) => setTimeout(resolve, 10))
 	}
+}
+
+function waitForExit(child: ReturnType<typeof spawn>): Promise<void> {
+	return new Promise((resolve, reject) => {
+		child.once("error", reject)
+		child.once("exit", () => resolve())
+	})
 }
 
 describe("plans", () => {

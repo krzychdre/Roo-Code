@@ -13,9 +13,9 @@ import { makeTempDir, writeClaudeSession, writeTumbleTask } from "./fixtures.js"
  * checked the way a client will actually see them.
  */
 
-const WORKSPACE = "/tmp/interchange-workspace"
+let workspaceDir: string
 
-async function connect(defaultCwd = WORKSPACE, allowCrossWorkspace = false) {
+async function connect(defaultCwd = workspaceDir, allowCrossWorkspace = false) {
 	const server = createInterchangeServer(defaultCwd, { allowCrossWorkspace })
 	const client = new Client({ name: "test", version: "0.0.0" })
 	const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
@@ -34,7 +34,6 @@ describe("agent-interchange MCP server", () => {
 	let claudeDir: string
 	let tumbleDir: string
 	let handoffRoot: string
-	let workspaceDir: string
 
 	beforeEach(() => {
 		claudeDir = makeTempDir("mcp-cc")
@@ -46,8 +45,8 @@ describe("agent-interchange MCP server", () => {
 		process.env.AGENT_INTERCHANGE_TUMBLE_STORAGE = tumbleDir
 		process.env.AGENT_INTERCHANGE_DIR = handoffRoot
 
-		writeClaudeSession(claudeDir, { id: "cc-1", cwd: WORKSPACE, aiTitle: "Retry determinism" })
-		writeTumbleTask(tumbleDir, { id: "tc-1", workspace: WORKSPACE, task: "Port the checker", mode: "code" })
+		writeClaudeSession(claudeDir, { id: "cc-1", cwd: workspaceDir, aiTitle: "Retry determinism" })
+		writeTumbleTask(tumbleDir, { id: "tc-1", workspace: workspaceDir, task: "Port the checker", mode: "code" })
 		fs.mkdirSync(path.join(claudeDir, "plans"), { recursive: true })
 		fs.writeFileSync(path.join(claudeDir, "plans", "private-global.md"), "# Private global plan\nsecret\n")
 		fs.mkdirSync(path.join(workspaceDir, "ai_plans"), { recursive: true })
@@ -97,6 +96,47 @@ describe("agent-interchange MCP server", () => {
 		await close()
 	})
 
+	it.runIf(process.platform !== "win32")("pins a symlinked startup workspace to its canonical identity", async () => {
+		const alias = `${workspaceDir}-alias`
+		fs.symlinkSync(workspaceDir, alias, "dir")
+		try {
+			const { client, close } = await connect(alias)
+			const output = textOf(await client.callTool({ name: "list_agent_sessions", arguments: {} }))
+
+			expect(output).toContain("Retry determinism")
+			expect(output).toContain("Port the checker")
+			await close()
+		} finally {
+			fs.rmSync(alias, { force: true })
+		}
+	})
+
+	it.runIf(process.platform !== "win32")(
+		"does not follow a retargeted startup path after server creation",
+		async () => {
+			const alias = `${workspaceDir}-retarget`
+			const foreign = makeTempDir("mcp-retarget-foreign")
+			fs.mkdirSync(path.join(foreign, "ai_plans"), { recursive: true })
+			fs.writeFileSync(path.join(foreign, "ai_plans", "foreign.md"), "# Foreign secret\nnot visible\n")
+			fs.symlinkSync(workspaceDir, alias, "dir")
+			try {
+				const { client, close } = await connect(alias)
+				fs.unlinkSync(alias)
+				fs.symlinkSync(foreign, alias, "dir")
+
+				const sessions = textOf(await client.callTool({ name: "list_agent_sessions", arguments: {} }))
+				const plans = textOf(await client.callTool({ name: "list_agent_plans", arguments: {} }))
+				expect(sessions).toContain("Retry determinism")
+				expect(plans).toContain(process.platform === "linux" ? "Workspace plan" : "No plan documents found")
+				expect(plans).not.toContain("Foreign secret")
+				await close()
+			} finally {
+				fs.rmSync(alias, { force: true })
+				fs.rmSync(foreign, { recursive: true, force: true })
+			}
+		},
+	)
+
 	it("filters to one agent and rejects an empty workspace by default", async () => {
 		writeClaudeSession(claudeDir, { id: "cc-2", cwd: "/tmp/elsewhere", aiTitle: "Different project" })
 
@@ -118,7 +158,7 @@ describe("agent-interchange MCP server", () => {
 
 	it("only permits cross-workspace listing after a server startup opt-in", async () => {
 		writeClaudeSession(claudeDir, { id: "cc-2", cwd: "/tmp/elsewhere", aiTitle: "Different project" })
-		const { client, close } = await connect(WORKSPACE, true)
+		const { client, close } = await connect(workspaceDir, true)
 
 		const everywhere = textOf(await client.callTool({ name: "list_agent_sessions", arguments: { workspace: "" } }))
 		expect(everywhere).toContain("Different project")
@@ -226,7 +266,7 @@ describe("agent-interchange MCP server", () => {
 			task: "Private handoff",
 			mode: "code",
 		})
-		const privileged = await connect(WORKSPACE, true)
+		const privileged = await connect(workspaceDir, true)
 		const created = textOf(
 			await privileged.client.callTool({
 				name: "create_handoff",
@@ -268,17 +308,36 @@ describe("agent-interchange MCP server", () => {
 		await close()
 	})
 
-	it("lists only workspace-contained plans in ordinary workspace-isolated mode", async () => {
-		const { client, close } = await connect(workspaceDir)
+	it.runIf(process.platform === "linux")(
+		"lists only workspace-contained plans in ordinary workspace-isolated mode",
+		async () => {
+			const { client, close } = await connect(workspaceDir)
 
-		const output = textOf(await client.callTool({ name: "list_agent_plans", arguments: {} }))
+			const output = textOf(await client.callTool({ name: "list_agent_plans", arguments: {} }))
 
-		expect(output).toContain("Workspace plan")
-		expect(output).not.toContain("Private global plan")
-		expect(output).not.toContain(path.join(claudeDir, "plans"))
+			expect(output).toContain("Workspace plan")
+			expect(output).not.toContain("Private global plan")
+			expect(output).not.toContain(path.join(claudeDir, "plans"))
 
-		await close()
-	})
+			await close()
+		},
+	)
+
+	it.runIf(process.platform !== "linux")(
+		"fails closed for isolated plan listing and reading without opened-descriptor path verification",
+		async () => {
+			const { client, close } = await connect(workspaceDir)
+			const plan = path.join(workspaceDir, "ai_plans", "workspace.md")
+
+			expect(textOf(await client.callTool({ name: "list_agent_plans", arguments: {} }))).toBe(
+				"No plan documents found.",
+			)
+			expect(textOf(await client.callTool({ name: "read_agent_plan", arguments: { path: plan } }))).toContain(
+				"not a plan document this tool may read",
+			)
+			await close()
+		},
+	)
 
 	it("rejects direct known-path and known-name attempts for Claude-global plans by default", async () => {
 		const { client, close } = await connect(workspaceDir)

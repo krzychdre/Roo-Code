@@ -1,3 +1,4 @@
+import * as fs from "node:fs"
 import * as path from "node:path"
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
@@ -42,6 +43,7 @@ export function createInterchangeServer(
 	options: InterchangeServerOptions = {},
 ): McpServer {
 	const allowCrossWorkspace = options.allowCrossWorkspace === true
+	const startupWorkspace = canonicalWorkspace(defaultCwd)
 	const server = new McpServer(
 		{ name: "agent-interchange", version: VERSION },
 		{
@@ -65,21 +67,24 @@ export function createInterchangeServer(
 		.string()
 		.min(allowCrossWorkspace ? 0 : 1, "workspace must not be empty")
 		.refine(
-			(value) => allowCrossWorkspace || sameWorkspace(value, defaultCwd),
+			(value) => allowCrossWorkspace || sameWorkspace(value, startupWorkspace),
 			"workspace must match the workspace this server was started in",
 		)
 		.optional()
 		.describe(
 			allowCrossWorkspace
-				? `Absolute workspace path. Defaults to ${defaultCwd}. This server was explicitly started with cross-workspace access; pass "" for every workspace.`
-				: `Absolute workspace path. Defaults to ${defaultCwd}. Empty values are rejected.`,
+				? `Absolute workspace path. Defaults to the canonical startup workspace ${startupWorkspace}. This server was explicitly started with cross-workspace access; pass "" for every workspace.`
+				: `Absolute workspace path. Defaults to the immutable canonical startup workspace ${startupWorkspace}. Empty values are rejected.`,
 		)
 
-	const resolveCwd = (value: string | undefined): string | undefined =>
-		allowCrossWorkspace && value === "" ? undefined : (value ?? defaultCwd)
+	const resolveCwd = (value: string | undefined): string | undefined => {
+		if (allowCrossWorkspace && value === "") return undefined
+		if (value === undefined) return startupWorkspace
+		return allowCrossWorkspace ? path.resolve(value) : canonicalWorkspace(value)
+	}
 
 	const sessionInWorkspace = (session: { cwd?: string }, cwd: string | undefined): boolean =>
-		cwd === undefined || sameWorkspace(session.cwd, cwd)
+		cwd === undefined || (allowCrossWorkspace ? samePath(session.cwd, cwd) : sameWorkspace(session.cwd, cwd))
 
 	server.registerTool(
 		"list_agent_sessions",
@@ -211,6 +216,7 @@ export function createInterchangeServer(
 						query,
 						limit: limit ?? 30,
 						allowClaudeGlobal: allowCrossWorkspace,
+						requireOpenedPathVerification: !allowCrossWorkspace,
 					}),
 				),
 			),
@@ -230,6 +236,7 @@ export function createInterchangeServer(
 			const plan = readPlan(file, {
 				cwd: resolveCwd(cwd),
 				allowClaudeGlobal: allowCrossWorkspace,
+				requireOpenedPathVerification: !allowCrossWorkspace,
 			})
 
 			return text(
@@ -376,5 +383,30 @@ function text(markdown: string) {
 }
 
 function sameWorkspace(recorded: string | undefined, allowed: string): boolean {
+	if (recorded === undefined) return false
+
+	try {
+		return fs.realpathSync(recorded) === allowed
+	} catch {
+		return false
+	}
+}
+
+function samePath(recorded: string | undefined, allowed: string): boolean {
 	return recorded !== undefined && path.resolve(recorded) === path.resolve(allowed)
+}
+
+function canonicalWorkspace(workspace: string): string {
+	try {
+		const canonical = fs.realpathSync(workspace)
+		if (!fs.statSync(canonical).isDirectory()) {
+			throw new Error("not a directory")
+		}
+		return canonical
+	} catch (error) {
+		throw new Error(
+			`Cannot start agent-interchange: workspace \`${workspace}\` must be an existing directory whose canonical path can be resolved.`,
+			{ cause: error },
+		)
+	}
 }

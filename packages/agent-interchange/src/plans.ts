@@ -30,6 +30,8 @@ const WORKSPACE_PLAN_DIRS = ["ai_plans", "docs/plans", ".plans"]
 export interface PlanAccessOptions {
 	cwd?: string
 	allowClaudeGlobal?: boolean
+	/** Fail closed unless the path of the opened descriptor can be verified. */
+	requireOpenedPathVerification?: boolean
 }
 
 interface PlanRoot {
@@ -41,7 +43,7 @@ interface PlanRoot {
 export function listPlans(options: PlanAccessOptions & { query?: string; limit?: number } = {}): PlanDoc[] {
 	const docs: PlanDoc[] = [
 		...(options.allowClaudeGlobal === true ? claudePlans() : []),
-		...workspacePlans(options.cwd),
+		...workspacePlans(options.cwd, options.requireOpenedPathVerification === true),
 	]
 
 	const filtered = options.query
@@ -74,7 +76,7 @@ export function readPlan(
 		return undefined
 	}
 
-	const opened = openContainedPlan(resolved, root)
+	const opened = openContainedPlan(resolved, root, options.requireOpenedPathVerification === true)
 
 	if (!opened) {
 		return undefined
@@ -116,10 +118,10 @@ function claudePlans(): PlanDoc[] {
 		.filter((doc): doc is PlanDoc => doc !== undefined)
 }
 
-function workspacePlans(cwd: string | undefined): PlanDoc[] {
+function workspacePlans(cwd: string | undefined, requireOpenedPathVerification: boolean): PlanDoc[] {
 	return workspacePlanRoots(cwd)
 		.flatMap((root) => markdownFilesIn(root).map((file) => ({ file, root })))
-		.map(({ file, root }) => describe(file, root))
+		.map(({ file, root }) => describe(file, root, requireOpenedPathVerification))
 		.filter((doc): doc is PlanDoc => doc !== undefined)
 }
 
@@ -172,8 +174,8 @@ function markdownFilesIn(root: PlanRoot): string[] {
 }
 
 /** Title = the first `#` heading, falling back to the file name. */
-function describe(file: string, root: PlanRoot): PlanDoc | undefined {
-	const opened = openContainedPlan(file, root)
+function describe(file: string, root: PlanRoot, requireOpenedPathVerification = false): PlanDoc | undefined {
+	const opened = openContainedPlan(file, root, requireOpenedPathVerification)
 
 	if (!opened) {
 		return undefined
@@ -204,7 +206,15 @@ function describeOpenPlan(file: string, source: PlanSource, fd: number, head: st
 	}
 }
 
-function openContainedPlan(file: string, root: PlanRoot): { fd: number } | undefined {
+function openContainedPlan(
+	file: string,
+	root: PlanRoot,
+	requireOpenedPathVerification: boolean,
+): { fd: number } | undefined {
+	if (requireOpenedPathVerification && process.platform !== "linux") {
+		return undefined
+	}
+
 	let realFile: string
 	try {
 		realFile = fs.realpathSync(file)
