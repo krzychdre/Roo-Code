@@ -32,6 +32,12 @@ export interface PlanAccessOptions {
 	allowClaudeGlobal?: boolean
 }
 
+interface PlanRoot {
+	path: string
+	realPath: string
+	source: PlanSource
+}
+
 export function listPlans(options: PlanAccessOptions & { query?: string; limit?: number } = {}): PlanDoc[] {
 	const docs: PlanDoc[] = [
 		...(options.allowClaudeGlobal === true ? claudePlans() : []),
@@ -61,27 +67,29 @@ export function readPlan(
 	options: PlanAccessOptions = {},
 ): { doc: PlanDoc; markdown: string } | undefined {
 	const resolved = path.resolve(file)
-	const workspaceRoots = planDirsIn(options.cwd)
-	const roots = [...(options.allowClaudeGlobal === true ? [claudePlansDir()] : []), ...workspaceRoots]
+	const roots = planRoots(options)
+	const root = roots.find((candidate) => isWithin(resolved, candidate.path))
 
-	if (!roots.some((root) => isInside(resolved, root))) {
+	if (!root) {
 		return undefined
 	}
 
-	let markdown: string
+	const opened = openContainedPlan(resolved, root)
+
+	if (!opened) {
+		return undefined
+	}
 
 	try {
-		markdown = fs.readFileSync(resolved, "utf8")
+		const markdown = fs.readFileSync(opened.fd, "utf8")
+		const doc = describeOpenPlan(resolved, root.source, opened.fd, markdown.slice(0, 4096))
+
+		return { doc, markdown }
 	} catch {
 		return undefined
+	} finally {
+		fs.closeSync(opened.fd)
 	}
-
-	const doc = describe(
-		resolved,
-		options.allowClaudeGlobal === true && isInside(resolved, claudePlansDir()) ? "claude-code" : "workspace",
-	)
-
-	return doc ? { doc, markdown } : undefined
 }
 
 export function renderPlanList(docs: PlanDoc[]): string {
@@ -101,79 +109,146 @@ export function renderPlanList(docs: PlanDoc[]): string {
 }
 
 function claudePlans(): PlanDoc[] {
-	return markdownFilesIn(claudePlansDir())
-		.map((file) => describe(file, "claude-code"))
+	const root = resolvePlanRoot(claudePlansDir(), "claude-code")
+
+	return (root ? markdownFilesIn(root) : [])
+		.map((file) => describe(file, root!))
 		.filter((doc): doc is PlanDoc => doc !== undefined)
 }
 
 function workspacePlans(cwd: string | undefined): PlanDoc[] {
-	return planDirsIn(cwd)
-		.flatMap((dir) => markdownFilesIn(dir))
-		.map((file) => describe(file, "workspace"))
+	return workspacePlanRoots(cwd)
+		.flatMap((root) => markdownFilesIn(root).map((file) => ({ file, root })))
+		.map(({ file, root }) => describe(file, root))
 		.filter((doc): doc is PlanDoc => doc !== undefined)
 }
 
-function planDirsIn(cwd: string | undefined): string[] {
+function planRoots(options: PlanAccessOptions): PlanRoot[] {
+	return [
+		...(options.allowClaudeGlobal === true
+			? [resolvePlanRoot(claudePlansDir(), "claude-code")].filter((root): root is PlanRoot => root !== undefined)
+			: []),
+		...workspacePlanRoots(options.cwd),
+	]
+}
+
+function workspacePlanRoots(cwd: string | undefined): PlanRoot[] {
 	if (!cwd) {
 		return []
 	}
 
-	return WORKSPACE_PLAN_DIRS.map((dir) => path.join(cwd, dir)).filter((dir) => {
-		try {
-			return fs.statSync(dir).isDirectory()
-		} catch {
-			return false
-		}
-	})
+	let workspaceRealPath: string
+
+	try {
+		workspaceRealPath = fs.realpathSync(cwd)
+	} catch {
+		return []
+	}
+
+	return WORKSPACE_PLAN_DIRS.map((dir) => resolvePlanRoot(path.join(cwd, dir), "workspace"))
+		.filter((root): root is PlanRoot => root !== undefined)
+		.filter((root) => isWithin(root.realPath, workspaceRealPath))
 }
 
-function markdownFilesIn(dir: string): string[] {
+function resolvePlanRoot(dir: string, source: PlanSource): PlanRoot | undefined {
+	try {
+		const realPath = fs.realpathSync(dir)
+
+		return fs.statSync(realPath).isDirectory() ? { path: path.resolve(dir), realPath, source } : undefined
+	} catch {
+		return undefined
+	}
+}
+
+function markdownFilesIn(root: PlanRoot): string[] {
 	try {
 		return fs
-			.readdirSync(dir, { withFileTypes: true })
-			.filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
-			.map((entry) => path.join(dir, entry.name))
+			.readdirSync(root.realPath, { withFileTypes: true })
+			.filter((entry) => entry.name.endsWith(".md") && (entry.isFile() || entry.isSymbolicLink()))
+			.map((entry) => path.join(root.path, entry.name))
 	} catch {
 		return []
 	}
 }
 
 /** Title = the first `#` heading, falling back to the file name. */
-function describe(file: string, source: PlanSource): PlanDoc | undefined {
-	let stat: fs.Stats
+function describe(file: string, root: PlanRoot): PlanDoc | undefined {
+	const opened = openContainedPlan(file, root)
 
-	try {
-		stat = fs.statSync(file)
-	} catch {
+	if (!opened) {
 		return undefined
 	}
 
+	try {
+		const stat = fs.fstatSync(opened.fd)
+		const buffer = Buffer.alloc(Math.min(4096, stat.size))
+		fs.readSync(opened.fd, buffer, 0, buffer.length, 0)
+
+		return describeOpenPlan(file, root.source, opened.fd, buffer.toString("utf8"))
+	} catch {
+		return undefined
+	} finally {
+		fs.closeSync(opened.fd)
+	}
+}
+
+function describeOpenPlan(file: string, source: PlanSource, fd: number, head: string): PlanDoc {
+	const stat = fs.fstatSync(fd)
+
 	return {
 		source,
-		title: firstHeading(file) ?? path.basename(file, ".md"),
+		title: firstHeading(head) ?? path.basename(file, ".md"),
 		path: file,
 		updatedAt: stat.mtimeMs,
 		sizeBytes: stat.size,
 	}
 }
 
-function firstHeading(file: string): string | undefined {
-	let head: string
-
+function openContainedPlan(file: string, root: PlanRoot): { fd: number } | undefined {
+	let realFile: string
 	try {
-		const fd = fs.openSync(file, "r")
-
-		try {
-			const buffer = Buffer.alloc(Math.min(4096, fs.fstatSync(fd).size))
-			fs.readSync(fd, buffer, 0, buffer.length, 0)
-			head = buffer.toString("utf8")
-		} finally {
-			fs.closeSync(fd)
-		}
+		realFile = fs.realpathSync(file)
 	} catch {
 		return undefined
 	}
 
+	if (!isWithin(realFile, root.realPath)) {
+		return undefined
+	}
+
+	let fd: number
+
+	try {
+		fd = fs.openSync(realFile, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
+	} catch {
+		return undefined
+	}
+
+	try {
+		if (!fs.fstatSync(fd).isFile()) {
+			fs.closeSync(fd)
+			return undefined
+		}
+
+		// Linux exposes the path of the object actually opened. Checking that path
+		// closes the realpath/open race without sacrificing safe in-root symlinks.
+		if (process.platform === "linux") {
+			const openedRealPath = fs.realpathSync(`/proc/self/fd/${fd}`)
+
+			if (!isWithin(openedRealPath, root.realPath)) {
+				fs.closeSync(fd)
+				return undefined
+			}
+		}
+
+		return { fd }
+	} catch {
+		fs.closeSync(fd)
+		return undefined
+	}
+}
+
+function firstHeading(head: string): string | undefined {
 	for (const line of head.split("\n")) {
 		const match = /^#\s+(.+?)\s*$/.exec(line)
 
@@ -185,7 +260,7 @@ function firstHeading(file: string): string | undefined {
 	return undefined
 }
 
-function isInside(candidate: string, root: string): boolean {
-	const normalizedRoot = path.resolve(root) + path.sep
-	return path.resolve(candidate).startsWith(normalizedRoot)
+function isWithin(candidate: string, root: string): boolean {
+	const relative = path.relative(path.resolve(root), path.resolve(candidate))
+	return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
 }

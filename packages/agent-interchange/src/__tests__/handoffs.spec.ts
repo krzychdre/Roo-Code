@@ -153,10 +153,12 @@ describe("handoff lifecycle", () => {
 
 describe("plans", () => {
 	let claudeDir: string
+	let outside: string
 	let workspace: string
 
 	beforeEach(() => {
 		claudeDir = makeTempDir("plans-cc")
+		outside = makeTempDir("plans-outside")
 		workspace = makeTempDir("plans-ws")
 		process.env.CLAUDE_CONFIG_DIR = claudeDir
 
@@ -171,6 +173,7 @@ describe("plans", () => {
 	afterEach(() => {
 		delete process.env.CLAUDE_CONFIG_DIR
 		fs.rmSync(claudeDir, { recursive: true, force: true })
+		fs.rmSync(outside, { recursive: true, force: true })
 		fs.rmSync(workspace, { recursive: true, force: true })
 	})
 
@@ -192,4 +195,36 @@ describe("plans", () => {
 		expect(readPlan(path.join(workspace, "secret.md"), { cwd: workspace })).toBeUndefined()
 		expect(readPlan("/etc/passwd", { cwd: workspace })).toBeUndefined()
 	})
+
+	it.runIf(process.platform === "linux")("rejects a plan directory symlink that escapes the workspace", () => {
+		fs.rmSync(path.join(workspace, "ai_plans"), { recursive: true })
+		fs.writeFileSync(path.join(outside, "escaped.md"), "# Escaped directory plan\n\nsecret", "utf8")
+		fs.symlinkSync(outside, path.join(workspace, "ai_plans"), "dir")
+
+		expect(listPlans({ cwd: workspace }).map((doc) => doc.title)).not.toContain("Escaped directory plan")
+		expect(readPlan(path.join(workspace, "ai_plans", "escaped.md"), { cwd: workspace })).toBeUndefined()
+	})
+
+	it.runIf(process.platform === "linux")("rejects a Markdown symlink that escapes a valid plan directory", () => {
+		const outsidePlan = path.join(outside, "escaped.md")
+		const linkedPlan = path.join(workspace, "ai_plans", "escaped.md")
+		fs.writeFileSync(outsidePlan, "# Escaped file plan\n\nsecret", "utf8")
+		fs.symlinkSync(outsidePlan, linkedPlan, "file")
+
+		expect(listPlans({ cwd: workspace }).map((doc) => doc.title)).not.toContain("Escaped file plan")
+		expect(readPlan(linkedPlan, { cwd: workspace })).toBeUndefined()
+	})
+
+	it.runIf(process.platform === "linux")(
+		"keeps a Markdown symlink whose opened target remains inside its plan root",
+		() => {
+			const target = path.join(workspace, "ai_plans", "target.md")
+			const linkedPlan = path.join(workspace, "ai_plans", "linked.md")
+			fs.writeFileSync(target, "# Safe linked plan\n\nbody", "utf8")
+			fs.symlinkSync(target, linkedPlan, "file")
+
+			expect(listPlans({ cwd: workspace }).map((doc) => doc.title)).toContain("Safe linked plan")
+			expect(readPlan(linkedPlan, { cwd: workspace })?.markdown).toContain("# Safe linked plan")
+		},
+	)
 })

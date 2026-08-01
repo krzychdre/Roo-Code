@@ -217,3 +217,16 @@ runtime used for this pass is recorded in the final report if it differs.
   and uninstall without touching live user configuration.
 - Manual configuration examples use the durable installed bundle location, not
   a build artifact inside a checkout.
+
+## 2026-08-01 final blocking findings
+
+1. Resolve the startup workspace and each workspace plan root to their real
+   paths. Reject plan-directory and Markdown-file symlinks whose opened targets
+   escape those roots; on Linux, verify the already-open descriptor through
+   `/proc/self/fd` to close the realpath/open race while retaining demonstrably
+   safe in-root symlinks. Apply the same file-root containment to privileged
+   global Claude plans without changing the explicit startup opt-in.
+2. Protect each handoff read-modify-atomic-replace mutation with a bounded,
+   token-owned interprocess lock. Recover only locks whose metadata timestamp is
+   stale, retain atomic temp-write/fsync/rename, and prove independent Node
+   writers preserve both updates plus stale-lock and error cleanup behavior.
