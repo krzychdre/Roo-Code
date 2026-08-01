@@ -248,6 +248,8 @@ The two remaining findings replace parts of the preceding blocking design:
    `/proc/self/fd/<fd>`; other platforms fail closed until an equivalent supported
    API exists. Tests cover symlink startup, post-start retarget, Linux containment,
    and the platform-gated fail-closed result.
+   _Superseded on 2026-08-02: the fail-closed branch is replaced by a portable
+   check, see below._
 2. **Immutable handoff update journal.** The stale pathname lock is removed; it
    cannot fence a paused owner that resumes after another process revokes it.
    Creation still atomically publishes the compatible `<id>.md` base document.
@@ -295,3 +297,19 @@ where the system reported something untrue. What changed:
 3. **Empty updates publish nothing.** An update carrying no status, note or
    pick-up detail wrote a revision that folded to nothing, so a retrying model
    grew the journal for free.
+4. **Plan access works on every platform.** Requiring `/proc/self/fd` meant
+   workspace-isolated plan listing and reading returned nothing at all on macOS
+   and Windows — and said `No plan documents found.`, which a caller cannot tell
+   from a workspace without plans. Verification now has a portable form: after
+   opening, prove no component between the plan root and the file is a symlink,
+   and prove the file at that path is the object the descriptor holds. A swap
+   during the open is caught either way — left in place it is seen as a link,
+   reverted it leaves the descriptor pointing at a different object. Linux keeps
+   `/proc/self/fd`, which settles it without walking anything. Where a filesystem
+   reports no inode identity the check degrades to the symlink walk, which still
+   refuses a planted link.
+
+    The fail-closed branch was also the one test the suite could never run: it was
+    gated to non-Linux, so on this machine and on CI it was asserted and skipped.
+    Both containment paths now run wherever the suite runs, via a `containment:
+"portable"` seam, and the suite has no skips left.

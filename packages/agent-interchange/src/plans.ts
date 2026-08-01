@@ -30,8 +30,13 @@ const WORKSPACE_PLAN_DIRS = ["ai_plans", "docs/plans", ".plans"]
 export interface PlanAccessOptions {
 	cwd?: string
 	allowClaudeGlobal?: boolean
-	/** Fail closed unless the path of the opened descriptor can be verified. */
+	/** Verify that the descriptor really is the in-root file the path named. */
 	requireOpenedPathVerification?: boolean
+	/**
+	 * Test seam: `portable` runs the cross-platform check even where `/proc` is
+	 * available, so the path macOS and Windows take is exercised on Linux too.
+	 */
+	containment?: "auto" | "portable"
 }
 
 interface PlanRoot {
@@ -43,7 +48,7 @@ interface PlanRoot {
 export function listPlans(options: PlanAccessOptions & { query?: string; limit?: number } = {}): PlanDoc[] {
 	const docs: PlanDoc[] = [
 		...(options.allowClaudeGlobal === true ? claudePlans() : []),
-		...workspacePlans(options.cwd, options.requireOpenedPathVerification === true),
+		...workspacePlans(options.cwd, options.requireOpenedPathVerification === true, options.containment),
 	]
 
 	const filtered = options.query
@@ -76,7 +81,12 @@ export function readPlan(
 		return undefined
 	}
 
-	const opened = openContainedPlan(resolved, root, options.requireOpenedPathVerification === true)
+	const opened = openContainedPlan(
+		resolved,
+		root,
+		options.requireOpenedPathVerification === true,
+		options.containment,
+	)
 
 	if (!opened) {
 		return undefined
@@ -118,10 +128,14 @@ function claudePlans(): PlanDoc[] {
 		.filter((doc): doc is PlanDoc => doc !== undefined)
 }
 
-function workspacePlans(cwd: string | undefined, requireOpenedPathVerification: boolean): PlanDoc[] {
+function workspacePlans(
+	cwd: string | undefined,
+	requireOpenedPathVerification: boolean,
+	containment: "auto" | "portable" = "auto",
+): PlanDoc[] {
 	return workspacePlanRoots(cwd)
 		.flatMap((root) => markdownFilesIn(root).map((file) => ({ file, root })))
-		.map(({ file, root }) => describe(file, root, requireOpenedPathVerification))
+		.map(({ file, root }) => describe(file, root, requireOpenedPathVerification, containment))
 		.filter((doc): doc is PlanDoc => doc !== undefined)
 }
 
@@ -174,8 +188,13 @@ function markdownFilesIn(root: PlanRoot): string[] {
 }
 
 /** Title = the first `#` heading, falling back to the file name. */
-function describe(file: string, root: PlanRoot, requireOpenedPathVerification = false): PlanDoc | undefined {
-	const opened = openContainedPlan(file, root, requireOpenedPathVerification)
+function describe(
+	file: string,
+	root: PlanRoot,
+	requireOpenedPathVerification = false,
+	containment: "auto" | "portable" = "auto",
+): PlanDoc | undefined {
+	const opened = openContainedPlan(file, root, requireOpenedPathVerification, containment)
 
 	if (!opened) {
 		return undefined
@@ -210,11 +229,8 @@ function openContainedPlan(
 	file: string,
 	root: PlanRoot,
 	requireOpenedPathVerification: boolean,
+	containment: "auto" | "portable" = "auto",
 ): { fd: number } | undefined {
-	if (requireOpenedPathVerification && process.platform !== "linux") {
-		return undefined
-	}
-
 	let realFile: string
 	try {
 		realFile = fs.realpathSync(file)
@@ -229,32 +245,99 @@ function openContainedPlan(
 	let fd: number
 
 	try {
-		fd = fs.openSync(realFile, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
+		// O_NOFOLLOW does not exist on Windows; the verification below is what
+		// carries the guarantee there.
+		fd = fs.openSync(realFile, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0))
 	} catch {
 		return undefined
 	}
 
 	try {
-		if (!fs.fstatSync(fd).isFile()) {
+		const opened = fs.fstatSync(fd)
+
+		if (!opened.isFile()) {
 			fs.closeSync(fd)
 			return undefined
 		}
 
-		// Linux exposes the path of the object actually opened. Checking that path
-		// closes the realpath/open race without sacrificing safe in-root symlinks.
-		if (process.platform === "linux") {
-			const openedRealPath = fs.realpathSync(`/proc/self/fd/${fd}`)
-
-			if (!isWithin(openedRealPath, root.realPath)) {
-				fs.closeSync(fd)
-				return undefined
-			}
+		if (requireOpenedPathVerification && !openedFileIsContained(fd, realFile, root, opened, containment)) {
+			fs.closeSync(fd)
+			return undefined
 		}
 
 		return { fd }
 	} catch {
 		fs.closeSync(fd)
 		return undefined
+	}
+}
+
+/**
+ * Is the descriptor we hold the in-root file the path named?
+ *
+ * `realpath` resolving inside the root is not enough on its own: a component
+ * could be swapped for a symlink between resolving it and opening it. This runs
+ * after the open, so a swap is caught either way — left in place it is seen as a
+ * link, and reverted it leaves the descriptor pointing at a different object
+ * than the path now holds.
+ */
+function openedFileIsContained(
+	fd: number,
+	realFile: string,
+	root: PlanRoot,
+	opened: fs.Stats,
+	containment: "auto" | "portable",
+): boolean {
+	if (containment === "auto" && process.platform === "linux") {
+		// Linux names the object behind the descriptor directly, which settles it
+		// without walking anything.
+		try {
+			return isWithin(fs.realpathSync(`/proc/self/fd/${fd}`), root.realPath)
+		} catch {
+			return false
+		}
+	}
+
+	return pathHasNoSymlink(realFile, root.realPath) && pathNamesOpenedFile(realFile, opened)
+}
+
+/** No component between the root and the file is a symlink, root included. */
+function pathHasNoSymlink(file: string, root: string): boolean {
+	let current = root
+
+	try {
+		if (fs.lstatSync(current).isSymbolicLink()) {
+			return false
+		}
+
+		for (const segment of path.relative(root, file).split(path.sep)) {
+			current = path.join(current, segment)
+
+			if (fs.lstatSync(current).isSymbolicLink()) {
+				return false
+			}
+		}
+	} catch {
+		return false
+	}
+
+	return true
+}
+
+/**
+ * The file at that path is the object we opened.
+ *
+ * Where a filesystem reports no inode identity — some Windows volumes leave
+ * `ino` and `dev` at zero — this degrades to the symlink walk above, which still
+ * refuses a planted link and leaves only the race window open.
+ */
+function pathNamesOpenedFile(file: string, opened: fs.Stats): boolean {
+	try {
+		const onPath = fs.lstatSync(file)
+
+		return onPath.ino === opened.ino && onPath.dev === opened.dev
+	} catch {
+		return false
 	}
 }
 

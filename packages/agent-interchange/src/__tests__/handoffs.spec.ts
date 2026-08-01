@@ -363,35 +363,69 @@ describe("plans", () => {
 		expect(readPlan("/etc/passwd", { cwd: workspace })).toBeUndefined()
 	})
 
-	it.runIf(process.platform === "linux")("rejects a plan directory symlink that escapes the workspace", () => {
-		fs.rmSync(path.join(workspace, "ai_plans"), { recursive: true })
-		fs.writeFileSync(path.join(outside, "escaped.md"), "# Escaped directory plan\n\nsecret", "utf8")
-		fs.symlinkSync(outside, path.join(workspace, "ai_plans"), "dir")
+	// Every containment check the code can take, so the path macOS and Windows use
+	// is covered wherever the suite runs rather than only on the platform it
+	// cannot reach. `portable` skips /proc even where /proc exists.
+	describe.each([
+		{ label: "auto", containment: undefined },
+		{ label: "portable", containment: "portable" as const },
+	])("containment: $label", ({ containment }) => {
+		// Built per test: `workspace` is assigned in beforeEach, so capturing it at
+		// registration time would silently pass an undefined workspace.
+		const isolated = () => ({ cwd: workspace, requireOpenedPathVerification: true, containment })
 
-		expect(listPlans({ cwd: workspace }).map((doc) => doc.title)).not.toContain("Escaped directory plan")
-		expect(readPlan(path.join(workspace, "ai_plans", "escaped.md"), { cwd: workspace })).toBeUndefined()
+		it("lists and reads the plans the workspace actually contains", () => {
+			expect(listPlans(isolated()).map((doc) => doc.title)).toEqual(["The thing"])
+			expect(readPlan(path.join(workspace, "ai_plans", "2026-07-31_thing.md"), isolated())?.markdown).toContain(
+				"# The thing",
+			)
+		})
+
+		it.runIf(process.platform !== "win32")(
+			"keeps a plan directory symlinked elsewhere inside the workspace",
+			() => {
+				fs.rmSync(path.join(workspace, "ai_plans"), { recursive: true })
+				fs.mkdirSync(path.join(workspace, "real_plans"))
+				fs.writeFileSync(path.join(workspace, "real_plans", "moved.md"), "# Relocated plan\n\nbody", "utf8")
+				fs.symlinkSync(path.join(workspace, "real_plans"), path.join(workspace, "ai_plans"), "dir")
+
+				expect(listPlans(isolated()).map((doc) => doc.title)).toContain("Relocated plan")
+				expect(readPlan(path.join(workspace, "ai_plans", "moved.md"), isolated())?.markdown).toContain(
+					"# Relocated plan",
+				)
+			},
+		)
+
+		it.runIf(process.platform !== "win32")("rejects a plan directory symlink that escapes the workspace", () => {
+			fs.rmSync(path.join(workspace, "ai_plans"), { recursive: true })
+			fs.writeFileSync(path.join(outside, "escaped.md"), "# Escaped directory plan\n\nsecret", "utf8")
+			fs.symlinkSync(outside, path.join(workspace, "ai_plans"), "dir")
+
+			expect(listPlans(isolated()).map((doc) => doc.title)).not.toContain("Escaped directory plan")
+			expect(readPlan(path.join(workspace, "ai_plans", "escaped.md"), isolated())).toBeUndefined()
+		})
+
+		it.runIf(process.platform !== "win32")("rejects a Markdown symlink that escapes a valid plan directory", () => {
+			const outsidePlan = path.join(outside, "escaped.md")
+			const linkedPlan = path.join(workspace, "ai_plans", "escaped.md")
+			fs.writeFileSync(outsidePlan, "# Escaped file plan\n\nsecret", "utf8")
+			fs.symlinkSync(outsidePlan, linkedPlan, "file")
+
+			expect(listPlans(isolated()).map((doc) => doc.title)).not.toContain("Escaped file plan")
+			expect(readPlan(linkedPlan, isolated())).toBeUndefined()
+		})
+
+		it.runIf(process.platform !== "win32")(
+			"keeps a Markdown symlink whose opened target remains inside its plan root",
+			() => {
+				const target = path.join(workspace, "ai_plans", "target.md")
+				const linkedPlan = path.join(workspace, "ai_plans", "linked.md")
+				fs.writeFileSync(target, "# Safe linked plan\n\nbody", "utf8")
+				fs.symlinkSync(target, linkedPlan, "file")
+
+				expect(listPlans(isolated()).map((doc) => doc.title)).toContain("Safe linked plan")
+				expect(readPlan(linkedPlan, isolated())?.markdown).toContain("# Safe linked plan")
+			},
+		)
 	})
-
-	it.runIf(process.platform === "linux")("rejects a Markdown symlink that escapes a valid plan directory", () => {
-		const outsidePlan = path.join(outside, "escaped.md")
-		const linkedPlan = path.join(workspace, "ai_plans", "escaped.md")
-		fs.writeFileSync(outsidePlan, "# Escaped file plan\n\nsecret", "utf8")
-		fs.symlinkSync(outsidePlan, linkedPlan, "file")
-
-		expect(listPlans({ cwd: workspace }).map((doc) => doc.title)).not.toContain("Escaped file plan")
-		expect(readPlan(linkedPlan, { cwd: workspace })).toBeUndefined()
-	})
-
-	it.runIf(process.platform === "linux")(
-		"keeps a Markdown symlink whose opened target remains inside its plan root",
-		() => {
-			const target = path.join(workspace, "ai_plans", "target.md")
-			const linkedPlan = path.join(workspace, "ai_plans", "linked.md")
-			fs.writeFileSync(target, "# Safe linked plan\n\nbody", "utf8")
-			fs.symlinkSync(target, linkedPlan, "file")
-
-			expect(listPlans({ cwd: workspace }).map((doc) => doc.title)).toContain("Safe linked plan")
-			expect(readPlan(linkedPlan, { cwd: workspace })?.markdown).toContain("# Safe linked plan")
-		},
-	)
 })

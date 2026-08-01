@@ -308,36 +308,30 @@ describe("agent-interchange MCP server", () => {
 		await close()
 	})
 
-	it.runIf(process.platform === "linux")(
-		"lists only workspace-contained plans in ordinary workspace-isolated mode",
-		async () => {
-			const { client, close } = await connect(workspaceDir)
+	// Workspace-isolated plan access is the same feature on every platform: the
+	// containment check differs, what the tools serve does not.
+	it("lists only workspace-contained plans in ordinary workspace-isolated mode", async () => {
+		const { client, close } = await connect(workspaceDir)
 
-			const output = textOf(await client.callTool({ name: "list_agent_plans", arguments: {} }))
+		const output = textOf(await client.callTool({ name: "list_agent_plans", arguments: {} }))
 
-			expect(output).toContain("Workspace plan")
-			expect(output).not.toContain("Private global plan")
-			expect(output).not.toContain(path.join(claudeDir, "plans"))
+		expect(output).toContain("Workspace plan")
+		expect(output).not.toContain("Private global plan")
+		expect(output).not.toContain(path.join(claudeDir, "plans"))
 
-			await close()
-		},
-	)
+		await close()
+	})
 
-	it.runIf(process.platform !== "linux")(
-		"fails closed for isolated plan listing and reading without opened-descriptor path verification",
-		async () => {
-			const { client, close } = await connect(workspaceDir)
-			const plan = path.join(workspaceDir, "ai_plans", "workspace.md")
+	it("reads a workspace-contained plan in ordinary workspace-isolated mode", async () => {
+		const { client, close } = await connect(workspaceDir)
+		const plan = path.join(workspaceDir, "ai_plans", "workspace.md")
 
-			expect(textOf(await client.callTool({ name: "list_agent_plans", arguments: {} }))).toBe(
-				"No plan documents found.",
-			)
-			expect(textOf(await client.callTool({ name: "read_agent_plan", arguments: { path: plan } }))).toContain(
-				"not a plan document this tool may read",
-			)
-			await close()
-		},
-	)
+		expect(textOf(await client.callTool({ name: "read_agent_plan", arguments: { path: plan } }))).toContain(
+			"Workspace plan",
+		)
+
+		await close()
+	})
 
 	it("rejects direct known-path and known-name attempts for Claude-global plans by default", async () => {
 		const { client, close } = await connect(workspaceDir)
