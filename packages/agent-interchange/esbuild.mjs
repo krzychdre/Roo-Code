@@ -6,9 +6,7 @@ import * as esbuild from "esbuild"
  * MCP settings. Bundling keeps that command free of workspace resolution and
  * of a build step in the consumer.
  */
-await esbuild.build({
-	entryPoints: ["src/mcp/index.ts"],
-	outfile: "dist/mcp-server.mjs",
+const shared = {
 	bundle: true,
 	platform: "node",
 	target: "node20",
@@ -23,4 +21,9 @@ await esbuild.build({
 		].join("\n"),
 	},
 	logLevel: "info",
-})
+}
+
+await Promise.all([
+	esbuild.build({ ...shared, entryPoints: ["src/mcp/index.ts"], outfile: "dist/mcp-server.mjs" }),
+	esbuild.build({ ...shared, entryPoints: ["src/install/index.ts"], outfile: "dist/install.mjs" }),
+])

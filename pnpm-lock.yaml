@@ -344,6 +344,12 @@ importers:
       '@roo-code/types':
         specifier: workspace:^
         version: link:../types
+      json-stream-stringify:
+        specifier: ^3.1.6
+        version: 3.1.6
+      proper-lockfile:
+        specifier: ^4.1.2
+        version: 4.1.2
       zod:
         specifier: 3.25.76
         version: 3.25.76

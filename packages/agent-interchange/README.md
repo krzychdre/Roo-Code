@@ -20,16 +20,33 @@ Nothing is ever written into either agent's own store.
 
 ## The MCP server
 
+Build and install once from the package directory. The installer copies the MCP
+bundle to durable user data; registrations never point at this checkout:
+
 ```bash
-pnpm --filter @roo-code/agent-interchange build   # produces dist/mcp-server.mjs
+pnpm install:mcp -- --tumble-config /absolute/globalStorage/settings/mcp_settings.json
+```
+
+Find Tumble's exact global config with **MCP Servers → Edit Global MCP**. The
+installer requires that existing path rather than guessing among VS Code,
+VSCodium, remote and custom-storage profiles. It atomically merges only the
+`agent-interchange` entry into both that file and `~/.claude.json`, preserving
+all other settings and servers. Override the latter with `--claude-config` when
+needed.
+
+Run the same install command after updates; it atomically replaces the durable
+bundle and refreshes both registrations. To uninstall:
+
+```bash
+pnpm uninstall:mcp -- --tumble-config /absolute/globalStorage/settings/mcp_settings.json
 ```
 
 ### Claude Code
 
-Register it once, for every project:
+The installer registers it once, for every project. Manual equivalent:
 
 ```bash
-claude mcp add --scope user agent-interchange -- node /absolute/path/to/Roo-Code/packages/agent-interchange/dist/mcp-server.mjs
+claude mcp add --scope user agent-interchange -- node /absolute/durable/user-data/agent-interchange/mcp-server.mjs
 ```
 
 The path has to be absolute. A project-scoped `.mcp.json` with a relative path

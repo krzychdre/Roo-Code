@@ -5,10 +5,13 @@
 	"type": "module",
 	"exports": "./src/index.ts",
 	"bin": {
-		"agent-interchange-mcp": "./dist/mcp-server.mjs"
+		"agent-interchange-mcp": "./dist/mcp-server.mjs",
+		"agent-interchange-install": "./dist/install.mjs"
 	},
 	"scripts": {
 		"build": "node esbuild.mjs",
+		"install:mcp": "pnpm build && node dist/install.mjs install",
+		"uninstall:mcp": "node dist/install.mjs uninstall",
 		"lint": "eslint src --ext=ts --max-warnings=0",
 		"check-types": "tsc --noEmit",
 		"test": "vitest run",
@@ -17,6 +20,8 @@
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "1.26.0",
 		"@roo-code/types": "workspace:^",
+		"json-stream-stringify": "^3.1.6",
+		"proper-lockfile": "^4.1.2",
 		"zod": "3.25.76"
 	},
 	"devDependencies": {
