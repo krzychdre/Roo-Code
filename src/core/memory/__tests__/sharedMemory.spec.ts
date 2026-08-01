@@ -81,7 +81,7 @@ describe("memory shared with Claude Code", () => {
 		expect(isAutoMemPath(path.join(GLOBAL_STORAGE, "memory", "MEMORY.md"), CWD)).toBe(false)
 	})
 
-	it("warns when the shared directory belongs to a workspace that slugs the same", () => {
+	it("falls back to isolated memory when the shared directory belongs to a colliding workspace", () => {
 		const warn = vi.spyOn(logger, "warn").mockImplementation(() => {})
 		const projectDir = path.join(claudeDir, "projects", "-home-user-my-project")
 		fs.mkdirSync(projectDir, { recursive: true })
@@ -93,10 +93,34 @@ describe("memory shared with Claude Code", () => {
 		)
 
 		initMemoryPaths(GLOBAL_STORAGE, () => ({ autoMemoryShareWithClaudeCode: true }))
-		getAutoMemPath(CWD)
+		const resolved = getAutoMemPath(CWD)
 
 		expect(warn).toHaveBeenCalledTimes(1)
 		expect(warn.mock.calls[0]![0]).toContain("/home/user/my_project")
+		expect(resolved).toBe(
+			path.join(GLOBAL_STORAGE, "memory", "projects", "_home_user_my-project", "memory") + path.sep,
+		)
+		expect(resolved).not.toContain(claudeDir)
+	})
+
+	it("never maps two proven-colliding workspaces to the same memory directory", () => {
+		const first = "/home/user/my_project"
+		const second = "/home/user/my-project"
+		const projectDir = path.join(claudeDir, "projects", "-home-user-my-project")
+		fs.mkdirSync(projectDir, { recursive: true })
+		fs.writeFileSync(
+			path.join(projectDir, "s1.jsonl"),
+			JSON.stringify({ type: "user", cwd: first, sessionId: "s1" }) + "\n",
+			"utf8",
+		)
+
+		initMemoryPaths(GLOBAL_STORAGE, () => ({ autoMemoryShareWithClaudeCode: true }))
+		const firstPath = getAutoMemPath(first)
+		const secondPath = getAutoMemPath(second)
+
+		expect(firstPath).toContain(claudeDir)
+		expect(secondPath).toContain(GLOBAL_STORAGE)
+		expect(firstPath).not.toBe(secondPath)
 	})
 
 	it("stays quiet when the directory belongs to this workspace", () => {

@@ -69,7 +69,7 @@ export function initMemoryPaths(globalStoragePath: string, getConfig: () => Memo
 export function resetMemoryPaths(): void {
 	_state = undefined
 	getAutoMemPathCache.clear()
-	collisionChecked.clear()
+	collisionResults.clear()
 }
 
 function requireState(): MemoryPathsState {
@@ -164,7 +164,9 @@ function memorySegmentsFor(cwd: string): [string, string, string] {
 	if (isSharedWithClaudeCode()) {
 		const base = claudeConfigDir()
 		const segment = claudeSlug(cwd)
-		warnOnSlugCollision(cwd, path.join(base, "projects", segment))
+		if (hasSlugCollision(cwd, path.join(base, "projects", segment))) {
+			return [getMemoryBaseDir(), "projects", sanitizeCwd(cwd)]
+		}
 		return [base, "projects", segment]
 	}
 
@@ -184,12 +186,13 @@ function isSharedWithClaudeCode(): boolean {
 /**
  * Claude Code's slug is lossy — `k3s_2025` and `k3s-2025` produce the same
  * directory name — so two workspaces can land on one shared memory dir. We
- * cannot prevent it (the directory is Claude Code's to name), but we can say so
- * once, when the directory demonstrably belongs to a different workspace.
+ * A proven mismatch is never safe to share. Fall back to Tumble's isolated
+ * layout and warn once; an absent/unreadable store is not collision evidence.
  */
-function warnOnSlugCollision(cwd: string, projectDir: string): void {
-	if (collisionChecked.has(cwd)) return
-	collisionChecked.add(cwd)
+function hasSlugCollision(cwd: string, projectDir: string): boolean {
+	const cacheKey = `${path.resolve(cwd)}\u0000${path.resolve(projectDir)}`
+	const cached = collisionResults.get(cacheKey)
+	if (cached !== undefined) return cached
 
 	try {
 		const recorded = claudeProjectCwd(projectDir)
@@ -197,17 +200,22 @@ function warnOnSlugCollision(cwd: string, projectDir: string): void {
 		if (recorded && path.resolve(recorded) !== path.resolve(cwd)) {
 			logger.warn(
 				`[memory] shared memory dir ${projectDir} was created by Claude Code for ${recorded}, ` +
-					`not ${cwd} — their paths collapse to the same directory name, so both workspaces ` +
-					`share one MEMORY.md. Turn off autoMemoryShareWithClaudeCode, or set autoMemoryDirectory, ` +
-					`if that is not what you want.`,
+					`not ${cwd} — their paths collapse to the same directory name. Tumble Code will use its ` +
+					`isolated memory directory for this workspace. Rename one workspace to restore sharing, ` +
+					`or set autoMemoryDirectory to choose an explicit isolated location.`,
 			)
+			collisionResults.set(cacheKey, true)
+			return true
 		}
 	} catch {
 		// A store we cannot read is not evidence of a collision.
 	}
+
+	collisionResults.set(cacheKey, false)
+	return false
 }
 
-const collisionChecked = new Set<string>()
+const collisionResults = new Map<string, boolean>()
 
 /** Path to the `MEMORY.md` index for a given cwd. */
 export function getAutoMemEntrypoint(cwd: string): string {

@@ -156,8 +156,8 @@ agents read and write one `MEMORY.md` set. Guarded by the existing
 ## Risks
 
 - **Slug collisions** (`k3s_2025` vs `k3s-2025`) — mitigated by verifying `cwd`
-  from the records after resolving a directory; shared memory logs a warning when
-  two distinct cwds map to one slug.
+  from the records after resolving a directory; a proven mismatch logs a warning
+  and falls back to Tumble's isolated memory path.
 - **Large transcripts** — the 8.9 MB session in this project's directory must not
   be loaded whole into an agent's context. Readers stream JSONL line by line and
   `read_session` is paginated with an explicit total count.
