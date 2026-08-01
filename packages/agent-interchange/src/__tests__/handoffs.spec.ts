@@ -38,8 +38,8 @@ describe("handoff lifecycle", () => {
 		fs.rmSync(dir, { recursive: true, force: true })
 	})
 
-	it("writes a document that carries the briefing and the next steps", () => {
-		const handoff = createHandoff({
+	it("writes a document that carries the briefing and the next steps", async () => {
+		const handoff = await createHandoff({
 			session: source,
 			to: "claude-code",
 			nextSteps: ["Run the integration suite", "Open the PR"],
@@ -55,8 +55,8 @@ describe("handoff lifecycle", () => {
 		expect(handoff.markdown.startsWith("---\n")).toBe(true)
 	})
 
-	it("round-trips frontmatter, including values that need quoting", () => {
-		const created = createHandoff({ session: source, to: "claude-code" })
+	it("round-trips frontmatter, including values that need quoting", async () => {
+		const created = await createHandoff({ session: source, to: "claude-code" })
 		const read = readHandoff(created.id)
 
 		expect(read).toMatchObject({
@@ -71,10 +71,10 @@ describe("handoff lifecycle", () => {
 		})
 	})
 
-	it("records the pick-up and appends to the log", () => {
-		const created = createHandoff({ session: source, to: "claude-code" })
+	it("records the pick-up and appends to the log", async () => {
+		const created = await createHandoff({ session: source, to: "claude-code" })
 
-		const updated = updateHandoff(created.id, {
+		const updated = await updateHandoff(created.id, {
 			status: "picked-up",
 			pickedUpBy: "claude-code",
 			pickedUpSessionId: "sess-1",
@@ -85,7 +85,7 @@ describe("handoff lifecycle", () => {
 		expect(updated!.body).toContain("picked up by Claude Code")
 		expect(updated!.updated >= created.updated).toBe(true)
 
-		const done = updateHandoff(created.id, { status: "done" })
+		const done = await updateHandoff(created.id, { status: "done" })
 
 		expect(done!.status).toBe("done")
 		// Both log entries survive the rewrite.
@@ -93,9 +93,9 @@ describe("handoff lifecycle", () => {
 		expect(done!.body).toContain("status → done")
 	})
 
-	it("filters listings by workspace, status and recipient", () => {
-		const mine = createHandoff({ session: source, to: "claude-code" })
-		createHandoff({ session: { ...source, cwd: "/tmp/elsewhere" }, to: "claude-code" })
+	it("filters listings by workspace, status and recipient", async () => {
+		const mine = await createHandoff({ session: source, to: "claude-code" })
+		await createHandoff({ session: { ...source, cwd: "/tmp/elsewhere" }, to: "claude-code" })
 
 		expect(listHandoffs({ cwd: "/tmp/proj" }).map((entry) => entry.id)).toEqual([mine.id])
 		expect(listHandoffs({ status: "open" })).toHaveLength(2)
@@ -103,8 +103,8 @@ describe("handoff lifecycle", () => {
 		expect(listHandoffs({ to: "tumble-code" })).toHaveLength(0)
 	})
 
-	it("renders a listing without breaking the table on a piped title", () => {
-		createHandoff({ session: source, to: "claude-code" })
+	it("renders a listing without breaking the table on a piped title", async () => {
+		await createHandoff({ session: source, to: "claude-code" })
 
 		const table = renderHandoffList(listHandoffs())
 
@@ -112,13 +112,42 @@ describe("handoff lifecycle", () => {
 		expect(table).toContain("Migrate the checker \\| with a pipe")
 	})
 
-	it("refuses an id that is not a plain file name", () => {
+	it("refuses an id that is not a plain file name", async () => {
 		expect(readHandoff("../../etc/passwd")).toBeUndefined()
-		expect(updateHandoff("nope", { status: "done" })).toBeUndefined()
+		await expect(updateHandoff("nope", { status: "done" })).resolves.toBeUndefined()
 	})
 
 	it("returns nothing when no handoff has ever been written", () => {
 		expect(listHandoffs()).toEqual([])
+	})
+
+	it("serializes competing updates so no status or log change is lost", async () => {
+		const created = await createHandoff({ session: source, to: "claude-code" })
+
+		await Promise.all([
+			updateHandoff(created.id, { status: "picked-up", note: "first concurrent note" }),
+			updateHandoff(created.id, { status: "done", note: "second concurrent note" }),
+		])
+
+		const final = readHandoff(created.id)!
+		expect(final.status).toBe("done")
+		expect(final.body).toContain("first concurrent note")
+		expect(final.body).toContain("second concurrent note")
+	})
+
+	it("keeps the previous complete file when atomic replacement fails", async () => {
+		const created = await createHandoff({ session: source, to: "claude-code" })
+		const before = fs.readFileSync(created.path, "utf8")
+
+		await expect(
+			updateHandoff(
+				created.id,
+				{ status: "done", note: "must not partially appear" },
+				{ rename: async () => Promise.reject(new Error("simulated rename failure")) },
+			),
+		).rejects.toThrow("simulated rename failure")
+		expect(fs.readFileSync(created.path, "utf8")).toBe(before)
+		expect(fs.readdirSync(path.dirname(created.path)).filter((name) => name.endsWith(".tmp"))).toEqual([])
 	})
 })
 

@@ -255,7 +255,7 @@ export function createInterchangeServer(
 				return text(`No session with id \`${session_id}\`.`)
 			}
 
-			const handoff = createHandoff({ session, to: to as AgentKind, nextSteps: next_steps, notes })
+			const handoff = await createHandoff({ session, to: to as AgentKind, nextSteps: next_steps, notes })
 
 			return text(
 				[
@@ -339,7 +339,7 @@ export function createInterchangeServer(
 			const existing = readHandoff(handoff_id)
 			const handoff =
 				existing && sessionInWorkspace(existing, allowedCwd)
-					? updateHandoff(handoff_id, {
+					? await updateHandoff(handoff_id, {
 							status: status as HandoffStatus | undefined,
 							note,
 							pickedUpBy: picked_up_by as AgentKind | undefined,

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 import * as fs from "node:fs"
+import * as fsPromises from "node:fs/promises"
 import * as path from "node:path"
 
 import { renderBriefing } from "./briefing.js"
@@ -59,6 +60,12 @@ export interface UpdateHandoffOptions {
 	note?: string
 }
 
+interface HandoffIo {
+	rename(source: string, destination: string): Promise<void>
+}
+
+const defaultIo: HandoffIo = { rename: fsPromises.rename }
+
 const FRONTMATTER_KEYS: Array<keyof HandoffMeta> = [
 	"id",
 	"title",
@@ -74,13 +81,11 @@ const FRONTMATTER_KEYS: Array<keyof HandoffMeta> = [
 	"pickedUpSessionId",
 ]
 
-export function createHandoff(options: CreateHandoffOptions): Handoff {
+export async function createHandoff(options: CreateHandoffOptions): Promise<Handoff> {
 	const { session, to, nextSteps = [], notes } = options
 	const now = new Date().toISOString()
 	const id = handoffId(session.agent, to, now)
 	const dir = handoffDir()
-
-	fs.mkdirSync(dir, { recursive: true })
 
 	const meta: HandoffMeta = {
 		id,
@@ -118,7 +123,7 @@ export function createHandoff(options: CreateHandoffOptions): Handoff {
 
 	const markdown = `${serializeFrontmatter(meta)}\n${body}`
 
-	fs.writeFileSync(meta.path, markdown, "utf8")
+	await atomicWrite(meta.path, markdown)
 
 	return { ...meta, markdown, body }
 }
@@ -152,34 +157,42 @@ export function readHandoff(id: string): Handoff | undefined {
 	return readHandoffFile(path.join(handoffDir(), `${id}.md`))
 }
 
-export function updateHandoff(id: string, update: UpdateHandoffOptions): Handoff | undefined {
-	const existing = readHandoff(id)
+export async function updateHandoff(
+	id: string,
+	update: UpdateHandoffOptions,
+	io: HandoffIo = defaultIo,
+): Promise<Handoff | undefined> {
+	if (!/^[A-Za-z0-9._-]+$/.test(id)) return undefined
+	const file = path.join(handoffDir(), `${id}.md`)
+	return serializeWrite(file, async () => {
+		const existing = readHandoffFile(file)
 
-	if (!existing) {
-		return undefined
-	}
+		if (!existing) {
+			return undefined
+		}
 
-	const now = new Date().toISOString()
-	const meta: HandoffMeta = {
-		...existing,
-		status: update.status ?? existing.status,
-		pickedUpBy: update.pickedUpBy ?? existing.pickedUpBy,
-		pickedUpSessionId: update.pickedUpSessionId ?? existing.pickedUpSessionId,
-		updated: now,
-	}
+		const now = new Date().toISOString()
+		const meta: HandoffMeta = {
+			...existing,
+			status: update.status ?? existing.status,
+			pickedUpBy: update.pickedUpBy ?? existing.pickedUpBy,
+			pickedUpSessionId: update.pickedUpSessionId ?? existing.pickedUpSessionId,
+			updated: now,
+		}
 
-	const logEntry = update.note
-		? `- ${now} — ${update.note}`
-		: update.status
-			? `- ${now} — status → ${update.status}`
-			: undefined
+		const logEntry = update.note
+			? `- ${now} — ${update.note}`
+			: update.status
+				? `- ${now} — status → ${update.status}`
+				: undefined
 
-	const body = logEntry ? appendToLog(existing.body, logEntry) : existing.body
-	const markdown = `${serializeFrontmatter(meta)}\n${body}`
+		const body = logEntry ? appendToLog(existing.body, logEntry) : existing.body
+		const markdown = `${serializeFrontmatter(meta)}\n${body}`
 
-	fs.writeFileSync(meta.path, markdown, "utf8")
+		await atomicWrite(meta.path, markdown, io)
 
-	return { ...meta, markdown, body }
+		return { ...meta, markdown, body }
+	})
 }
 
 /** One-line-per-handoff listing for tool output. */
@@ -347,4 +360,33 @@ function samePathish(a: string | undefined, b: string | undefined): boolean {
 	}
 
 	return path.resolve(a) === path.resolve(b)
+}
+
+const writeQueues = new Map<string, Promise<unknown>>()
+
+function serializeWrite<T>(file: string, operation: () => Promise<T>): Promise<T> {
+	const previous = writeQueues.get(file) ?? Promise.resolve()
+	const current = previous.catch(() => undefined).then(operation)
+	writeQueues.set(file, current)
+	return current.finally(() => {
+		if (writeQueues.get(file) === current) writeQueues.delete(file)
+	})
+}
+
+async function atomicWrite(file: string, content: string, io: HandoffIo = defaultIo): Promise<void> {
+	await fsPromises.mkdir(path.dirname(file), { recursive: true })
+	const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.${randomUUID()}.tmp`)
+	let handle: fsPromises.FileHandle | undefined
+
+	try {
+		handle = await fsPromises.open(temporary, "wx", 0o600)
+		await handle.writeFile(content, "utf8")
+		await handle.sync()
+		await handle.close()
+		handle = undefined
+		await io.rename(temporary, file)
+	} finally {
+		await handle?.close().catch(() => undefined)
+		await fsPromises.rm(temporary, { force: true }).catch(() => undefined)
+	}
 }

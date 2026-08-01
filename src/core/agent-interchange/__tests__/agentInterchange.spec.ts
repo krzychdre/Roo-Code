@@ -164,7 +164,7 @@ describe("agent interchange commands", () => {
 
 		const { createHandoff, readTumbleSession } = await import("@roo-code/agent-interchange")
 		const session = await readTumbleSession("tc-1", { storageRoots: [storageDir] })
-		const handoff = createHandoff({ session: session!, to: "tumble-code", nextSteps: ["Run the suite"] })
+		const handoff = await createHandoff({ session: session!, to: "tumble-code", nextSteps: ["Run the suite"] })
 
 		showQuickPick.mockImplementation(async (items: Array<{ source: string }>) =>
 			items.find((item) => item.source === "handoff"),

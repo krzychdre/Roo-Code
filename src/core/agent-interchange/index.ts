@@ -134,7 +134,7 @@ export async function pickUpAgentSession(context: vscode.ExtensionContext): Prom
 	const task = await provider.createTask(prepared.text)
 
 	if (prepared.handoff) {
-		updateHandoff(prepared.handoff.id, {
+		await updateHandoff(prepared.handoff.id, {
 			status: "picked-up",
 			pickedUpBy: "tumble-code",
 			pickedUpSessionId: task.taskId,
@@ -176,7 +176,7 @@ export async function handOffCurrentTask(context: vscode.ExtensionContext): Prom
 		return
 	}
 
-	const handoff = createHandoff({ session, to: "claude-code", nextSteps })
+	const handoff = await createHandoff({ session, to: "claude-code", nextSteps })
 
 	const open = t("common:agentInterchange.open_handoff")
 	const choice = await vscode.window.showInformationMessage(
