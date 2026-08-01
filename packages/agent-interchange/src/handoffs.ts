@@ -4,7 +4,7 @@ import * as fsPromises from "node:fs/promises"
 import * as path from "node:path"
 
 import { renderBriefing } from "./briefing.js"
-import { handoffDir } from "./locate.js"
+import { handoffDir, samePath } from "./locate.js"
 import { oneLine } from "./normalize.js"
 import { AGENT_LABELS, type AgentKind, type Session } from "./types.js"
 
@@ -186,7 +186,7 @@ export function listHandoffs(filter: { cwd?: string; status?: HandoffStatus; to?
 	const handoffs = files
 		.map((name) => readHandoffFile(path.join(dir, name)))
 		.filter((handoff): handoff is Handoff => handoff !== undefined)
-		.filter((handoff) => (filter.cwd ? samePathish(handoff.cwd, filter.cwd) : true))
+		.filter((handoff) => (filter.cwd ? samePath(handoff.cwd, filter.cwd) : true))
 		.filter((handoff) => (filter.status ? handoff.status === filter.status : true))
 		.filter((handoff) => (filter.to ? handoff.to === filter.to : true))
 		.sort((a, b) => b.updated.localeCompare(a.updated))
@@ -598,14 +598,6 @@ function unquote(value: string): string {
 	}
 
 	return value
-}
-
-function samePathish(a: string | undefined, b: string | undefined): boolean {
-	if (!a || !b) {
-		return false
-	}
-
-	return path.resolve(a) === path.resolve(b)
 }
 
 async function atomicWrite(file: string, content: string, io: HandoffIo = defaultIo): Promise<void> {

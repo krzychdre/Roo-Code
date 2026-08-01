@@ -273,43 +273,55 @@ never had a review pass of their own — the last one replaced the lock design t
 previous review rejected. Reviewing them found no security hole, and five defects
 where the system reported something untrue. What changed:
 
-1. **A handoff can move backwards again.** Resolving statuses by the monotone
-   order `open < picked-up < abandoned < done` also applied to _sequential_
-   updates, so a task marked done by mistake could never be reopened, and
-   `update_handoff` answered `is now done` to a caller that asked for `open`.
-   Every mutable field is now a last-writer-wins register: the operation with the
-   highest revision to name a field wins, whatever order operations arrive in.
-   The total order over revisions already made that deterministic for competing
-   writers, so ranking statuses bought nothing and cost reversibility.
-2. **The base document is folded, not left stale.** Nothing rewrote `<id>.md`
-   after creation, so its frontmatter said `status: open` for finished work and
-   no log entry ever reached the file people actually open. Each update now folds
-   the journal into the document and deletes the operations it has absorbed.
-   Correctness across compaction is why the registers are stored in the
-   frontmatter (`statusRevision`, `pickedUpByRevision`,
-   `pickedUpSessionIdRevision`) next to `foldedRevisions`: an operation whose
-   `rename` lands after a compaction is _older_ than what the document carries,
-   and applying it on top would let a stalled writer win by being late — a
-   regression the existing multiprocess test caught during this work. Deletion is
-   guarded by the fold the document on disk actually claims, so a competing
-   compaction cannot delete an operation it never absorbed. A reader that sees
-   the base replaced under it restarts.
-3. **Empty updates publish nothing.** An update carrying no status, note or
-   pick-up detail wrote a revision that folded to nothing, so a retrying model
-   grew the journal for free.
-4. **Plan access works on every platform.** Requiring `/proc/self/fd` meant
-   workspace-isolated plan listing and reading returned nothing at all on macOS
-   and Windows — and said `No plan documents found.`, which a caller cannot tell
-   from a workspace without plans. Verification now has a portable form: after
-   opening, prove no component between the plan root and the file is a symlink,
-   and prove the file at that path is the object the descriptor holds. A swap
-   during the open is caught either way — left in place it is seen as a link,
-   reverted it leaves the descriptor pointing at a different object. Linux keeps
-   `/proc/self/fd`, which settles it without walking anything. Where a filesystem
-   reports no inode identity the check degrades to the symlink walk, which still
-   refuses a planted link.
+1.  **A handoff can move backwards again.** Resolving statuses by the monotone
+    order `open < picked-up < abandoned < done` also applied to _sequential_
+    updates, so a task marked done by mistake could never be reopened, and
+    `update_handoff` answered `is now done` to a caller that asked for `open`.
+    Every mutable field is now a last-writer-wins register: the operation with the
+    highest revision to name a field wins, whatever order operations arrive in.
+    The total order over revisions already made that deterministic for competing
+    writers, so ranking statuses bought nothing and cost reversibility.
+2.  **The base document is folded, not left stale.** Nothing rewrote `<id>.md`
+    after creation, so its frontmatter said `status: open` for finished work and
+    no log entry ever reached the file people actually open. Each update now folds
+    the journal into the document and deletes the operations it has absorbed.
+    Correctness across compaction is why the registers are stored in the
+    frontmatter (`statusRevision`, `pickedUpByRevision`,
+    `pickedUpSessionIdRevision`) next to `foldedRevisions`: an operation whose
+    `rename` lands after a compaction is _older_ than what the document carries,
+    and applying it on top would let a stalled writer win by being late — a
+    regression the existing multiprocess test caught during this work. Deletion is
+    guarded by the fold the document on disk actually claims, so a competing
+    compaction cannot delete an operation it never absorbed. A reader that sees
+    the base replaced under it restarts.
+3.  **Empty updates publish nothing.** An update carrying no status, note or
+    pick-up detail wrote a revision that folded to nothing, so a retrying model
+    grew the journal for free.
+4.  **Plan access works on every platform.** Requiring `/proc/self/fd` meant
+    workspace-isolated plan listing and reading returned nothing at all on macOS
+    and Windows — and said `No plan documents found.`, which a caller cannot tell
+    from a workspace without plans. Verification now has a portable form: after
+    opening, prove no component between the plan root and the file is a symlink,
+    and prove the file at that path is the object the descriptor holds. A swap
+    during the open is caught either way — left in place it is seen as a link,
+    reverted it leaves the descriptor pointing at a different object. Linux keeps
+    `/proc/self/fd`, which settles it without walking anything. Where a filesystem
+    reports no inode identity the check degrades to the symlink walk, which still
+    refuses a planted link.
 
-    The fail-closed branch was also the one test the suite could never run: it was
-    gated to non-Linux, so on this machine and on CI it was asserted and skipped.
-    Both containment paths now run wherever the suite runs, via a `containment:
-"portable"` seam, and the suite has no skips left.
+        The fail-closed branch was also the one test the suite could never run: it was
+        gated to non-Linux, so on this machine and on CI it was asserted and skipped.
+        Both containment paths now run wherever the suite runs, via a `containment:
+
+    "portable"` seam, and the suite has no skips left.
+
+5.  **One rule for what counts as the same workspace.** Authorization resolved
+    symlinks (`realpath`) while the listings compared resolved strings, so a
+    session recorded through a symlinked workspace was readable by id and absent
+    from every listing — for an agent, indistinguishable from not existing. VS
+    Code records whatever path the folder was opened by, so this is the ordinary
+    case rather than a contrived one; Claude Code slugs `process.cwd()`, which the
+    kernel has already resolved. `samePath` now canonicalizes both sides and is
+    the one comparison the readers, the handoff store and the server all use. It
+    is memoized, which matches the server already pinning its own workspace
+    identity for its lifetime.

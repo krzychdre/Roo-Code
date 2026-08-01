@@ -273,11 +273,49 @@ export function listDirectories(parent: string): string[] {
 	}
 }
 
-/** Path comparison that tolerates trailing separators and `.` segments. */
+/**
+ * Path comparison that tolerates trailing separators, `.` segments and symlinks.
+ *
+ * Two agents reach the same project by whatever path the person typed, so a
+ * workspace recorded through a symlink has to match the same workspace recorded
+ * canonically — otherwise a session is authorized to be read but never appears
+ * in a listing, which for an agent is the same as not existing.
+ */
 export function samePath(a: string | undefined, b: string | undefined): boolean {
 	if (!a || !b) {
 		return false
 	}
 
-	return path.resolve(a) === path.resolve(b)
+	return canonicalPath(a) === canonicalPath(b)
 }
+
+/**
+ * A path reduced to the one name the filesystem agrees on, or its resolved form
+ * when there is nothing on disk to ask — a store records the workspace a session
+ * ran in, which may since have been moved or deleted.
+ *
+ * Memoized: a listing resolves the same handful of workspaces hundreds of times,
+ * and the server already pins its own workspace identity for its lifetime.
+ */
+export function canonicalPath(candidate: string): string {
+	const resolved = path.resolve(candidate)
+	const cached = canonicalPaths.get(resolved)
+
+	if (cached !== undefined) {
+		return cached
+	}
+
+	let canonical: string
+
+	try {
+		canonical = fs.realpathSync(resolved)
+	} catch {
+		canonical = resolved
+	}
+
+	canonicalPaths.set(resolved, canonical)
+
+	return canonical
+}
+
+const canonicalPaths = new Map<string, string>()

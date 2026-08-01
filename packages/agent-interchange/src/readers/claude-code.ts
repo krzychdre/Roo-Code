@@ -146,6 +146,11 @@ export async function readClaudeSession(id: string, options: ReadOptions = {}): 
  * Directories to search for a workspace. The slug fast path wins when it
  * exists; otherwise every project directory is scanned and matched on the `cwd`
  * recorded inside the sessions, because the slug is lossy.
+ *
+ * The fast path assumes the slug was derived from the same spelling of the path
+ * we were handed. That holds because Claude Code slugs `process.cwd()`, which
+ * the kernel has already resolved — unlike VS Code, which keeps whatever path
+ * the folder was opened by, symlinks included.
  */
 function projectDirsFor(cwd: string): string[] {
 	const fastPath = claudeProjectDirsForCwd(cwd)

@@ -112,6 +112,34 @@ describe("agent-interchange MCP server", () => {
 	})
 
 	it.runIf(process.platform !== "win32")(
+		"lists the sessions it will let you read, even when they recorded a symlinked path",
+		async () => {
+			// VS Code keeps whatever path the folder was opened by, so a workspace
+			// reached through a symlink is recorded as the alias. Hiding it from the
+			// listing while allowing the read by id leaves work an agent can only
+			// find by guessing.
+			const alias = `${workspaceDir}-alias`
+			fs.symlinkSync(workspaceDir, alias, "dir")
+			writeTumbleTask(tumbleDir, { id: "tc-alias", workspace: alias, task: "Aliased workspace session" })
+
+			try {
+				const { client, close } = await connect(workspaceDir)
+
+				const listed = textOf(await client.callTool({ name: "list_agent_sessions", arguments: {} }))
+				const read = textOf(
+					await client.callTool({ name: "read_agent_session", arguments: { session_id: "tc-alias" } }),
+				)
+
+				expect(listed).toContain("Aliased workspace session")
+				expect(read).not.toContain("No session with id")
+				await close()
+			} finally {
+				fs.rmSync(alias, { force: true })
+			}
+		},
+	)
+
+	it.runIf(process.platform !== "win32")(
 		"does not follow a retargeted startup path after server creation",
 		async () => {
 			const alias = `${workspaceDir}-retarget`
@@ -127,7 +155,7 @@ describe("agent-interchange MCP server", () => {
 				const sessions = textOf(await client.callTool({ name: "list_agent_sessions", arguments: {} }))
 				const plans = textOf(await client.callTool({ name: "list_agent_plans", arguments: {} }))
 				expect(sessions).toContain("Retry determinism")
-				expect(plans).toContain(process.platform === "linux" ? "Workspace plan" : "No plan documents found")
+				expect(plans).toContain("Workspace plan")
 				expect(plans).not.toContain("Foreign secret")
 				await close()
 			} finally {

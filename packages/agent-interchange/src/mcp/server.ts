@@ -1,5 +1,4 @@
 import * as fs from "node:fs"
-import * as path from "node:path"
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { z } from "zod"
@@ -16,6 +15,7 @@ import {
 import { listPlans, readPlan, renderPlanList } from "../plans.js"
 import { renderSearchHits, searchSessions } from "../search.js"
 import { renderTranscript } from "../transcript.js"
+import { canonicalPath, samePath } from "../locate.js"
 import { listSessions, readSession } from "../index.js"
 import type { AgentKind } from "../types.js"
 
@@ -67,7 +67,7 @@ export function createInterchangeServer(
 		.string()
 		.min(allowCrossWorkspace ? 0 : 1, "workspace must not be empty")
 		.refine(
-			(value) => allowCrossWorkspace || sameWorkspace(value, startupWorkspace),
+			(value) => allowCrossWorkspace || samePath(value, startupWorkspace),
 			"workspace must match the workspace this server was started in",
 		)
 		.optional()
@@ -80,11 +80,11 @@ export function createInterchangeServer(
 	const resolveCwd = (value: string | undefined): string | undefined => {
 		if (allowCrossWorkspace && value === "") return undefined
 		if (value === undefined) return startupWorkspace
-		return allowCrossWorkspace ? path.resolve(value) : canonicalWorkspace(value)
+		return allowCrossWorkspace ? canonicalPath(value) : canonicalWorkspace(value)
 	}
 
 	const sessionInWorkspace = (session: { cwd?: string }, cwd: string | undefined): boolean =>
-		cwd === undefined || (allowCrossWorkspace ? samePath(session.cwd, cwd) : sameWorkspace(session.cwd, cwd))
+		cwd === undefined || samePath(session.cwd, cwd)
 
 	server.registerTool(
 		"list_agent_sessions",
@@ -380,20 +380,6 @@ export function createInterchangeServer(
 
 function text(markdown: string) {
 	return { content: [{ type: "text" as const, text: markdown }] }
-}
-
-function sameWorkspace(recorded: string | undefined, allowed: string): boolean {
-	if (recorded === undefined) return false
-
-	try {
-		return fs.realpathSync(recorded) === allowed
-	} catch {
-		return false
-	}
-}
-
-function samePath(recorded: string | undefined, allowed: string): boolean {
-	return recorded !== undefined && path.resolve(recorded) === path.resolve(allowed)
 }
 
 function canonicalWorkspace(workspace: string): string {
