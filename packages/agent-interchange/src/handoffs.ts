@@ -62,6 +62,9 @@ export interface UpdateHandoffOptions {
 
 interface HandoffIo {
 	rename(source: string, destination: string): Promise<void>
+	now?: () => Date
+	randomUUID?: () => string
+	syncDirectory?: (directory: string) => Promise<void>
 }
 
 interface HandoffUpdateOperation {
@@ -71,6 +74,16 @@ interface HandoffUpdateOperation {
 	pickedUpBy?: AgentKind
 	pickedUpSessionId?: string
 	note?: string
+}
+
+export interface HandoffUpdateResult extends Handoff {
+	mutation: {
+		revision?: string
+		status?: boolean
+		pickedUpBy?: boolean
+		pickedUpSessionId?: boolean
+		note?: "recorded"
+	}
 }
 
 /**
@@ -106,7 +119,7 @@ interface FoldResult {
 
 const REGISTER_KEYS = ["status", "pickedUpBy", "pickedUpSessionId"] as const
 
-const defaultIo: HandoffIo = { rename: fsPromises.rename }
+const defaultIo: HandoffIo = { rename: fsPromises.rename, syncDirectory }
 
 /** How many times a read restarts because a compaction replaced the base under it. */
 const READ_ATTEMPTS = 3
@@ -206,7 +219,7 @@ export async function updateHandoff(
 	id: string,
 	update: UpdateHandoffOptions,
 	io: HandoffIo = defaultIo,
-): Promise<Handoff | undefined> {
+): Promise<HandoffUpdateResult | undefined> {
 	if (!/^[A-Za-z0-9._-]+$/.test(id)) return undefined
 	const file = path.join(handoffDir(), `${id}.md`)
 	if (!readBaseHandoffFile(file)) return undefined
@@ -214,11 +227,12 @@ export async function updateHandoff(
 	// An update that carries nothing would publish a revision that folds to
 	// nothing. A model retrying a call must not grow the journal for free.
 	if (!update.status && !update.note && !update.pickedUpBy && !update.pickedUpSessionId) {
-		return readHandoffFile(file)
+		const handoff = readHandoffFile(file)
+		return handoff ? { ...handoff, mutation: {} } : undefined
 	}
 
-	const created = new Date().toISOString()
-	const revision = `${created.replace(/[:.]/g, "")}-${randomUUID()}`
+	const created = (io.now?.() ?? new Date()).toISOString()
+	const revision = await reserveRevision(file, io.randomUUID?.() ?? randomUUID())
 	const operation: HandoffUpdateOperation = {
 		revision,
 		created,
@@ -232,7 +246,20 @@ export async function updateHandoff(
 	await atomicWrite(operationFile, `${JSON.stringify(operation)}\n`, io)
 	await compact(file, io)
 
-	return readHandoffFile(file)
+	const current = readHandoffState(file)
+	if (!current) return undefined
+
+	return {
+		...current.handoff,
+		mutation: {
+			revision,
+			status: update.status === undefined ? undefined : current.registers.status === revision,
+			pickedUpBy: update.pickedUpBy === undefined ? undefined : current.registers.pickedUpBy === revision,
+			pickedUpSessionId:
+				update.pickedUpSessionId === undefined ? undefined : current.registers.pickedUpSessionId === revision,
+			note: update.note === undefined ? undefined : "recorded",
+		},
+	}
 }
 
 /** One-line-per-handoff listing for tool output. */
@@ -274,6 +301,10 @@ function metaSummaryLines(handoff: Handoff): string[] {
  * replaced by `rename`, so a changed identity means "start over".
  */
 function readHandoffFile(file: string): Handoff | undefined {
+	return readHandoffState(file)?.handoff
+}
+
+function readHandoffState(file: string): FoldResult | undefined {
 	for (let attempt = 0; attempt < READ_ATTEMPTS; attempt++) {
 		const identity = fileIdentity(file)
 		const base = readBaseDocument(file)
@@ -283,14 +314,14 @@ function readHandoffFile(file: string): Handoff | undefined {
 		const operations = readUpdateOperations(file, base.foldedRevisions)
 
 		if (fileIdentity(file) === identity) {
-			return foldOperations(base.handoff, operations, base.registers).handoff
+			return foldOperations(base.handoff, operations, base.registers)
 		}
 	}
 
 	const base = readBaseDocument(file)
 
 	return base
-		? foldOperations(base.handoff, readUpdateOperations(file, base.foldedRevisions), base.registers).handoff
+		? foldOperations(base.handoff, readUpdateOperations(file, base.foldedRevisions), base.registers)
 		: undefined
 }
 
@@ -366,7 +397,7 @@ function readUpdateOperations(file: string, folded: Set<string> = new Set()): Ha
 		.map((name) => readUpdateOperation(path.join(updateDir(file), name)))
 		.filter((operation): operation is HandoffUpdateOperation => operation !== undefined)
 		.filter((operation) => !folded.has(operation.revision))
-		.sort((a, b) => a.revision.localeCompare(b.revision))
+		.sort((a, b) => compareRevisions(a.revision, b.revision))
 }
 
 function operationFileNames(file: string): string[] {
@@ -413,17 +444,20 @@ function foldOperations(
 		// statuses instead would make the document one-way: a task marked done by
 		// mistake could never be reopened, and the tool would answer "done" to a
 		// caller that asked for "open".
-		if (operation.status !== undefined && operation.revision > registers.status) {
+		if (operation.status !== undefined && compareRevisions(operation.revision, registers.status) > 0) {
 			status = operation.status
 			registers.status = operation.revision
 		}
 
-		if (operation.pickedUpBy !== undefined && operation.revision > registers.pickedUpBy) {
+		if (operation.pickedUpBy !== undefined && compareRevisions(operation.revision, registers.pickedUpBy) > 0) {
 			pickedUpBy = operation.pickedUpBy
 			registers.pickedUpBy = operation.revision
 		}
 
-		if (operation.pickedUpSessionId !== undefined && operation.revision > registers.pickedUpSessionId) {
+		if (
+			operation.pickedUpSessionId !== undefined &&
+			compareRevisions(operation.revision, registers.pickedUpSessionId) > 0
+		) {
 			pickedUpSessionId = operation.pickedUpSessionId
 			registers.pickedUpSessionId = operation.revision
 		}
@@ -450,14 +484,77 @@ function updateDir(file: string): string {
 	return `${file}.updates`
 }
 
+async function reserveRevision(file: string, suffix: string): Promise<string> {
+	const directory = updateDir(file)
+	await fsPromises.mkdir(directory, { recursive: true })
+
+	for (;;) {
+		let counter = 0
+		const base = readBaseDocument(file)
+
+		for (const revision of [
+			...(base ? Object.values(base.registers) : []),
+			...readUpdateOperations(file).map((operation) => operation.revision),
+			...revisionClaims(file),
+		]) {
+			counter = Math.max(counter, revisionCounter(revision))
+		}
+
+		const prefix = `v2-${String(counter + 1).padStart(16, "0")}`
+		const revision = `${prefix}-${suffix}`
+		let claim: fsPromises.FileHandle | undefined
+		try {
+			// Every contender for this Lamport counter races on the same pathname.
+			// The UUID belongs to the operation identity, not the reservation lock.
+			claim = await fsPromises.open(path.join(directory, `${prefix}.claim`), "wx", 0o600)
+			await claim.sync()
+			await claim.close()
+			return revision
+		} catch (error) {
+			await claim?.close().catch(() => undefined)
+			if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+		}
+	}
+}
+
+function revisionClaims(file: string): string[] {
+	try {
+		return fs
+			.readdirSync(updateDir(file))
+			.filter((name) => name.endsWith(".claim"))
+			.map((name) => name.slice(0, -".claim".length))
+	} catch {
+		return []
+	}
+}
+
+function revisionCounter(revision: string): number {
+	const match = /^v2-(\d{16})(?:-|$)/.exec(revision)
+	return match ? Number(match[1]) : 0
+}
+
+function compareRevisions(left: string, right: string): number {
+	const leftCounter = revisionCounter(left)
+	const rightCounter = revisionCounter(right)
+
+	if (leftCounter !== rightCounter) return leftCounter - rightCounter
+	if (leftCounter > 0) return left.localeCompare(right)
+	if (right === "") return left === "" ? 0 : 1
+	if (left === "") return -1
+	return left.localeCompare(right)
+}
+
 /**
  * Fold the journal into the base document so the file on disk says what the
  * tools say. Best effort: the journal remains the source of truth, so a failed
  * compaction costs nothing but a stale Markdown file.
  *
- * Spent operation files are removed only when the document *currently on disk*
- * claims them. A competing compaction may have published an older fold, and
- * deleting what it does not contain would lose an update.
+ * Operation files deliberately remain immutable and authoritative after a fold.
+ * A stale compactor can therefore replace a newer materialized document without
+ * losing state: readers reapply every revision that stale base does not claim.
+ * Portable filesystems do not offer compare-and-swap rename, and reclaimable
+ * pathname locks cannot safely fence a paused process, so deleting revisions
+ * here would make crash recovery and multiprocess compaction unsound.
  */
 async function compact(file: string, io: HandoffIo): Promise<void> {
 	try {
@@ -477,16 +574,6 @@ async function compact(file: string, io: HandoffIo): Promise<void> {
 			`${serializeFrontmatter(folded.handoff, revisions, folded.registers)}\n${folded.handoff.body}`,
 			io,
 		)
-
-		const durable = readBaseDocument(file)?.foldedRevisions
-
-		if (!durable) return
-
-		for (const name of operationFileNames(file)) {
-			if (durable.has(path.basename(name, ".json"))) {
-				await fsPromises.rm(path.join(updateDir(file), name), { force: true }).catch(() => undefined)
-			}
-		}
 	} catch {
 		// The journal still holds every update; readers fold it either way.
 	}
@@ -612,8 +699,25 @@ async function atomicWrite(file: string, content: string, io: HandoffIo = defaul
 		await handle.close()
 		handle = undefined
 		await io.rename(temporary, file)
+		// The file fsync makes the bytes durable; syncing the containing directory
+		// makes the rename durable on Linux filesystems that support it. macOS may
+		// accept the directory handle but does not promise Linux-equivalent metadata
+		// durability from fsync; Node cannot open directories on Windows. Some
+		// filesystems reject directory fsync altogether, so this is best effort.
+		await (io.syncDirectory ?? syncDirectory)(path.dirname(file)).catch(() => undefined)
 	} finally {
 		await handle?.close().catch(() => undefined)
 		await fsPromises.rm(temporary, { force: true }).catch(() => undefined)
+	}
+}
+
+async function syncDirectory(directory: string): Promise<void> {
+	let handle: fsPromises.FileHandle | undefined
+
+	try {
+		handle = await fsPromises.open(directory, fs.constants.O_RDONLY)
+		await handle.sync()
+	} finally {
+		await handle?.close().catch(() => undefined)
 	}
 }

@@ -161,9 +161,143 @@ describe("handoff lifecycle", () => {
 		expect(onDisk).toContain("status: picked-up")
 		expect(onDisk).toContain("pickedUpBy: claude-code")
 		expect(onDisk).toContain("started")
-		// Folded operations are spent, so the journal does not grow without bound.
-		expect(fs.readdirSync(`${created.path}.updates`).filter((name) => name.endsWith(".json"))).toEqual([])
+		// The immutable journal remains the recovery authority if a stale
+		// multiprocess compactor later replaces the materialized document.
+		expect(fs.readdirSync(`${created.path}.updates`).filter((name) => name.endsWith(".json"))).toHaveLength(1)
 		expect(readHandoff(created.id)!.status).toBe("picked-up")
+	})
+
+	it("recovers B when a stale compactor publishes A after another compactor published A+B", async () => {
+		const created = await createHandoff({ session: source, to: "claude-code" })
+		let releaseStaleCompaction!: () => void
+		const staleCompactionMayPublish = new Promise<void>((resolve) => (releaseStaleCompaction = resolve))
+		let staleCompactionReady!: () => void
+		const staleCompactionReachedRename = new Promise<void>((resolve) => (staleCompactionReady = resolve))
+		let firstRename = true
+
+		const first = updateHandoff(
+			created.id,
+			{ status: "picked-up", note: "operation A" },
+			{
+				randomUUID: () => "00000000-0000-4000-8000-000000000001",
+				rename: async (source, destination) => {
+					if (firstRename) {
+						firstRename = false
+					} else {
+						staleCompactionReady()
+						await staleCompactionMayPublish
+					}
+					await fs.promises.rename(source, destination)
+				},
+			},
+		)
+
+		await staleCompactionReachedRename
+		const second = await updateHandoff(
+			created.id,
+			{ status: "done", note: "operation B" },
+			{
+				randomUUID: () => "00000000-0000-4000-8000-000000000002",
+				rename: fs.promises.rename,
+			},
+		)
+		expect(second!.status).toBe("done")
+
+		releaseStaleCompaction()
+		await first
+
+		expect(fs.readFileSync(created.path, "utf8")).toContain("status: picked-up")
+		const final = readHandoff(created.id)!
+		expect(final.status).toBe("done")
+		expect(final.body).toContain("operation A")
+		expect(final.body).toContain("operation B")
+		expect(fs.readdirSync(`${created.path}.updates`).filter((name) => name.endsWith(".json"))).toHaveLength(2)
+	})
+
+	it("preserves sequential causality when writes have the same wall clock", async () => {
+		const created = await createHandoff({ session: source, to: "claude-code" })
+		const frozen = new Date("2026-08-02T00:00:00.000Z")
+
+		await updateHandoff(
+			created.id,
+			{ status: "done" },
+			{
+				now: () => frozen,
+				randomUUID: () => "ffffffff-ffff-4fff-8fff-ffffffffffff",
+				rename: fs.promises.rename,
+			},
+		)
+		const reopened = await updateHandoff(
+			created.id,
+			{ status: "open" },
+			{
+				now: () => frozen,
+				randomUUID: () => "00000000-0000-4000-8000-000000000000",
+				rename: fs.promises.rename,
+			},
+		)
+
+		expect(reopened!.status).toBe("open")
+		expect(reopened!.mutation.status).toBe(true)
+	})
+
+	it("preserves sequential causality when the wall clock rolls back", async () => {
+		const created = await createHandoff({ session: source, to: "claude-code" })
+
+		await updateHandoff(
+			created.id,
+			{ status: "done" },
+			{
+				now: () => new Date("2030-01-01T00:00:00.000Z"),
+				rename: fs.promises.rename,
+			},
+		)
+		const reopened = await updateHandoff(
+			created.id,
+			{ status: "open" },
+			{
+				now: () => new Date("2020-01-01T00:00:00.000Z"),
+				rename: fs.promises.rename,
+			},
+		)
+
+		expect(reopened!.status).toBe("open")
+		expect(reopened!.mutation.status).toBe(true)
+	})
+
+	it("reports when a concurrent higher revision superseded the requested mutation", async () => {
+		const created = await createHandoff({ session: source, to: "claude-code" })
+		let releaseFirst!: () => void
+		const mayPublish = new Promise<void>((resolve) => (releaseFirst = resolve))
+		let firstReady!: () => void
+		const firstReachedRename = new Promise<void>((resolve) => (firstReady = resolve))
+
+		const first = updateHandoff(
+			created.id,
+			{ status: "picked-up" },
+			{
+				randomUUID: () => "00000000-0000-4000-8000-000000000000",
+				rename: async (source, destination) => {
+					firstReady()
+					await mayPublish
+					await fs.promises.rename(source, destination)
+				},
+			},
+		)
+		await firstReachedRename
+		await updateHandoff(
+			created.id,
+			{ status: "done" },
+			{
+				randomUUID: () => "ffffffff-ffff-4fff-8fff-ffffffffffff",
+				rename: fs.promises.rename,
+			},
+		)
+		releaseFirst()
+
+		const result = await first
+		expect(result!.status).toBe("done")
+		expect(result!.mutation.status).toBe(false)
 	})
 
 	it("ignores an operation that lands after a newer one was already folded", async () => {
@@ -284,6 +418,25 @@ describe("handoff lifecycle", () => {
 		expect(fs.readdirSync(`${created.path}.updates`).filter((name) => name.endsWith(".tmp"))).toEqual([])
 		expect(readHandoff(created.id)?.status).toBe("open")
 	})
+
+	it("syncs the parent directory after rename and tolerates unsupported directory fsync", async () => {
+		const syncDirectory = vi.fn(async () => Promise.reject(new Error("directory fsync unsupported")))
+		const created = await createHandoff({ session: source, to: "claude-code" })
+
+		const result = await updateHandoff(
+			created.id,
+			{ status: "done" },
+			{
+				rename: fs.promises.rename,
+				syncDirectory,
+			},
+		)
+
+		expect(result!.status).toBe("done")
+		expect(syncDirectory).toHaveBeenCalledTimes(2)
+		expect(syncDirectory).toHaveBeenNthCalledWith(1, `${created.path}.updates`)
+		expect(syncDirectory).toHaveBeenNthCalledWith(2, path.dirname(created.path))
+	})
 })
 
 function runUpdateWorker(worker: string, environment: Record<string, string>): Promise<void> {
@@ -351,6 +504,26 @@ describe("plans", () => {
 		expect(docs.find((doc) => doc.title === "Refactor the router")!.source).toBe("claude-code")
 		expect(docs.find((doc) => doc.title === "The thing")!.source).toBe("workspace")
 	})
+
+	it.runIf(process.platform !== "win32")(
+		"rejects a privileged global plan when an ancestor is retargeted after resolution",
+		() => {
+			const plans = path.join(claudeDir, "plans")
+			const movedPlans = path.join(claudeDir, "plans-original")
+			const escaped = path.join(outside, "gleaming-fern.md")
+			fs.writeFileSync(escaped, "# Escaped privileged plan\n\nsecret", "utf8")
+
+			const result = readPlan(path.join(plans, "gleaming-fern.md"), {
+				allowClaudeGlobal: true,
+				beforeOpen: () => {
+					fs.renameSync(plans, movedPlans)
+					fs.symlinkSync(outside, plans, "dir")
+				},
+			})
+
+			expect(result).toBeUndefined()
+		},
+	)
 
 	it("reads a plan by the path the listing returned", () => {
 		const doc = listPlans({ cwd: workspace }).find((entry) => entry.source === "workspace")!

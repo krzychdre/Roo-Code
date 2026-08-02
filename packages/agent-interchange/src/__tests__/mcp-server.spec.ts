@@ -287,6 +287,25 @@ describe("agent-interchange MCP server", () => {
 		await close()
 	})
 
+	it("does not claim a requested status won when a concurrent later mutation survives", async () => {
+		const { client, close } = await connect()
+		const created = textOf(
+			await client.callTool({
+				name: "create_handoff",
+				arguments: { session_id: "tc-1", to: "claude-code" },
+			}),
+		)
+		const id = /Handoff `([^`]+)`/.exec(created)![1]!
+
+		await client.callTool({ name: "update_handoff", arguments: { handoff_id: id, status: "done" } })
+		const response = textOf(
+			await client.callTool({ name: "update_handoff", arguments: { handoff_id: id, note: "still done" } }),
+		)
+
+		expect(response).toBe(`Handoff \`${id}\` updated.`)
+		await close()
+	})
+
 	it("does not read or update a known handoff from another workspace", async () => {
 		writeTumbleTask(tumbleDir, {
 			id: "foreign-task",

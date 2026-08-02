@@ -325,3 +325,44 @@ where the system reported something untrue. What changed:
     the one comparison the readers, the handoff store and the server all use. It
     is memoized, which matches the server already pinning its own workspace
     identity for its lifetime.
+
+## 2026-08-02 shared-memory hardening closure
+
+Independent re-checking confirmed four further findings in the handoff/plan tail:
+
+1. **Compaction is a materialized view, not garbage collection.** Two compactors
+   can read different snapshots and publish in reverse order. The older publisher
+   can therefore replace `A+B` with `A`; deleting journals already claimed by the
+   transient newer base then loses `B`. Immutable operation files now remain the
+   recovery authority. Readers fold every revision absent from whichever base is
+   currently visible, so a stale publication changes only the materialized file,
+   never logical state. This intentionally trades bounded sidecar growth for a
+   portable, crash-safe design without an unsafe reclaimable lock or unavailable
+   compare-and-swap rename. A deterministic test pauses the `A` compactor, lets an
+   `A+B` compactor publish, then releases `A` and proves `B` still survives.
+2. **Revisions are logical, not wall-clock order.** New revisions reserve a
+   Lamport counter with an exclusive, immutable claim file observed alongside the
+   base registers and journals, with UUID only as an identity suffix. Sequential
+   and overlapping writers therefore increase causally even in one millisecond,
+   after clock rollback, or while an earlier writer delays journal publication;
+   competing processes that select one counter race on `open("wx")`, and the loser
+   retries at the next counter. Claims remain beside the immutable journal (a
+   crashed reservation merely leaves a harmless skipped counter).
+   `updateHandoff` reports which requested registers still own the surviving
+   revision, and MCP no longer claims a requested state when it was superseded.
+3. **Atomic replacement includes best-effort rename durability.** Temp contents
+   are fsynced before rename, then the parent directory is opened and fsynced.
+   Linux normally provides the intended rename-durability guarantee. macOS may
+   accept a directory handle but does not promise Linux-equivalent metadata
+   durability from `fsync`; Windows cannot open directories through Node, and
+   individual filesystems may reject directory fsync. The second step is therefore
+   explicitly best-effort and never makes a successful rename fail.
+   Mocked-boundary coverage proves ordering and unsupported-platform behavior.
+4. **Privilege broadens roots only.** Every plan, including privileged Claude
+   global plans, now receives post-open descriptor/path containment verification.
+   A regression test retargets an ancestor after `realpath` and before `open`, then
+   proves the escaped descriptor is rejected; it is skipped only on Windows where
+   the test setup cannot create the required directory symlink without privileges.
+
+Validation for this closure is the complete package-local Vitest suite,
+`pnpm check-types`, formatting of every touched file, and `git diff --check`.

@@ -37,6 +37,8 @@ export interface PlanAccessOptions {
 	 * available, so the path macOS and Windows take is exercised on Linux too.
 	 */
 	containment?: "auto" | "portable"
+	/** Test seam for exercising a retarget between resolution and open. */
+	beforeOpen?: (resolvedFile: string) => void
 }
 
 interface PlanRoot {
@@ -48,7 +50,7 @@ interface PlanRoot {
 export function listPlans(options: PlanAccessOptions & { query?: string; limit?: number } = {}): PlanDoc[] {
 	const docs: PlanDoc[] = [
 		...(options.allowClaudeGlobal === true ? claudePlans() : []),
-		...workspacePlans(options.cwd, options.requireOpenedPathVerification === true, options.containment),
+		...workspacePlans(options.cwd, options.containment, options.beforeOpen),
 	]
 
 	const filtered = options.query
@@ -81,12 +83,7 @@ export function readPlan(
 		return undefined
 	}
 
-	const opened = openContainedPlan(
-		resolved,
-		root,
-		options.requireOpenedPathVerification === true,
-		options.containment,
-	)
+	const opened = openContainedPlan(resolved, root, options.containment, options.beforeOpen)
 
 	if (!opened) {
 		return undefined
@@ -130,12 +127,12 @@ function claudePlans(): PlanDoc[] {
 
 function workspacePlans(
 	cwd: string | undefined,
-	requireOpenedPathVerification: boolean,
 	containment: "auto" | "portable" = "auto",
+	beforeOpen?: (resolvedFile: string) => void,
 ): PlanDoc[] {
 	return workspacePlanRoots(cwd)
 		.flatMap((root) => markdownFilesIn(root).map((file) => ({ file, root })))
-		.map(({ file, root }) => describe(file, root, requireOpenedPathVerification, containment))
+		.map(({ file, root }) => describe(file, root, containment, beforeOpen))
 		.filter((doc): doc is PlanDoc => doc !== undefined)
 }
 
@@ -191,10 +188,10 @@ function markdownFilesIn(root: PlanRoot): string[] {
 function describe(
 	file: string,
 	root: PlanRoot,
-	requireOpenedPathVerification = false,
 	containment: "auto" | "portable" = "auto",
+	beforeOpen?: (resolvedFile: string) => void,
 ): PlanDoc | undefined {
-	const opened = openContainedPlan(file, root, requireOpenedPathVerification, containment)
+	const opened = openContainedPlan(file, root, containment, beforeOpen)
 
 	if (!opened) {
 		return undefined
@@ -228,8 +225,8 @@ function describeOpenPlan(file: string, source: PlanSource, fd: number, head: st
 function openContainedPlan(
 	file: string,
 	root: PlanRoot,
-	requireOpenedPathVerification: boolean,
 	containment: "auto" | "portable" = "auto",
+	beforeOpen?: (resolvedFile: string) => void,
 ): { fd: number } | undefined {
 	let realFile: string
 	try {
@@ -245,6 +242,7 @@ function openContainedPlan(
 	let fd: number
 
 	try {
+		beforeOpen?.(realFile)
 		// O_NOFOLLOW does not exist on Windows; the verification below is what
 		// carries the guarantee there.
 		fd = fs.openSync(realFile, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0))
@@ -260,7 +258,7 @@ function openContainedPlan(
 			return undefined
 		}
 
-		if (requireOpenedPathVerification && !openedFileIsContained(fd, realFile, root, opened, containment)) {
+		if (!openedFileIsContained(fd, realFile, root, opened, containment)) {
 			fs.closeSync(fd)
 			return undefined
 		}

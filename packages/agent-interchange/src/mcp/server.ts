@@ -216,7 +216,6 @@ export function createInterchangeServer(
 						query,
 						limit: limit ?? 30,
 						allowClaudeGlobal: allowCrossWorkspace,
-						requireOpenedPathVerification: !allowCrossWorkspace,
 					}),
 				),
 			),
@@ -236,7 +235,6 @@ export function createInterchangeServer(
 			const plan = readPlan(file, {
 				cwd: resolveCwd(cwd),
 				allowClaudeGlobal: allowCrossWorkspace,
-				requireOpenedPathVerification: !allowCrossWorkspace,
 			})
 
 			return text(
@@ -367,10 +365,16 @@ export function createInterchangeServer(
 						})
 					: undefined
 
+			if (!handoff) return text(`No handoff with id \`${handoff_id}\`.`)
+
+			if (status && handoff.mutation.status === false) {
+				return text(
+					`Handoff \`${handoff.id}\` remains ${handoff.status}; requested status ${status} was superseded by a concurrent later update.`,
+				)
+			}
+
 			return text(
-				handoff
-					? `Handoff \`${handoff.id}\` is now ${handoff.status}.`
-					: `No handoff with id \`${handoff_id}\`.`,
+				status ? `Handoff \`${handoff.id}\` is now ${handoff.status}.` : `Handoff \`${handoff.id}\` updated.`,
 			)
 		},
 	)
