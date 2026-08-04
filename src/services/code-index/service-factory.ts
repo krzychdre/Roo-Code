@@ -117,7 +117,14 @@ export class CodeIndexServiceFactory {
 	 */
 	public async validateEmbedder(embedder: IEmbedder): Promise<{ valid: boolean; error?: string }> {
 		try {
-			return await embedder.validateConfiguration()
+			const result = await embedder.validateConfiguration()
+
+			if (!result.valid) {
+				return result
+			}
+
+			const mismatch = this.findDimensionMismatch(result.dimension)
+			return mismatch ? { valid: false, error: mismatch } : result
 		} catch (error) {
 			// Capture telemetry for the error
 			TelemetryService.instance.captureEvent(TelemetryEventName.CODE_INDEX_ERROR, {
@@ -135,9 +142,11 @@ export class CodeIndexServiceFactory {
 	}
 
 	/**
-	 * Creates a vector store instance using the current configuration.
+	 * Resolves the vector dimension the collection should use: the model's built-in dimension
+	 * when the profile knows one, otherwise the dimension the user entered manually.
+	 * @throws If neither source yields a usable dimension
 	 */
-	public createVectorStore(): IVectorStore {
+	private resolveVectorSize(): number {
 		const config = this.configManager.getConfig()
 
 		const provider = config.embedderProvider as EmbedderProvider
@@ -164,6 +173,51 @@ export class CodeIndexServiceFactory {
 				throw new Error(t("embeddings:serviceFactory.vectorDimensionNotDetermined", { modelId, provider }))
 			}
 		}
+
+		return vectorSize
+	}
+
+	/**
+	 * Compares the dimension a probe embedding actually came back with against the dimension the
+	 * collection is configured for. A disagreement makes every upsert fail with an opaque "Bad
+	 * Request" from Qdrant, so it is reported up front instead.
+	 * @param actualDimension Dimension observed during validation, if the embedder reported one
+	 * @returns An error message when the two disagree, otherwise undefined
+	 */
+	private findDimensionMismatch(actualDimension: number | undefined): string | undefined {
+		if (!actualDimension || actualDimension <= 0) {
+			return undefined
+		}
+
+		let configuredDimension: number
+
+		try {
+			configuredDimension = this.resolveVectorSize()
+		} catch {
+			// No dimension could be resolved; createVectorStore() reports that on its own.
+			return undefined
+		}
+
+		if (configuredDimension === actualDimension) {
+			return undefined
+		}
+
+		const config = this.configManager.getConfig()
+		const provider = config.embedderProvider as EmbedderProvider
+
+		return t("embeddings:validation.dimensionMismatch", {
+			modelId: config.modelId ?? getDefaultModelId(provider),
+			actualDimension,
+			configuredDimension,
+		})
+	}
+
+	/**
+	 * Creates a vector store instance using the current configuration.
+	 */
+	public createVectorStore(): IVectorStore {
+		const config = this.configManager.getConfig()
+		const vectorSize = this.resolveVectorSize()
 
 		if (!config.qdrantUrl) {
 			throw new Error(t("embeddings:serviceFactory.qdrantUrlMissing"))

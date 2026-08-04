@@ -44,6 +44,7 @@
 		"invalidBaseUrl": "基础 URL 无效。请检查您的 URL 配置。",
 		"invalidModel": "模型无效。请检查您的模型配置。",
 		"invalidResponse": "嵌入服务响应无效。请检查您的配置。",
+		"dimensionMismatch": "模型“{{modelId}}”返回 {{actualDimension}} 维嵌入，但代码索引配置为 {{configuredDimension}} 维。请将嵌入维度设置为 {{actualDimension}}，或选择生成 {{configuredDimension}} 维的模型。",
 		"apiKeyRequired": "此嵌入器需要 API 密钥",
 		"baseUrlRequired": "此嵌入器需要基础 URL"
 	},

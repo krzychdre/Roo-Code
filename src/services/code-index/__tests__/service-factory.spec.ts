@@ -783,6 +783,79 @@ describe("CodeIndexServiceFactory", () => {
 			expect(mockEmbedderInstance.validateConfiguration).toHaveBeenCalled()
 		})
 
+		it("should reject an embedder whose probe dimension differs from the configured one", async () => {
+			// Arrange - granite returns 768 dimensions while the index is configured for 1024,
+			// which would otherwise make every Qdrant upsert fail with an opaque "Bad Request".
+			const testConfig = {
+				embedderProvider: "openai-compatible",
+				modelId: "granite-embedding-311m-multilingual-r2",
+				modelDimension: 1024,
+				openAiCompatibleOptions: {
+					baseUrl: "https://api.example.com/v1",
+					apiKey: "test-api-key",
+				},
+			}
+			mockConfigManager.getConfig.mockReturnValue(testConfig as any)
+			mockGetModelDimension.mockReturnValue(undefined)
+			MockedOpenAICompatibleEmbedder.mockImplementation(() => mockEmbedderInstance)
+			mockEmbedderInstance.validateConfiguration.mockResolvedValue({ valid: true, dimension: 768 })
+
+			// Act
+			const embedder = factory.createEmbedder()
+			const result = await factory.validateEmbedder(embedder)
+
+			// Assert
+			expect(result.valid).toBe(false)
+			expect(result.error).toContain("validation.dimensionMismatch")
+		})
+
+		it("should accept an embedder whose probe dimension matches the configured one", async () => {
+			// Arrange
+			const testConfig = {
+				embedderProvider: "openai-compatible",
+				modelId: "bge-m3",
+				modelDimension: 1024,
+				openAiCompatibleOptions: {
+					baseUrl: "https://api.example.com/v1",
+					apiKey: "test-api-key",
+				},
+			}
+			mockConfigManager.getConfig.mockReturnValue(testConfig as any)
+			mockGetModelDimension.mockReturnValue(undefined)
+			MockedOpenAICompatibleEmbedder.mockImplementation(() => mockEmbedderInstance)
+			mockEmbedderInstance.validateConfiguration.mockResolvedValue({ valid: true, dimension: 1024 })
+
+			// Act
+			const embedder = factory.createEmbedder()
+			const result = await factory.validateEmbedder(embedder)
+
+			// Assert
+			expect(result.valid).toBe(true)
+		})
+
+		it("should not second-guess a probe dimension when no dimension can be resolved", async () => {
+			// Arrange - createVectorStore() already reports the missing dimension on its own.
+			const testConfig = {
+				embedderProvider: "openai-compatible",
+				modelId: "custom-model",
+				openAiCompatibleOptions: {
+					baseUrl: "https://api.example.com/v1",
+					apiKey: "test-api-key",
+				},
+			}
+			mockConfigManager.getConfig.mockReturnValue(testConfig as any)
+			mockGetModelDimension.mockReturnValue(undefined)
+			MockedOpenAICompatibleEmbedder.mockImplementation(() => mockEmbedderInstance)
+			mockEmbedderInstance.validateConfiguration.mockResolvedValue({ valid: true, dimension: 768 })
+
+			// Act
+			const embedder = factory.createEmbedder()
+			const result = await factory.validateEmbedder(embedder)
+
+			// Assert
+			expect(result.valid).toBe(true)
+		})
+
 		it("should validate Gemini embedder successfully", async () => {
 			// Arrange
 			const testConfig = {

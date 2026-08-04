@@ -44,6 +44,7 @@
 		"invalidBaseUrl": "URL base no vàlida. Comproveu la vostra configuració d'URL.",
 		"invalidModel": "Model no vàlid. Comproveu la vostra configuració de model.",
 		"invalidResponse": "Resposta no vàlida del servei d'incrustació. Comproveu la vostra configuració.",
+		"dimensionMismatch": "El model \"{{modelId}}\" retorna embeddings de {{actualDimension}} dimensions, però l'índex de codi està configurat per a {{configuredDimension}}. Estableix la dimensió d'embedding a {{actualDimension}} o tria un model que produeixi {{configuredDimension}} dimensions.",
 		"apiKeyRequired": "Es requereix una clau d'API per a aquest incrustador",
 		"baseUrlRequired": "Es requereix una URL base per a aquest incrustador"
 	},

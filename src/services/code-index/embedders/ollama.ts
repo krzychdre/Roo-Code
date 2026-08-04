@@ -1,5 +1,5 @@
 import { ApiHandlerOptions } from "../../../shared/api"
-import { EmbedderInfo, EmbeddingResponse, IEmbedder } from "../interfaces"
+import { EmbedderInfo, EmbedderValidationResult, EmbeddingResponse, IEmbedder } from "../interfaces"
 import { getModelQueryPrefix } from "../../../shared/embeddingModels"
 import { MAX_ITEM_TOKENS } from "../constants"
 import { t } from "../../../i18n"
@@ -141,7 +141,7 @@ export class CodeIndexOllamaEmbedder implements IEmbedder {
 	 * Validates the Ollama embedder configuration by checking service availability and model existence
 	 * @returns Promise resolving to validation result with success status and optional error message
 	 */
-	async validateConfiguration(): Promise<{ valid: boolean; error?: string }> {
+	async validateConfiguration(): Promise<EmbedderValidationResult> {
 		return withValidationErrorHandling(
 			async () => {
 				// First check if Ollama service is running by trying to list models
@@ -228,7 +228,17 @@ export class CodeIndexOllamaEmbedder implements IEmbedder {
 					}
 				}
 
-				return { valid: true }
+				// Report the probe's vector length so a wrong manually-entered dimension is caught
+				// here rather than as a rejected upsert halfway through the scan.
+				let dimension: number | undefined
+				try {
+					const probe = (await testResponse.json())?.embeddings?.[0]
+					dimension = Array.isArray(probe) && probe.length > 0 ? probe.length : undefined
+				} catch {
+					// A model that embeds but answers with an unreadable body still validates.
+				}
+
+				return { valid: true, dimension }
 			},
 			"ollama",
 			{

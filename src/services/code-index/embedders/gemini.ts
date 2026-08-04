@@ -1,5 +1,5 @@
 import { OpenAICompatibleEmbedder } from "./openai-compatible"
-import { IEmbedder, EmbeddingResponse, EmbedderInfo } from "../interfaces/embedder"
+import { IEmbedder, EmbeddingResponse, EmbedderInfo, EmbedderValidationResult } from "../interfaces/embedder"
 import { GEMINI_MAX_ITEM_TOKENS } from "../constants"
 import { t } from "../../../i18n"
 import { TelemetryEventName } from "@roo-code/types"
@@ -87,7 +87,7 @@ export class GeminiEmbedder implements IEmbedder {
 	 * Validates the Gemini embedder configuration by delegating to the underlying OpenAI-compatible embedder
 	 * @returns Promise resolving to validation result with success status and optional error message
 	 */
-	async validateConfiguration(): Promise<{ valid: boolean; error?: string }> {
+	async validateConfiguration(): Promise<EmbedderValidationResult> {
 		try {
 			// Delegate validation to the OpenAI-compatible embedder
 			// The error messages will be specific to Gemini since we're using Gemini's base URL

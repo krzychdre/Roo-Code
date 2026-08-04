@@ -44,6 +44,7 @@
 		"invalidBaseUrl": "Nieprawidłowy podstawowy adres URL. Sprawdź konfigurację adresu URL.",
 		"invalidModel": "Nieprawidłowy model. Sprawdź konfigurację modelu.",
 		"invalidResponse": "Nieprawidłowa odpowiedź z usługi embedder. Sprawdź swoją konfigurację.",
+		"dimensionMismatch": "Model \"{{modelId}}\" zwraca osadzenia o {{actualDimension}} wymiarach, a indeks kodu jest skonfigurowany na {{configuredDimension}}. Ustaw wymiar osadzeń na {{actualDimension}} lub wybierz model zwracający {{configuredDimension}} wymiarów.",
 		"apiKeyRequired": "Klucz API jest wymagany dla tego embeddera",
 		"baseUrlRequired": "Podstawowy adres URL jest wymagany dla tego embeddera"
 	},

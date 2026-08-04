@@ -985,6 +985,37 @@ describe("OpenAICompatibleEmbedder", () => {
 			})
 		})
 
+		it("should report the dimension of a base64 probe embedding", async () => {
+			embedder = new OpenAICompatibleEmbedder(testBaseUrl, testApiKey, testModelId)
+
+			// Embeddings are requested as base64, where each dimension is a 4-byte float — the
+			// shape a real llama.cpp/vLLM endpoint answers with.
+			const probe = Buffer.from(new Float32Array(768).buffer).toString("base64")
+			mockEmbeddingsCreate.mockResolvedValue({
+				data: [{ embedding: probe }],
+				usage: { prompt_tokens: 2, total_tokens: 2 },
+			})
+
+			const result = await embedder.validateConfiguration()
+
+			expect(result.valid).toBe(true)
+			expect(result.dimension).toBe(768)
+		})
+
+		it("should report the dimension of a plain-array probe embedding", async () => {
+			embedder = new OpenAICompatibleEmbedder(testBaseUrl, testApiKey, testModelId)
+
+			mockEmbeddingsCreate.mockResolvedValue({
+				data: [{ embedding: [0.1, 0.2, 0.3] }],
+				usage: { prompt_tokens: 2, total_tokens: 2 },
+			})
+
+			const result = await embedder.validateConfiguration()
+
+			expect(result.valid).toBe(true)
+			expect(result.dimension).toBe(3)
+		})
+
 		it("should validate successfully with full endpoint URL", async () => {
 			const fullUrl = "https://api.example.com/v1/embeddings"
 			embedder = new OpenAICompatibleEmbedder(fullUrl, testApiKey, testModelId)

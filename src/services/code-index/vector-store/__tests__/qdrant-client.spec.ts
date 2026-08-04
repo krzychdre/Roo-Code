@@ -1057,9 +1057,59 @@ describe("QdrantVectorStore", () => {
 			expect(mockQdrantClientInstance.deleteCollection).toHaveBeenCalledTimes(1)
 			expect(console.error).toHaveBeenCalledWith(
 				`[QdrantVectorStore] Failed to delete collection ${expectedCollectionName}:`,
+				"Deletion failed",
 				deleteError,
 			)
 			;(console.error as any).mockRestore()
+		})
+	})
+
+	describe("Qdrant error detail", () => {
+		// The REST client builds its errors as `new Error(response.statusText)`, so the message is
+		// only "Bad Request" and the reason Qdrant refused the request sits on `data`.
+		const apiError = (statusText: string, data: unknown) => {
+			const error = new Error(statusText) as Error & { status: number; data: unknown }
+			error.status = 400
+			error.data = data
+			return error
+		}
+
+		it("surfaces the reason Qdrant rejected an upsert instead of just the status text", async () => {
+			mockQdrantClientInstance.upsert.mockRejectedValue(
+				apiError("Bad Request", {
+					status: { error: "Wrong input: Vector dimension error: expected dim: 1024, got 768" },
+				}),
+			)
+
+			await expect(vectorStore.upsertPoints([{ id: "test-id", vector: [0.1], payload: {} }])).rejects.toThrow(
+				/Vector dimension error: expected dim: 1024, got 768/,
+			)
+		})
+
+		it("keeps the status code so upstream error handling still sees it", async () => {
+			mockQdrantClientInstance.upsert.mockRejectedValue(
+				apiError("Bad Request", { status: { error: "Wrong input: something" } }),
+			)
+
+			await expect(
+				vectorStore.upsertPoints([{ id: "test-id", vector: [0.1], payload: {} }]),
+			).rejects.toMatchObject({ status: 400 })
+		})
+
+		it("surfaces the reason a search was rejected", async () => {
+			mockQdrantClientInstance.query.mockRejectedValue(
+				apiError("Bad Request", { status: { error: "Index required but not found" } }),
+			)
+
+			await expect(vectorStore.search([0.1, 0.2])).rejects.toThrow(/Index required but not found/)
+		})
+
+		it("passes through errors that carry no Qdrant payload", async () => {
+			mockQdrantClientInstance.upsert.mockRejectedValue(new Error("fetch failed"))
+
+			await expect(vectorStore.upsertPoints([{ id: "test-id", vector: [0.1], payload: {} }])).rejects.toThrow(
+				"fetch failed",
+			)
 		})
 	})
 
@@ -1237,7 +1287,7 @@ describe("QdrantVectorStore", () => {
 			await expect(vectorStore.upsertPoints(mockPoints)).rejects.toThrow(upsertError)
 
 			expect(mockQdrantClientInstance.upsert).toHaveBeenCalledTimes(1)
-			expect(console.error).toHaveBeenCalledWith("Failed to upsert points:", upsertError)
+			expect(console.error).toHaveBeenCalledWith("Failed to upsert points:", "Upsert failed", upsertError)
 			;(console.error as any).mockRestore()
 		})
 	})
@@ -1539,7 +1589,7 @@ describe("QdrantVectorStore", () => {
 			await expect(vectorStore.search(queryVector)).rejects.toThrow(queryError)
 
 			expect(mockQdrantClientInstance.query).toHaveBeenCalledTimes(1)
-			expect(console.error).toHaveBeenCalledWith("Failed to search points:", queryError)
+			expect(console.error).toHaveBeenCalledWith("Failed to search points:", "Query failed", queryError)
 			;(console.error as any).mockRestore()
 		})
 

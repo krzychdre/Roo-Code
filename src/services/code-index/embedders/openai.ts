@@ -1,7 +1,7 @@
 import { OpenAI } from "openai"
 import { OpenAiNativeHandler } from "../../../api/providers/openai-native"
 import { ApiHandlerOptions } from "../../../shared/api"
-import { IEmbedder, EmbeddingResponse, EmbedderInfo } from "../interfaces"
+import { IEmbedder, EmbeddingResponse, EmbedderInfo, EmbedderValidationResult } from "../interfaces"
 import {
 	MAX_BATCH_TOKENS,
 	MAX_ITEM_TOKENS,
@@ -190,7 +190,7 @@ export class OpenAiEmbedder extends OpenAiNativeHandler implements IEmbedder {
 	 * Validates the OpenAI embedder configuration by attempting a minimal embedding request
 	 * @returns Promise resolving to validation result with success status and optional error message
 	 */
-	async validateConfiguration(): Promise<{ valid: boolean; error?: string }> {
+	async validateConfiguration(): Promise<EmbedderValidationResult> {
 		return withValidationErrorHandling(async () => {
 			try {
 				// Test with a minimal embedding request
@@ -207,7 +207,8 @@ export class OpenAiEmbedder extends OpenAiNativeHandler implements IEmbedder {
 					}
 				}
 
-				return { valid: true }
+				const probe = response.data[0]?.embedding
+				return { valid: true, dimension: Array.isArray(probe) && probe.length > 0 ? probe.length : undefined }
 			} catch (error) {
 				// Capture telemetry for validation errors
 				TelemetryService.instance.captureEvent(TelemetryEventName.CODE_INDEX_ERROR, {

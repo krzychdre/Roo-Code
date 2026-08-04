@@ -204,7 +204,7 @@ export async function withValidationErrorHandling<T extends { valid: boolean; er
 	validationFn: () => Promise<T>,
 	embedderType: string,
 	customHandlers?: Parameters<typeof handleValidationError>[2],
-): Promise<{ valid: boolean; error?: string }> {
+): Promise<T | { valid: boolean; error: string }> {
 	try {
 		return await validationFn()
 	} catch (error) {

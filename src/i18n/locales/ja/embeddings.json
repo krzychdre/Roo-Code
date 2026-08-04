@@ -44,6 +44,7 @@
 		"invalidBaseUrl": "無効なベースURLです。URL構成を確認してください。",
 		"invalidModel": "無効なモデルです。モデル構成を確認してください。",
 		"invalidResponse": "エンベッダーサービスからの無効な応答です。設定を確認してください。",
+		"dimensionMismatch": "モデル「{{modelId}}」は {{actualDimension}} 次元の埋め込みを返しますが、コードインデックスは {{configuredDimension}} 次元に設定されています。埋め込み次元を {{actualDimension}} に変更するか、{{configuredDimension}} 次元のモデルを選択してください。",
 		"apiKeyRequired": "このエンベッダーにはAPIキーが必要です。",
 		"baseUrlRequired": "このエンベッダーにはベースURLが必要です"
 	},
