@@ -44,6 +44,7 @@
 		"invalidBaseUrl": "URL cơ sở không hợp lệ. Vui lòng kiểm tra cấu hình URL của bạn.",
 		"invalidModel": "Mô hình không hợp lệ. Vui lòng kiểm tra cấu hình mô hình của bạn.",
 		"invalidResponse": "Phản hồi không hợp lệ từ dịch vụ embedder. Vui lòng kiểm tra cấu hình của bạn.",
+		"dimensionMismatch": "Mô hình \"{{modelId}}\" trả về embedding {{actualDimension}} chiều, nhưng chỉ mục mã được cấu hình cho {{configuredDimension}}. Hãy đặt số chiều embedding thành {{actualDimension}}, hoặc chọn mô hình tạo ra {{configuredDimension}} chiều.",
 		"apiKeyRequired": "Cần có khóa API cho trình nhúng này",
 		"baseUrlRequired": "Cần có URL cơ sở cho trình nhúng này"
 	},

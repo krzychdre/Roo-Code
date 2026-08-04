@@ -44,6 +44,7 @@
 		"invalidBaseUrl": "URL dasar tidak valid. Silakan periksa konfigurasi URL Anda.",
 		"invalidModel": "Model tidak valid. Silakan periksa konfigurasi model Anda.",
 		"invalidResponse": "Respons tidak valid dari layanan embedder. Silakan periksa konfigurasi Anda.",
+		"dimensionMismatch": "Model \"{{modelId}}\" mengembalikan embedding berdimensi {{actualDimension}}, tetapi indeks kode dikonfigurasi untuk {{configuredDimension}}. Setel dimensi embedding ke {{actualDimension}}, atau pilih model yang menghasilkan {{configuredDimension}} dimensi.",
 		"apiKeyRequired": "Kunci API diperlukan untuk embedder ini",
 		"baseUrlRequired": "URL dasar diperlukan untuk embedder ini"
 	},

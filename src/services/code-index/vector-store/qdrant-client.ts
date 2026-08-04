@@ -8,6 +8,83 @@ import { DEFAULT_MAX_SEARCH_RESULTS, DEFAULT_SEARCH_MIN_SCORE, QDRANT_CODE_BLOCK
 import { t } from "../../../i18n"
 
 /**
+ * Pulls Qdrant's own explanation out of a client error.
+ *
+ * `@qdrant/js-client-rest` reports every 4xx/5xx through an `ApiError` built as
+ * `super(response.statusText)`, so `error.message` is just "Bad Request" while the reason
+ * Qdrant refused the request ("Vector dimension error: expected dim: 1024, got 768",
+ * "Index already exists", ...) sits on the `data` payload that nothing reads.
+ */
+export function extractQdrantErrorDetail(error: unknown): string | undefined {
+	const data =
+		(error as { data?: unknown } | null)?.data ??
+		(error as { response?: { data?: unknown } } | null)?.response?.data
+
+	if (data === undefined || data === null) {
+		return undefined
+	}
+
+	if (typeof data === "string") {
+		return data.trim() || undefined
+	}
+
+	const status = (data as { status?: unknown }).status
+
+	if (typeof status === "string" && status) {
+		return status
+	}
+
+	if (status && typeof status === "object") {
+		const reason = (status as { error?: unknown }).error
+		if (typeof reason === "string" && reason) {
+			return reason
+		}
+	}
+
+	try {
+		const serialized = JSON.stringify(data)
+		return serialized && serialized !== "{}" ? serialized : undefined
+	} catch {
+		return undefined
+	}
+}
+
+/**
+ * Formats a Qdrant client error as a message that says what actually went wrong.
+ */
+export function describeQdrantError(error: unknown): string {
+	const message = error instanceof Error ? error.message : String(error)
+	const detail = extractQdrantErrorDetail(error)
+
+	if (!detail || message.includes(detail)) {
+		return message
+	}
+
+	return message ? `${message}: ${detail}` : detail
+}
+
+/**
+ * Returns a rethrowable error whose message carries Qdrant's explanation, keeping the original
+ * as `cause` and copying the status code that error handling upstream reads.
+ */
+function withQdrantDetail(error: unknown): unknown {
+	const described = describeQdrantError(error)
+
+	if (!(error instanceof Error) || error.message === described) {
+		return error
+	}
+
+	const detailed = new Error(described, { cause: error })
+	const status = (error as { status?: unknown }).status
+
+	if (status !== undefined) {
+		;(detailed as { status?: unknown }).status = status
+	}
+
+	return detailed
+}
+
+/**
  * Qdrant implementation of the vector store interface
  */
 export class QdrantVectorStore implements IVectorStore {
@@ -196,7 +273,7 @@ export class QdrantVectorStore implements IVectorStore {
 			await this._createPayloadIndexes()
 			return created
 		} catch (error: any) {
-			const errorMessage = error?.message || error
+			const errorMessage = describeQdrantError(error) || error
 			console.error(
 				`[QdrantVectorStore] Failed to initialize Qdrant collection "${this.collectionName}":`,
 				errorMessage,
@@ -263,7 +340,7 @@ export class QdrantVectorStore implements IVectorStore {
 			console.log(`[QdrantVectorStore] Successfully created new collection ${this.collectionName}`)
 			return true
 		} catch (recreationError) {
-			const errorMessage = recreationError instanceof Error ? recreationError.message : String(recreationError)
+			const errorMessage = describeQdrantError(recreationError)
 
 			// Provide detailed error context based on what stage failed
 			let contextualErrorMessage: string
@@ -303,11 +380,12 @@ export class QdrantVectorStore implements IVectorStore {
 				field_schema: "keyword",
 			})
 		} catch (indexError: any) {
-			const errorMessage = (indexError?.message || "").toLowerCase()
+			// Qdrant reports "Index already exists" in the response body, not in the status text.
+			const errorMessage = describeQdrantError(indexError).toLowerCase()
 			if (!errorMessage.includes("already exists")) {
 				console.warn(
 					`[QdrantVectorStore] Could not create payload index for type on ${this.collectionName}. Details:`,
-					indexError?.message || indexError,
+					describeQdrantError(indexError) || indexError,
 				)
 			}
 		}
@@ -320,11 +398,11 @@ export class QdrantVectorStore implements IVectorStore {
 					field_schema: "keyword",
 				})
 			} catch (indexError: any) {
-				const errorMessage = (indexError?.message || "").toLowerCase()
+				const errorMessage = describeQdrantError(indexError).toLowerCase()
 				if (!errorMessage.includes("already exists")) {
 					console.warn(
 						`[QdrantVectorStore] Could not create payload index for pathSegments.${i} on ${this.collectionName}. Details:`,
-						indexError?.message || indexError,
+						describeQdrantError(indexError) || indexError,
 					)
 				}
 			}
@@ -369,8 +447,8 @@ export class QdrantVectorStore implements IVectorStore {
 				wait: true,
 			})
 		} catch (error) {
-			console.error("Failed to upsert points:", error)
-			throw error
+			console.error("Failed to upsert points:", describeQdrantError(error), error)
+			throw withQdrantDetail(error)
 		}
 	}
 
@@ -462,8 +540,8 @@ export class QdrantVectorStore implements IVectorStore {
 
 			return filteredPoints as VectorStoreSearchResult[]
 		} catch (error) {
-			console.error("Failed to search points:", error)
-			throw error
+			console.error("Failed to search points:", describeQdrantError(error), error)
+			throw withQdrantDetail(error)
 		}
 	}
 
@@ -523,7 +601,7 @@ export class QdrantVectorStore implements IVectorStore {
 			})
 		} catch (error: any) {
 			// Extract more detailed error information
-			const errorMessage = error?.message || String(error)
+			const errorMessage = describeQdrantError(error)
 			const errorStatus = error?.status || error?.response?.status || error?.statusCode
 			const errorDetails = error?.response?.data || error?.data || ""
 
@@ -549,8 +627,12 @@ export class QdrantVectorStore implements IVectorStore {
 				await this.client.deleteCollection(this.collectionName)
 			}
 		} catch (error) {
-			console.error(`[QdrantVectorStore] Failed to delete collection ${this.collectionName}:`, error)
-			throw error // Re-throw to allow calling code to handle it
+			console.error(
+				`[QdrantVectorStore] Failed to delete collection ${this.collectionName}:`,
+				describeQdrantError(error),
+				error,
+			)
+			throw withQdrantDetail(error) // Re-throw to allow calling code to handle it
 		}
 	}
 
@@ -566,8 +648,8 @@ export class QdrantVectorStore implements IVectorStore {
 				wait: true,
 			})
 		} catch (error) {
-			console.error("Failed to clear collection:", error)
-			throw error
+			console.error("Failed to clear collection:", describeQdrantError(error), error)
+			throw withQdrantDetail(error)
 		}
 	}
 
@@ -646,8 +728,8 @@ export class QdrantVectorStore implements IVectorStore {
 			})
 			console.log("[QdrantVectorStore] Marked indexing as complete")
 		} catch (error) {
-			console.error("[QdrantVectorStore] Failed to mark indexing as complete:", error)
-			throw error
+			console.error("[QdrantVectorStore] Failed to mark indexing as complete:", describeQdrantError(error), error)
+			throw withQdrantDetail(error)
 		}
 	}
 
@@ -677,8 +759,12 @@ export class QdrantVectorStore implements IVectorStore {
 			})
 			console.log("[QdrantVectorStore] Marked indexing as incomplete (in progress)")
 		} catch (error) {
-			console.error("[QdrantVectorStore] Failed to mark indexing as incomplete:", error)
-			throw error
+			console.error(
+				"[QdrantVectorStore] Failed to mark indexing as incomplete:",
+				describeQdrantError(error),
+				error,
+			)
+			throw withQdrantDetail(error)
 		}
 	}
 }

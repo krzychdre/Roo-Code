@@ -1,5 +1,5 @@
 import { OpenAI } from "openai"
-import { IEmbedder, EmbeddingResponse, EmbedderInfo } from "../interfaces/embedder"
+import { IEmbedder, EmbeddingResponse, EmbedderInfo, EmbedderValidationResult } from "../interfaces/embedder"
 import {
 	MAX_BATCH_TOKENS,
 	MAX_ITEM_TOKENS,
@@ -357,10 +357,28 @@ export class OpenAICompatibleEmbedder implements IEmbedder {
 	}
 
 	/**
+	 * Reports how many dimensions a probe embedding came back with, so callers can compare it
+	 * against the configured dimension. Embeddings are requested as base64, where every value is
+	 * a 4-byte float.
+	 * @param item A single item from an embeddings response
+	 * @returns The vector length, or undefined if the item carried no usable embedding
+	 */
+	private measureEmbeddingDimension(item: EmbeddingItem | undefined): number | undefined {
+		const embedding = item?.embedding
+
+		if (typeof embedding === "string") {
+			const byteLength = Buffer.from(embedding, "base64").byteLength
+			return byteLength >= 4 ? Math.floor(byteLength / 4) : undefined
+		}
+
+		return Array.isArray(embedding) && embedding.length > 0 ? embedding.length : undefined
+	}
+
+	/**
 	 * Validates the OpenAI-compatible embedder configuration by testing endpoint connectivity and API key
 	 * @returns Promise resolving to validation result with success status and optional error message
 	 */
-	async validateConfiguration(): Promise<{ valid: boolean; error?: string }> {
+	async validateConfiguration(): Promise<EmbedderValidationResult> {
 		return withValidationErrorHandling(async () => {
 			try {
 				// Test with a minimal embedding request
@@ -389,7 +407,7 @@ export class OpenAICompatibleEmbedder implements IEmbedder {
 					}
 				}
 
-				return { valid: true }
+				return { valid: true, dimension: this.measureEmbeddingDimension(response.data[0]) }
 			} catch (error) {
 				// Capture telemetry for validation errors
 				TelemetryService.instance.captureEvent(TelemetryEventName.CODE_INDEX_ERROR, {

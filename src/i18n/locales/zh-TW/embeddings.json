@@ -44,6 +44,7 @@
 		"invalidBaseUrl": "無效的基礎 URL。請檢查您的 URL 組態。",
 		"invalidModel": "無效的模型。請檢查您的模型組態。",
 		"invalidResponse": "內嵌服務回應無效。請檢查您的組態。",
+		"dimensionMismatch": "模型「{{modelId}}」回傳 {{actualDimension}} 維嵌入，但程式碼索引設定為 {{configuredDimension}} 維。請將嵌入維度設為 {{actualDimension}}，或改選產生 {{configuredDimension}} 維的模型。",
 		"apiKeyRequired": "此嵌入器需要 API 金鑰",
 		"baseUrlRequired": "此嵌入器需要基礎 URL"
 	},

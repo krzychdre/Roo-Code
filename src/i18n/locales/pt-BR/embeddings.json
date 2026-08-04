@@ -44,6 +44,7 @@
 		"invalidBaseUrl": "URL base inválida. Verifique sua configuração de URL.",
 		"invalidModel": "Modelo inválido. Verifique a configuração do seu modelo.",
 		"invalidResponse": "Resposta inválida do serviço de embedder. Verifique sua configuração.",
+		"dimensionMismatch": "O modelo \"{{modelId}}\" retorna embeddings de {{actualDimension}} dimensões, mas o índice de código está configurado para {{configuredDimension}}. Defina a dimensão de embedding como {{actualDimension}} ou escolha um modelo que produza {{configuredDimension}} dimensões.",
 		"apiKeyRequired": "A chave de API é necessária para este embedder",
 		"baseUrlRequired": "A URL base é necessária para este embedder"
 	},

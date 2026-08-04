@@ -44,6 +44,7 @@
 		"invalidBaseUrl": "Ongeldige basis-URL. Controleer je URL-configuratie.",
 		"invalidModel": "Ongeldig model. Controleer je modelconfiguratie.",
 		"invalidResponse": "Ongeldige reactie van embedder-service. Controleer je configuratie.",
+		"dimensionMismatch": "Het model \"{{modelId}}\" levert embeddings met {{actualDimension}} dimensies, maar de code-index is ingesteld op {{configuredDimension}}. Stel de embeddingdimensie in op {{actualDimension}} of kies een model dat {{configuredDimension}} dimensies produceert.",
 		"apiKeyRequired": "API-sleutel is vereist voor deze embedder",
 		"baseUrlRequired": "Basis-URL is vereist voor deze embedder"
 	},

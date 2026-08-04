@@ -44,6 +44,7 @@
 		"invalidBaseUrl": "잘못된 기본 URL입니다. URL 구성을 확인하세요.",
 		"invalidModel": "잘못된 모델입니다. 모델 구성을 확인하세요.",
 		"invalidResponse": "임베더 서비스에서 잘못된 응답이 왔습니다. 구성을 확인하세요.",
+		"dimensionMismatch": "모델 \"{{modelId}}\"은(는) {{actualDimension}}차원 임베딩을 반환하지만 코드 인덱스는 {{configuredDimension}}차원으로 구성되어 있습니다. 임베딩 차원을 {{actualDimension}}(으)로 설정하거나 {{configuredDimension}}차원을 생성하는 모델을 선택하세요.",
 		"apiKeyRequired": "이 임베더에는 API 키가 필요합니다",
 		"baseUrlRequired": "이 임베더에는 기본 URL이 필요합니다"
 	},

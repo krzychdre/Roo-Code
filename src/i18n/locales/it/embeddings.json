@@ -44,6 +44,7 @@
 		"invalidBaseUrl": "URL di base non valido. Controlla la configurazione del tuo URL.",
 		"invalidModel": "Modello non valido. Controlla la configurazione del tuo modello.",
 		"invalidResponse": "Risposta non valida dal servizio embedder. Controlla la tua configurazione.",
+		"dimensionMismatch": "Il modello \"{{modelId}}\" restituisce embedding a {{actualDimension}} dimensioni, ma l'indice del codice è configurato per {{configuredDimension}}. Imposta la dimensione degli embedding su {{actualDimension}} oppure scegli un modello che produca {{configuredDimension}} dimensioni.",
 		"apiKeyRequired": "È richiesta una chiave API per questo embedder",
 		"baseUrlRequired": "È richiesto un URL di base per questo embedder"
 	},

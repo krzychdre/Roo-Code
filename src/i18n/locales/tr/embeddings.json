@@ -44,6 +44,7 @@
 		"invalidBaseUrl": "Geçersiz temel URL. Lütfen URL yapılandırmanızı kontrol edin.",
 		"invalidModel": "Geçersiz model. Lütfen model yapılandırmanızı kontrol edin.",
 		"invalidResponse": "Embedder hizmetinden geçersiz yanıt. Lütfen yapılandırmanızı kontrol edin.",
+		"dimensionMismatch": "\"{{modelId}}\" modeli {{actualDimension}} boyutlu gömüler döndürüyor, ancak kod dizini {{configuredDimension}} için yapılandırılmış. Gömü boyutunu {{actualDimension}} olarak ayarlayın veya {{configuredDimension}} boyut üreten bir model seçin.",
 		"apiKeyRequired": "Bu gömücü için API anahtarı gereklidir",
 		"baseUrlRequired": "Bu gömücü için temel URL gereklidir"
 	},

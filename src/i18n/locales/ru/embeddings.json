@@ -44,6 +44,7 @@
 		"invalidBaseUrl": "Неверный базовый URL. Проверьте конфигурацию URL.",
 		"invalidModel": "Неверная модель. Проверьте конфигурацию модели.",
 		"invalidResponse": "Неверный ответ от службы embedder. Проверьте вашу конфигурацию.",
+		"dimensionMismatch": "Модель \"{{modelId}}\" возвращает эмбеддинги размерности {{actualDimension}}, а индекс кода настроен на {{configuredDimension}}. Укажите размерность эмбеддингов {{actualDimension}} или выберите модель с {{configuredDimension}} измерениями.",
 		"apiKeyRequired": "Для этого встраивателя требуется ключ API",
 		"baseUrlRequired": "Для этого встраивателя требуется базовый URL"
 	},
