@@ -246,5 +246,21 @@
 	"docsLink": {
 		"label": "Docs",
 		"url": "https://docs.tumblecode.dev"
+	},
+	"agentInterchange": {
+		"pick_up_title": "Pick up work from another agent",
+		"pick_up_placeholder": "Handoffs left for you, then recent Claude Code sessions in this workspace",
+		"handoff_from": "handoff from {{agent}} · {{when}}",
+		"session_from": "{{agent}} · {{when}}",
+		"nothing_to_pick_up": "No handoffs or Claude Code sessions found for this workspace.",
+		"reading": "Reading the other agent's session…",
+		"read_failed": "That session could not be read — its files may have been removed.",
+		"no_provider": "Open the Tumble Code panel first, then try again.",
+		"no_current_task": "There is no task running to hand off.",
+		"next_steps_title": "Hand off to Claude Code",
+		"next_steps_prompt": "What should Claude Code do next? Separate steps with ';'. Leave empty to hand over the briefing alone.",
+		"next_steps_placeholder": "Run the integration suite; open the PR",
+		"handoff_created": "Handed off to {{agent}} as {{id}}.",
+		"open_handoff": "Open document"
 	}
 }

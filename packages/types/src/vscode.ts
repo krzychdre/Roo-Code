@@ -51,6 +51,9 @@ export const commandIds = [
 	"showRipgrepDiagnostic",
 
 	"reviewPlanFile",
+
+	"pickUpAgentSession",
+	"handOffCurrentTask",
 ] as const
 
 export type CommandId = (typeof commandIds)[number]

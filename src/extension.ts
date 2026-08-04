@@ -201,6 +201,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		autoDreamMinHours: contextProxy.getValue("autoDreamMinHours"),
 		autoDreamMinSessions: contextProxy.getValue("autoDreamMinSessions"),
 		memoryRecallEnabled: contextProxy.getValue("memoryRecallEnabled"),
+		autoMemoryShareWithClaudeCode: contextProxy.getValue("autoMemoryShareWithClaudeCode"),
 	}))
 
 	// Initialize code index managers for all workspace folders.

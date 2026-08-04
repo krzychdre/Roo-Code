@@ -647,6 +647,11 @@
 			"description": "Override the default memory storage location. Must be an absolute path. Project settings are ignored for this field (trusted sources only) so a repository can't redirect memory writes. Leave blank to use the default extension storage location.",
 			"placeholder": "/absolute/path/to/memory/dir"
 		},
+		"shareWithClaudeCode": {
+			"label": "Share memory with Claude Code",
+			"description": "Read and write the same MEMORY.md set as Claude Code, at ~/.claude/projects/<workspace>/memory, instead of keeping a separate one in extension storage. Both agents then remember the same things about this workspace.",
+			"overridden": "Disabled because a custom memory directory is set — an explicit path wins over sharing."
+		},
 		"writerProfile": {
 			"label": "Memory writer API profile",
 			"description": "Routes background memory writers (extraction and dream consolidation) to a cheaper or local API profile instead of the foreground model. A stale or deleted profile falls back to the current profile automatically.",

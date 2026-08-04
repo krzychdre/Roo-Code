@@ -50,5 +50,7 @@
 	"settings.debugProxy.tlsInsecure.description": "Accept self-signed certificates from the proxy. **Required for MITM inspection.** ⚠️ Insecure — only use for local debugging.",
 	"settings.cloudApiUrl.description": "Override the Tumble Code Cloud API URL (e.g. `https://app.tumblecode.dev`). Leave empty to use the default. Intended for self-hosted or development deployments.",
 	"settings.cloudProviderUrl.description": "Override the Tumble Code Cloud Provider URL (e.g. `https://api.tumblecode.dev/proxy`). Leave empty to use the default. Intended for self-hosted or development deployments.",
-	"settings.clerkBaseUrl.description": "Override the Clerk authentication base URL (e.g. `https://auth.tumblecode.dev`). Leave empty to auto-detect from the Cloud API URL — for self-hosted deployments, the Clerk facade is served by the same API. Only set this explicitly if the Clerk endpoint differs from the Cloud API URL. Intended for self-hosted or development deployments."
+	"settings.clerkBaseUrl.description": "Override the Clerk authentication base URL (e.g. `https://auth.tumblecode.dev`). Leave empty to auto-detect from the Cloud API URL — for self-hosted deployments, the Clerk facade is served by the same API. Only set this explicitly if the Clerk endpoint differs from the Cloud API URL. Intended for self-hosted or development deployments.",
+	"command.pickUpAgentSession.title": "Pick Up Agent Session…",
+	"command.handOffCurrentTask.title": "Hand Off Current Task…"
 }

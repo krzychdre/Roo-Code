@@ -333,6 +333,7 @@ export type ExtensionState = Pick<
 	| "disabledTools"
 	| "autoMemoryEnabled"
 	| "autoMemoryDirectory"
+	| "autoMemoryShareWithClaudeCode"
 	| "memoryRecallEnabled"
 	| "autoDreamEnabled"
 	| "autoDreamMinHours"

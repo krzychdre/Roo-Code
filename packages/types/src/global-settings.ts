@@ -223,6 +223,15 @@ export const globalSettingsSchema = z.object({
 	 */
 	autoMemoryDirectory: z.string().optional(),
 	/**
+	 * Share the per-workspace memory directory with Claude Code, so both agents
+	 * read and write one `MEMORY.md` set: memory for a workspace then lives at
+	 * `~/.claude/projects/<claudeSlug(cwd)>/memory/` instead of under
+	 * globalStorage. Ignored when {@link autoMemoryDirectory} is set — an
+	 * explicit path wins over a convention.
+	 * @default false
+	 */
+	autoMemoryShareWithClaudeCode: z.boolean().optional(),
+	/**
 	 * Whether the background memory consolidation ("dream") runs periodically.
 	 * @default true
 	 */

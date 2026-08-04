@@ -1,6 +1,8 @@
 import * as path from "path"
 import { homedir } from "os"
 
+import { claudeConfigDir, claudeProjectCwds, claudeSlug } from "@roo-code/agent-interchange"
+
 import { logger } from "../../utils/logging"
 
 /**
@@ -35,6 +37,7 @@ export interface MemoryConfig {
 	autoDreamMinHours?: number
 	autoDreamMinSessions?: number
 	memoryRecallEnabled?: boolean
+	autoMemoryShareWithClaudeCode?: boolean
 }
 
 interface MemoryPathsState {
@@ -66,6 +69,7 @@ export function initMemoryPaths(globalStoragePath: string, getConfig: () => Memo
 export function resetMemoryPaths(): void {
 	_state = undefined
 	getAutoMemPathCache.clear()
+	collisionResults.clear()
 }
 
 function requireState(): MemoryPathsState {
@@ -136,16 +140,84 @@ const getAutoMemPathCache = new Map<string, string>()
 /**
  * The per-workspace memory directory, WITH a trailing separator, NFC-normalized.
  * `<memoryBase>/projects/<sanitizedCwd>/memory/`.
+ *
+ * With `autoMemoryShareWithClaudeCode` on, it is Claude Code's directory for the
+ * same workspace instead — `<claudeConfigDir>/projects/<claudeSlug(cwd)>/memory/`
+ * — so both agents read and write one set of memories. The two layouts differ
+ * only in the base and the per-project segment, which is what makes sharing a
+ * path substitution rather than a migration.
  */
 export function getAutoMemPath(cwd: string): string {
-	const cached = getAutoMemPathCache.get(cwd)
+	const segments = memorySegmentsFor(cwd)
+	// Keyed by the resolved layout, not just the cwd: toggling the sharing
+	// setting (or the directory override) has to take effect without a reload.
+	const cacheKey = segments.join("\u0000")
+	const cached = getAutoMemPathCache.get(cacheKey)
 	if (cached) return cached
-	const dir = (path.join(getMemoryBaseDir(), "projects", sanitizeCwd(cwd), AUTO_MEM_DIRNAME) + path.sep).normalize(
-		"NFC",
-	)
-	getAutoMemPathCache.set(cwd, dir)
+	const dir = (path.join(...segments, AUTO_MEM_DIRNAME) + path.sep).normalize("NFC")
+	getAutoMemPathCache.set(cacheKey, dir)
 	return dir
 }
+
+/** `[base, "projects", <per-project segment>]` for the active layout. */
+function memorySegmentsFor(cwd: string): [string, string, string] {
+	if (isSharedWithClaudeCode()) {
+		const base = claudeConfigDir()
+		const segment = claudeSlug(cwd)
+		if (hasSlugCollision(cwd, path.join(base, "projects", segment))) {
+			return [getMemoryBaseDir(), "projects", sanitizeCwd(cwd)]
+		}
+		return [base, "projects", segment]
+	}
+
+	return [getMemoryBaseDir(), "projects", sanitizeCwd(cwd)]
+}
+
+/**
+ * Sharing is off unless asked for, and an explicit `autoMemoryDirectory` always
+ * wins: a user who named a path meant that path.
+ */
+function isSharedWithClaudeCode(): boolean {
+	const config = _state?.getConfig() ?? {}
+	if (config.autoMemoryDirectory && config.autoMemoryDirectory.trim()) return false
+	return config.autoMemoryShareWithClaudeCode === true
+}
+
+/**
+ * Claude Code's slug is lossy — `k3s_2025` and `k3s-2025` produce the same
+ * directory name — so two workspaces can land on one shared memory dir. We
+ * A proven mismatch is never safe to share. Fall back to Tumble's isolated
+ * layout and warn once; an absent/unreadable store is not collision evidence.
+ */
+function hasSlugCollision(cwd: string, projectDir: string): boolean {
+	const cacheKey = `${path.resolve(cwd)}\u0000${path.resolve(projectDir)}`
+	if (collisionResults.has(cacheKey)) return true
+
+	try {
+		const recorded = claudeProjectCwds(projectDir).find(
+			(candidate) => path.resolve(candidate) !== path.resolve(cwd),
+		)
+
+		if (recorded && path.resolve(recorded) !== path.resolve(cwd)) {
+			logger.warn(
+				`[memory] shared memory dir ${projectDir} was created by Claude Code for ${recorded}, ` +
+					`not ${cwd} — their paths collapse to the same directory name. Tumble Code will use its ` +
+					`isolated memory directory for this workspace. Rename one workspace to restore sharing, ` +
+					`or set autoMemoryDirectory to choose an explicit isolated location.`,
+			)
+			collisionResults.add(cacheKey)
+			return true
+		}
+	} catch {
+		// A store we cannot read is not evidence of a collision.
+	}
+
+	return false
+}
+
+// Positive collisions are permanent for this process. Safe/empty results are
+// deliberately not cached because Claude Code may add a colliding session later.
+const collisionResults = new Set<string>()
 
 /** Path to the `MEMORY.md` index for a given cwd. */
 export function getAutoMemEntrypoint(cwd: string): string {

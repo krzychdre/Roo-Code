@@ -214,6 +214,14 @@ const getCommandsMap = ({
 			action: "toggleAutoApprove",
 		})
 	},
+	pickUpAgentSession: async () => {
+		const { pickUpAgentSession } = await import("../core/agent-interchange")
+		await pickUpAgentSession(context)
+	},
+	handOffCurrentTask: async () => {
+		const { handOffCurrentTask } = await import("../core/agent-interchange")
+		await handOffCurrentTask(context)
+	},
 	reviewPlanFile: async (uri?: vscode.Uri) => {
 		let fileUri = uri
 		if (!fileUri) {

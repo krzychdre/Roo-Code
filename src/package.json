@@ -180,6 +180,16 @@
 				"command": "tumble-code.reviewPlanFile",
 				"title": "%command.reviewPlanFile.title%",
 				"icon": "$(comment-discussion)"
+			},
+			{
+				"command": "tumble-code.pickUpAgentSession",
+				"title": "%command.pickUpAgentSession.title%",
+				"category": "%extension.displayName%"
+			},
+			{
+				"command": "tumble-code.handOffCurrentTask",
+				"title": "%command.handOffCurrentTask.title%",
+				"category": "%extension.displayName%"
 			}
 		],
 		"menus": {
@@ -502,6 +512,7 @@
 		"@mistralai/mistralai": "^1.9.18",
 		"@modelcontextprotocol/sdk": "1.26.0",
 		"@qdrant/js-client-rest": "^1.14.0",
+		"@roo-code/agent-interchange": "workspace:^",
 		"@roo-code/cloud": "workspace:^",
 		"@roo-code/core": "workspace:^",
 		"@roo-code/ipc": "workspace:^",
