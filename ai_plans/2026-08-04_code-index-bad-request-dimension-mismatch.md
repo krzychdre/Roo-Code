@@ -5,7 +5,7 @@ Branch: `fix/code-index-dimension-mismatch-diagnostics`
 
 ## Reported symptom
 
-```
+```text
 Error - Failed during initial scan: Indexing failed: Failed to process batch after 3 attempts: Bad Request
 ```
 
@@ -34,10 +34,12 @@ Evidence collected against the real servers:
    `vectors.size = 1024`, `points_count = 1` (only the dummy point written during payload
    index creation — nothing was ever indexed).
 3. **Qdrant rejects every upsert with HTTP 400.** Reproduced directly:
-    ```
+
+    ```text
     PUT /collections/ws-502ffc5929916529/points  (768-dim vector)
     → 400 {"status":{"error":"Wrong input: Vector dimension error: expected dim: 1024, got 768"}}
     ```
+
 4. **The reason never reaches the user.** `@qdrant/js-client-rest` surfaces 4xx through
    `ApiError` from `@qdrant/openapi-typescript-fetch`, whose constructor is
    `super(response.statusText)` — so `error.message === "Bad Request"` and the informative
@@ -79,14 +81,24 @@ This turns a failed scan into an up-front configuration error at the point where
 still act on it (`manager.ts:540`), and it fires for _any_ provider whose configured dimension
 is wrong — the same trap catches anyone typing a manual dimension for a local model.
 
-## Not changed (noted for later)
+## Not a problem — the embedding server's batch size
 
-While probing the server, a second latent problem showed up: llama.cpp rejects any **single**
-input longer than its physical batch with `HTTP 500 "input (5567 tokens) is too large to
-process. increase the physical batch size (current batch size: 4096)"`. Roo caps items at
-`MAX_ITEM_TOKENS = 8191` using a `length / 4` estimate, but real code tokenises at ~2.9
-chars/token on this model, so a chunk Roo thinks is 4000 tokens can be 5600. That is a
-different failure (500, different message) and is out of scope here.
+While probing, llama.cpp turned out to reject any **single** input longer than its physical
+batch: `HTTP 500 "input (5567 tokens) is too large to process. increase the physical batch size
+(current batch size: 4096)"`. That looked like a second latent bug, because Roo caps items at
+`MAX_ITEM_TOKENS = 8191` using a `length / 4` estimate while real code tokenises at ~2.9
+chars/token on this model.
+
+It is unreachable in practice. The parser splits every block at
+`MAX_BLOCK_CHARS * MAX_CHARS_TOLERANCE_FACTOR = 1150` characters and breaks over-long single
+lines at `MAX_BLOCK_CHARS` (`parser.ts:317`), so `MAX_ITEM_TOKENS` never comes into play.
+Measured against 20 000 chunks scrolled out of the largest live code-index collection
+(`ws-e9af27d99fe8af36`, 119 876 points): max 1150 chars, p99 1108, median 139, **zero** chunks
+over 4000 chars — a largest single input of roughly 400 tokens, ten times under the 4096 batch.
+
+All three embedding call sites (`scanner.ts:447`, `file-watcher.ts:570`,
+`search-service.ts:46`) are fed either by those parser blocks or by a short search query, so
+raising `--batch-size` / `--ubatch-size` buys nothing for this client.
 
 ## Verification
 
