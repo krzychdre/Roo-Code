@@ -105,7 +105,7 @@ export async function validateImageForProcessing(
 		return {
 			isValid: false,
 			reason: "unsupported_model",
-			notice: "Image file detected but current model does not support images. Skipping image processing.",
+			notice: "Image file detected but current model does not support images. Skipping image processing. If a vision-capable mode is available (see MODES), delegate this image to it with the new_task tool - include the image path and your question - and continue using the textual description it returns.",
 		}
 	}
 
