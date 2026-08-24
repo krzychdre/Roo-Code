@@ -8,7 +8,6 @@ import { formatLanguage } from "../../shared/language"
 import { isEmpty } from "../../utils/object"
 
 import { McpHub } from "../../services/mcp/McpHub"
-import { CodeIndexManager } from "../../services/code-index/manager"
 import { SkillsManager } from "../../services/skills/SkillsManager"
 
 import type { SystemPromptSettings } from "./types"
@@ -21,6 +20,7 @@ import {
 	getToolUseGuidelinesSection,
 	getOutputEfficiencySection,
 	getCapabilitiesSection,
+	getMcpAvailabilitySection,
 	getModesSection,
 	addCustomInstructions,
 	markdownFormattingSection,
@@ -29,6 +29,46 @@ import {
 	getMemorySection,
 	getMemoryIndexSection,
 } from "./sections"
+
+/**
+ * The first bytes of every system prompt, in every mode, for every profile.
+ *
+ * Providers that cache by prompt prefix (llama.cpp locally, Z.ai/GLM and
+ * DeepSeek-style prefix caches remotely) reuse a request's KV cache only up to
+ * the first byte that differs. The mode's `roleDefinition` used to open the
+ * prompt, so switching mode invalidated the cache from token 1. This opener is
+ * a constant, and it names the sections where the mode's role and the mode's
+ * rules really live, so a weak model still knows who it is and what it must do:
+ * the pointer is load-bearing, not decorative.
+ *
+ * Both destinations are named on purpose. The MODE section carries only the
+ * role definition; the mode's actual rulebook (a mode's `customInstructions`,
+ * for example the orchestrator's delegation protocol) renders further down as
+ * the "Mode-specific Instructions" block inside USER'S CUSTOM INSTRUCTIONS. A
+ * pointer that named only the MODE section would send a weak model to two
+ * sentences of persona and leave it reading its own protocol as a user's wish.
+ *
+ * Change this only with the "one-time prefix invalidation" note in the commit.
+ */
+export const STABLE_PROMPT_OPENER = `You are Tumble Code, an AI coding agent. Your mode is defined at the end of this prompt and both parts of it are binding on you: the MODE section states your role, and the "Mode-specific Instructions" block inside USER'S CUSTOM INSTRUCTIONS states the rules you must follow in that mode.`
+
+/**
+ * Wrap the mode's role definition in the MODE section the opener points at.
+ *
+ * Returns "" for an empty role definition so the join drops the header rather
+ * than emitting a section with no body.
+ */
+export function getModeSection(roleDefinition: string): string {
+	const trimmed = roleDefinition?.trim() ?? ""
+	if (!trimmed) {
+		return ""
+	}
+	return `====
+
+MODE
+
+${trimmed}`
+}
 
 // Helper function to get prompt component, filtering out empty objects
 export function getPromptComponent(
@@ -93,8 +133,6 @@ async function generatePrompt(
 	}
 	const shouldIncludeMcp = hasMcpGroup && hasMcpServers
 
-	const codeIndexManager = CodeIndexManager.getInstance(context, cwd)
-
 	// Tool calling is native-only.
 	const effectiveProtocol = "native"
 
@@ -121,44 +159,103 @@ async function generatePrompt(
 		materializedDeferredTools,
 	})
 
-	// Memory system: the behavioral section (what/when/how to save) is injected
-	// between the rules and system-info sections; the truncated MEMORY.md index
-	// is appended after custom instructions so memory stays orthogonal to mode
-	// rules. Both read from disk and return "" when memory is disabled.
+	// Memory system: the behavioral section (what/when/how to save) and the
+	// truncated MEMORY.md index. Both are workspace-scoped and mode-independent,
+	// so they close the stable head (WS-F sections 7). Both read from disk and
+	// return "" when memory is disabled.
 	const [memorySection, memoryIndex] = await Promise.all([getMemorySection(cwd), getMemoryIndexSection(cwd)])
 
-	const basePrompt = `${roleDefinition}
+	const customInstructionsSection = await addCustomInstructions(
+		baseInstructions,
+		globalCustomInstructions || "",
+		cwd,
+		mode,
+		{
+			language: language ?? formatLanguage(vscode.env.language),
+			rooIgnoreInstructions,
+			settings,
+		},
+	)
 
-${markdownFormattingSection()}
+	// ------------------------------------------------------------------
+	// STABLE HEAD (WS-F sections 1-7).
+	//
+	// Every byte here is identical for every mode and every profile on this
+	// workspace and machine, so a provider that caches by prompt prefix keeps
+	// its cache across mode switches instead of re-prefilling from token 1.
+	// Nothing that varies with the mode, the model, or the request may be
+	// added to this list; see CONTRIBUTING.md, "KV-cache contract".
+	// ------------------------------------------------------------------
+	const stableHead: string[] = [
+		// 1. Identity, byte-identical everywhere, pointing at the MODE section.
+		STABLE_PROMPT_OPENER,
+		// 2. Formatting rules.
+		markdownFormattingSection(),
+		// 3. Tool-use protocol boilerplate. `toolsCatalog` is always "" (the
+		//    catalog is carried by the native tools array, not by the prompt).
+		getSharedToolUseSection() + toolsCatalog,
+		getToolUseGuidelinesSection(),
+		// 4. Conciseness steering.
+		getOutputEfficiencySection(),
+		// 5. The loop's objective. Constant text, no inputs at all.
+		getObjectiveSection(),
+		// 6. Capabilities and machine facts. Vary with the workspace and the
+		//    machine, never with the mode, so they still share across modes.
+		getCapabilitiesSection(cwd),
+		getSystemInfoSection(cwd),
+		// 7. Memory: behavioral instructions plus the MEMORY.md index. Both are
+		//    mode-independent, which is why they sit at the end of the head
+		//    rather than in the tail: a mode switch keeps them cached. The cost
+		//    is that writing a memory mid-task invalidates the tail after them.
+		memorySection,
+		memoryIndex,
+	]
 
-${getSharedToolUseSection()}${toolsCatalog}
+	// ------------------------------------------------------------------
+	// VARIABLE TAIL (WS-F section 8).
+	//
+	// Everything whose bytes depend on the mode, the profile or the model.
+	// Ordered so the pieces that change least often come first.
+	// ------------------------------------------------------------------
+	const variableTail: string[] = [
+		// Per-mode: depends on the mode's MCP group and its server allowlist.
+		// The hub is forwarded only when the mode exposes the MCP group, and the
+		// allowlist goes with it, so this text follows the SAME convention as the
+		// tool-listing layer (one source of truth for which servers are visible).
+		getMcpAvailabilitySection(hasMcpGroup ? mcpHub : undefined, allowedMcpServers),
+		// Per-settings: the list of installed modes.
+		modesSection,
+		// Per-mode: skills are filtered by the current mode.
+		skillsSection,
+		// Per-workspace and per-profile (shell, cwd, stealth-model flag).
+		getRulesSection(cwd, settings),
+		// Per-mode: the role the opener points at.
+		getModeSection(roleDefinition),
+		// Per-mode and per-user: language, global and mode instructions, rules files.
+		customInstructionsSection,
+		// LAST on purpose. This is the only section that mutates WITHIN a
+		// conversation: every `tools_load` materialization drops an entry from the
+		// catalog, so anything printed after it would be re-prefilled on the next
+		// request. Nothing follows it, so the invalidation costs its own bytes and
+		// no more. Being last also gives the two-step `tools_load` procedure the
+		// recency a weak model needs to actually follow it.
+		deferredToolsSection,
+	]
 
-	${getToolUseGuidelinesSection()}
-
-${getOutputEfficiencySection()}
-
-${
-	// Forward the hub only when the mode actually exposes the MCP group, and pass the per-mode
-	// allowlist through so the capabilities section filters servers using the SAME convention as
-	// the tool-listing layer (a single source of truth for which servers are visible).
-	getCapabilitiesSection(cwd, hasMcpGroup ? mcpHub : undefined, allowedMcpServers)
-}
-${deferredToolsSection ? `\n${deferredToolsSection}\n` : ""}
-${modesSection}
-${skillsSection ? `\n${skillsSection}` : ""}
-${getRulesSection(cwd, settings)}
-${memorySection ? `\n\n${memorySection}\n` : ""}
-${getSystemInfoSection(cwd)}
-
-${getObjectiveSection()}
-
-${await addCustomInstructions(baseInstructions, globalCustomInstructions || "", cwd, mode, {
-	language: language ?? formatLanguage(vscode.env.language),
-	rooIgnoreInstructions,
-	settings,
-})}${memoryIndex}`
-
-	return basePrompt
+	// One canonical separator between sections, and empty sections drop out
+	// entirely. Building the prompt by join instead of by template literal is
+	// what makes an absent optional section cost zero bytes rather than a
+	// varying run of blank lines.
+	return (
+		[...stableHead, ...variableTail]
+			// The nullish guard is deliberate: a section builder that returns nothing
+			// (a disabled feature, a stubbed dependency) must drop out of the prompt,
+			// never render the word "undefined" into it, which is what the previous
+			// template-literal assembly did.
+			.map((section) => (section ?? "").trim())
+			.filter((section) => section.length > 0)
+			.join("\n\n")
+	)
 }
 
 export const SYSTEM_PROMPT = async (

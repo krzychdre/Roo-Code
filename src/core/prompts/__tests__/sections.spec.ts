@@ -1,5 +1,5 @@
 import { addCustomInstructions } from "../sections/custom-instructions"
-import { getCapabilitiesSection } from "../sections/capabilities"
+import { getCapabilitiesSection, getMcpAvailabilitySection } from "../sections/capabilities"
 import { getRulesSection, getCommandChainOperator } from "../sections/rules"
 import { McpHub } from "../../../services/mcp/McpHub"
 import * as shellUtils from "../../../utils/shell"
@@ -43,7 +43,18 @@ describe("getCapabilitiesSection", () => {
 		expect(result).toContain("read and write files")
 	})
 
-	// getCapabilitiesSection now filters the hub's server list (honoring the per-mode
+	// Prefix stability (WS-F): CAPABILITIES belongs to the stable head, so it must
+	// not mention MCP at all. Whether MCP is available varies per mode, and that
+	// decision now lives in getMcpAvailabilitySection, in the variable tail.
+	it("never mentions MCP, whatever the hub says", () => {
+		const result = getCapabilitiesSection(cwd)
+
+		expect(result).not.toContain("MCP")
+	})
+})
+
+describe("getMcpAvailabilitySection", () => {
+	// getMcpAvailabilitySection filters the hub's server list (honoring the per-mode
 	// allowedMcpServers allowlist) to decide whether to advertise MCP, so the mock must
 	// expose getServers(). An empty `{}` hub would throw on getServers().
 	const createMockMcpHub = (serverNames: string[]): McpHub =>
@@ -53,43 +64,44 @@ describe("getCapabilitiesSection", () => {
 
 	it("includes MCP reference when mcpHub exposes at least one server", () => {
 		const mockMcpHub = createMockMcpHub(["test-server"])
-		const result = getCapabilitiesSection(cwd, mockMcpHub)
+		const result = getMcpAvailabilitySection(mockMcpHub)
 
+		expect(result).toContain("MCP SERVERS")
 		expect(result).toContain("MCP servers")
 	})
 
 	it("excludes MCP reference when mcpHub is undefined", () => {
-		const result = getCapabilitiesSection(cwd, undefined)
+		const result = getMcpAvailabilitySection(undefined)
 
-		expect(result).not.toContain("MCP servers")
+		expect(result).toBe("")
 	})
 
 	it("excludes MCP reference when mcpHub exposes no servers", () => {
 		const mockMcpHub = createMockMcpHub([])
-		const result = getCapabilitiesSection(cwd, mockMcpHub)
+		const result = getMcpAvailabilitySection(mockMcpHub)
 
-		expect(result).not.toContain("MCP servers")
+		expect(result).toBe("")
 	})
 
 	it("includes MCP reference when allowedMcpServers matches a connected server", () => {
 		const mockMcpHub = createMockMcpHub(["allowed-server", "other-server"])
-		const result = getCapabilitiesSection(cwd, mockMcpHub, ["allowed-server"])
+		const result = getMcpAvailabilitySection(mockMcpHub, ["allowed-server"])
 
 		expect(result).toContain("MCP servers")
 	})
 
 	it("excludes MCP reference when allowedMcpServers is an empty array", () => {
 		const mockMcpHub = createMockMcpHub(["test-server"])
-		const result = getCapabilitiesSection(cwd, mockMcpHub, [])
+		const result = getMcpAvailabilitySection(mockMcpHub, [])
 
-		expect(result).not.toContain("MCP servers")
+		expect(result).toBe("")
 	})
 
 	it("excludes MCP reference when allowedMcpServers matches no connected server", () => {
 		const mockMcpHub = createMockMcpHub(["test-server"])
-		const result = getCapabilitiesSection(cwd, mockMcpHub, ["nonexistent-server"])
+		const result = getMcpAvailabilitySection(mockMcpHub, ["nonexistent-server"])
 
-		expect(result).not.toContain("MCP servers")
+		expect(result).toBe("")
 	})
 })
 

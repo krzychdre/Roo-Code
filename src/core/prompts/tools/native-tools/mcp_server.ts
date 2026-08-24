@@ -23,6 +23,17 @@ export function getMcpServerTools(mcpHub?: McpHub, allowedServers?: string[]): O
 		const allowSet = new Set(allowedServers)
 		servers = servers.filter((s) => allowSet.has(s.name))
 	}
+
+	// Prefix stability (WS-F): the tools array is part of the request prefix for
+	// providers that cache tool schemas, so its order must depend on the config
+	// only. `getServers()` returns connection order, and a server that reconnects
+	// (config edit, file watcher, manual restart) is deleted and re-appended, so
+	// it would jump to the end of the array and shift every schema after it.
+	// Sorting by name removes that. Tool order WITHIN a server is left as the
+	// server reported it: that order is the server author's, and it is stable for
+	// a given server version. The UI keeps using `getServers()` directly, so the
+	// user still sees their servers in config order.
+	servers = [...servers].sort((a, b) => (a.name === b.name ? 0 : a.name < b.name ? -1 : 1))
 	const tools: OpenAI.Chat.ChatCompletionTool[] = []
 	// Track seen tool names to prevent duplicates (e.g., when same server exists in both global and project configs)
 	const seenToolNames = new Set<string>()

@@ -29,7 +29,20 @@ export async function getSkillsSection(
 	const skills = skillsManager.getSkillsForMode(currentMode)
 	if (skills.length === 0) return ""
 
-	const skillsXml = skills
+	// Byte stability (WS-F): the manager returns skills in Map insertion order,
+	// which is `fs.readdir` order, which the filesystem does not guarantee to be
+	// sorted and which can change after a rescan. Two builds of the same prompt
+	// would then differ, invalidating the provider's prefix cache for no reason.
+	// Sort by name, then path, so the order is a pure function of the skill set.
+	// Plain code-unit comparison on purpose: `localeCompare` depends on the
+	// runtime locale and would reintroduce machine-dependent bytes.
+	const sortedSkills = [...skills].sort((a, b) => {
+		if (a.name !== b.name) return a.name < b.name ? -1 : 1
+		if (a.path !== b.path) return a.path < b.path ? -1 : 1
+		return 0
+	})
+
+	const skillsXml = sortedSkills
 		.map((skill) => {
 			const name = escapeXml(skill.name)
 			const description = escapeXml(skill.description)
