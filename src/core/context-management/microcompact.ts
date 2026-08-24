@@ -139,6 +139,8 @@ export const COMPACTABLE_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
 	"edit_file",
 	"search_replace",
 	"search_and_replace",
+	"web_search",
+	"web_fetch",
 ])
 
 /** One compactable tool result, as selection sees it. Encounter order, oldest first. */

@@ -50,6 +50,8 @@ const TUMBLE_TOOLS: Record<string, ActionKind> = {
 	run_parallel_tasks: "delegate",
 	attempt_completion: "complete",
 	browser_action: "web",
+	web_search: "web",
+	web_fetch: "web",
 	use_mcp_tool: "other",
 	access_mcp_resource: "other",
 	switch_mode: "other",

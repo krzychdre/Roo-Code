@@ -507,6 +507,14 @@
 		"wantsToRun": "Tumble wants to run a slash command",
 		"didRun": "Tumble ran a slash command"
 	},
+	"webSearch": {
+		"wantsToSearch": "Tumble wants to search the web for <code>{{queries}}</code>",
+		"didSearch": "Tumble searched the web for <code>{{queries}}</code>"
+	},
+	"webFetch": {
+		"wantsToFetch": "Tumble wants to read <code>{{url}}</code>",
+		"didFetch": "Tumble read <code>{{url}}</code>"
+	},
 	"queuedMessages": {
 		"title": "Queued Messages",
 		"clickToEdit": "Click to edit message"

@@ -33,6 +33,12 @@ interface BuildToolsOptions {
 	disabledTools?: string[]
 	modelInfo?: ModelInfo
 	/**
+	 * Global `webToolsEnabled` setting. The `web` group resolves to no tools
+	 * unless this is true, so an unset value keeps the tools array identical to
+	 * a build without the feature.
+	 */
+	webToolsEnabled?: boolean
+	/**
 	 * If true, returns all tools without mode filtering, but also includes
 	 * the list of allowed tool names for use with allowedFunctionNames.
 	 * This enables providers that support function call restrictions (e.g., Gemini)
@@ -113,6 +119,7 @@ export async function buildNativeToolsArrayWithRestrictions(options: BuildToolsO
 		apiConfiguration,
 		disabledTools,
 		modelInfo,
+		webToolsEnabled,
 		includeAllToolsWithRestrictions,
 		materializedDeferredTools,
 	} = options
@@ -128,6 +135,7 @@ export async function buildNativeToolsArrayWithRestrictions(options: BuildToolsO
 		todoListEnabled: apiConfiguration?.todoListEnabled ?? true,
 		disabledTools,
 		modelInfo,
+		webToolsEnabled,
 	}
 
 	// Check if the model supports images for read_file tool description.

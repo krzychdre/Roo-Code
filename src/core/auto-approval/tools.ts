@@ -13,5 +13,9 @@ export function isReadOnlyToolAction(tool: ClineSayTool): boolean {
 		"searchFiles",
 		"codebaseSearch",
 		"runSlashCommand",
+		// The web tools only read remote pages; they cannot touch the
+		// workspace, so they ride the read-only auto-approve category.
+		"webSearch",
+		"webFetch",
 	].includes(tool.tool)
 }

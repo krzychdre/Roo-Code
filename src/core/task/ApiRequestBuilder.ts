@@ -220,6 +220,7 @@ export class ApiRequestBuilder {
 			apiConfiguration,
 			disabledTools,
 			modelInfo,
+			webToolsEnabled: state?.webToolsEnabled,
 			includeAllToolsWithRestrictions: supportsAllowedFunctionNames,
 			materializedDeferredTools: this.access.materializedDeferredTools,
 		})

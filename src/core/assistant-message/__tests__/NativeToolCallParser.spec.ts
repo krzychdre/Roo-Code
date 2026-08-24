@@ -39,6 +39,8 @@ const MINIMAL_VALID_ARGS: Record<Exclude<ToolName, "custom_tool">, Record<string
 	skill: { skill: "init" },
 	generate_image: { prompt: "p", path: "out.png" },
 	tools_load: { names: ["mcp--example--tool"] },
+	web_search: { queries: ["zod 4 migration"] },
+	web_fetch: { url: "https://example.com" },
 }
 
 describe("NativeToolCallParser", () => {
@@ -353,6 +355,39 @@ describe("NativeToolCallParser", () => {
 				expect(result?.nativeArgs).toBeDefined()
 				const nativeArgs = result?.nativeArgs as { path: string }
 				expect(nativeArgs.path).toBe("src/test.ts")
+			})
+		})
+
+		// The streaming switch is separate from the complete-call switch. A tool
+		// registered only in the latter renders an EMPTY card while it streams,
+		// because handlePartial sees nativeArgs === undefined.
+		describe("web tools", () => {
+			it("emits partial nativeArgs.queries for web_search", () => {
+				const parser = new NativeToolCallParser()
+				parser.startStreamingToolCall("toolu_ws", "web_search")
+
+				const result = parser.processStreamingChunk("toolu_ws", '{"queries":["zod 4 migration"')
+
+				expect(result?.nativeArgs).toBeDefined()
+				expect((result?.nativeArgs as { queries: string[] }).queries).toEqual(["zod 4 migration"])
+			})
+
+			it("accepts a bare string for web_search queries while streaming", () => {
+				const parser = new NativeToolCallParser()
+				parser.startStreamingToolCall("toolu_ws2", "web_search")
+
+				const result = parser.processStreamingChunk("toolu_ws2", '{"queries":"single query"}')
+
+				expect((result?.nativeArgs as { queries: string[] }).queries).toEqual(["single query"])
+			})
+
+			it("emits partial nativeArgs.url for web_fetch", () => {
+				const parser = new NativeToolCallParser()
+				parser.startStreamingToolCall("toolu_wf", "web_fetch")
+
+				const result = parser.processStreamingChunk("toolu_wf", '{"url":"https://example.com/docs')
+
+				expect((result?.nativeArgs as { url: string }).url).toBe("https://example.com/docs")
 			})
 		})
 	})

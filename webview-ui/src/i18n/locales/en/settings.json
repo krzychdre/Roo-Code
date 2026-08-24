@@ -34,6 +34,7 @@
 		"autoApprove": "Auto-Approve",
 		"checkpoints": "Checkpoints",
 		"memory": "Memory",
+		"web": "Web Tools",
 		"notifications": "Notifications",
 		"contextManagement": "Context",
 		"terminal": "Terminal",
@@ -286,7 +287,7 @@
 		"enabled": "Auto-Approve Enabled",
 		"readOnly": {
 			"label": "Read",
-			"description": "When enabled, Tumble will automatically view directory contents and read files without requiring you to click the Approve button.",
+			"description": "When enabled, Tumble will automatically view directory contents and read files without requiring you to click the Approve button. This also covers the web tools, so when they are enabled Tumble may search the web and fetch public pages without asking.",
 			"outsideWorkspace": {
 				"label": "Include files outside workspace",
 				"description": "Allow Tumble to read files outside the current workspace without requiring approval."
@@ -670,6 +671,21 @@
 				"label": "Minimum sessions between dreams",
 				"description": "Task sessions since the last consolidation required before the next dream runs. Default 5. Range: 1-100. It's a skip-gate, so undercounting only delays a dream."
 			}
+		}
+	},
+	"web": {
+		"enable": {
+			"label": "Enable web tools",
+			"description": "Gives modes with the Web Access group the native web_search and web_fetch tools, backed by a self-hosted SearXNG instance. When off, the tools are hidden from the model and cannot be called."
+		},
+		"searxngBaseUrl": {
+			"label": "SearXNG base URL",
+			"description": "Base URL of your SearXNG instance. Its JSON output format must be enabled, otherwise web_search cannot read the results.",
+			"placeholder": "https://searx.example.org"
+		},
+		"maxResults": {
+			"label": "Results per query",
+			"description": "How many search results web_search returns for each query. Lower values keep the context window small. Default 5."
 		}
 	},
 	"notifications": {

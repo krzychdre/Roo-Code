@@ -46,6 +46,12 @@ for (const [canonical, aliases] of CANONICAL_TO_ALIASES.entries()) {
 }
 
 /**
+ * Tools in the `web` group, gated by the global `webToolsEnabled` setting.
+ * Read from TOOL_GROUPS so the group definition stays the single source of truth.
+ */
+const WEB_GROUP_TOOLS: readonly string[] = TOOL_GROUPS.web.tools
+
+/**
  * Cache for renamed tool definitions.
  * Maps "canonicalName:aliasName" to the pre-built tool definition.
  * This avoids creating new objects via spread operators on every assistant message.
@@ -292,6 +298,16 @@ export function filterNativeToolsForMode(
 		allowedToolNames.delete("run_slash_command")
 	}
 
+	// The `web` group is gated by a global setting rather than by the mode
+	// alone: with web tools off, the group resolves to nothing so the
+	// advertised tool array (and therefore the request prefix) is identical to
+	// a build without the feature.
+	if (settings?.webToolsEnabled !== true) {
+		for (const toolName of WEB_GROUP_TOOLS) {
+			allowedToolNames.delete(toolName)
+		}
+	}
+
 	// Remove tools that are explicitly disabled via the disabledTools setting
 	if (settings?.disabledTools?.length) {
 		for (const toolName of settings.disabledTools) {
@@ -368,6 +384,12 @@ export function isToolAllowedInMode(
 	settings?: Record<string, any>,
 ): boolean {
 	const modeSlug = mode ?? defaultModeSlug
+
+	// Same global gate as filterNativeToolsForMode: a mode may carry the `web`
+	// group, but the tools only exist when the user enabled web tools.
+	if (WEB_GROUP_TOOLS.includes(toolName) && settings?.webToolsEnabled !== true) {
+		return false
+	}
 
 	// Check if it's an always-available tool
 	if (ALWAYS_AVAILABLE_TOOLS.includes(toolName)) {

@@ -581,6 +581,39 @@ export const ChatRowContent = ({
 					</div>
 				)
 			}
+			case "webSearch": {
+				const queries = Array.isArray(tool.queries) ? tool.queries.join(", ") : ""
+				return (
+					<div style={headerStyle}>
+						{toolIcon("search")}
+						<span style={{ fontWeight: "bold" }}>
+							<Trans
+								i18nKey={
+									message.type === "ask" ? "chat:webSearch.wantsToSearch" : "chat:webSearch.didSearch"
+								}
+								components={{ code: <code></code> }}
+								values={{ queries }}
+							/>
+						</span>
+					</div>
+				)
+			}
+			case "webFetch": {
+				return (
+					<div style={headerStyle}>
+						{toolIcon("globe")}
+						<span style={{ fontWeight: "bold" }}>
+							<Trans
+								i18nKey={
+									message.type === "ask" ? "chat:webFetch.wantsToFetch" : "chat:webFetch.didFetch"
+								}
+								components={{ code: <code></code> }}
+								values={{ url: tool.fetchedUrl }}
+							/>
+						</span>
+					</div>
+				)
+			}
 			case "updateTodoList" as any: {
 				const todos = (tool as any).todos || []
 				// Get previous todos from the latest todos in the task context

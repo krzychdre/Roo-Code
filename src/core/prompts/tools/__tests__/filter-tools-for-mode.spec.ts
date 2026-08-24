@@ -2,7 +2,7 @@
 
 import type OpenAI from "openai"
 
-import { filterNativeToolsForMode } from "../filter-tools-for-mode"
+import { filterNativeToolsForMode, isToolAllowedInMode } from "../filter-tools-for-mode"
 
 function makeTool(name: string): OpenAI.Chat.ChatCompletionTool {
 	return {
@@ -225,5 +225,71 @@ describe("filterNativeToolsForMode - access_mcp_resource allowlist", () => {
 			const resultNames = result.map((t) => (t as any).function.name)
 			expect(resultNames).toContain("access_mcp_resource")
 		})
+	})
+})
+
+describe("filterNativeToolsForMode - web group", () => {
+	const nativeTools: OpenAI.Chat.ChatCompletionTool[] = [
+		makeTool("read_file"),
+		makeTool("web_search"),
+		makeTool("web_fetch"),
+	]
+
+	const names = (tools: OpenAI.Chat.ChatCompletionTool[]) => tools.map((t) => (t as any).function.name)
+
+	it("advertises no web tools when webToolsEnabled is false", () => {
+		const result = filterNativeToolsForMode(nativeTools, "code", undefined, undefined, undefined, {
+			webToolsEnabled: false,
+		})
+
+		expect(names(result)).toEqual(["read_file"])
+	})
+
+	it("advertises no web tools when webToolsEnabled is absent", () => {
+		const result = filterNativeToolsForMode(nativeTools, "code", undefined, undefined, undefined, {})
+
+		expect(names(result)).toEqual(["read_file"])
+	})
+
+	it("advertises both web tools in a mode that carries the group when enabled", () => {
+		const result = filterNativeToolsForMode(nativeTools, "code", undefined, undefined, undefined, {
+			webToolsEnabled: true,
+		})
+
+		expect(names(result)).toContain("web_search")
+		expect(names(result)).toContain("web_fetch")
+	})
+
+	it("still hides the web tools in a mode without the group even when enabled", () => {
+		// The orchestrator mode carries no tool groups at all.
+		const result = filterNativeToolsForMode(nativeTools, "orchestrator", undefined, undefined, undefined, {
+			webToolsEnabled: true,
+		})
+
+		expect(names(result)).not.toContain("web_search")
+		expect(names(result)).not.toContain("web_fetch")
+	})
+
+	it("honors disabledTools for a single web tool while the group stays on", () => {
+		const result = filterNativeToolsForMode(nativeTools, "code", undefined, undefined, undefined, {
+			webToolsEnabled: true,
+			disabledTools: ["web_fetch"],
+		})
+
+		expect(names(result)).toContain("web_search")
+		expect(names(result)).not.toContain("web_fetch")
+	})
+})
+
+describe("isToolAllowedInMode - web group", () => {
+	it("returns false for web tools when webToolsEnabled is off", () => {
+		expect(isToolAllowedInMode("web_search", "code", undefined, undefined, undefined, {})).toBe(false)
+		expect(isToolAllowedInMode("web_fetch", "code", undefined, undefined, undefined, {})).toBe(false)
+	})
+
+	it("returns true for web tools in a web-capable mode when enabled", () => {
+		const settings = { webToolsEnabled: true }
+		expect(isToolAllowedInMode("web_search", "ask", undefined, undefined, undefined, settings)).toBe(true)
+		expect(isToolAllowedInMode("web_fetch", "ask", undefined, undefined, undefined, settings)).toBe(true)
 	})
 })

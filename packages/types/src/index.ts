@@ -35,6 +35,7 @@ export * from "./tool-params.js"
 export * from "./type-fu.js"
 export * from "./vscode-extension-host.js"
 export * from "./vscode.js"
+export * from "./web-tools.js"
 export * from "./worktree.js"
 
 export * from "./providers/index.js"

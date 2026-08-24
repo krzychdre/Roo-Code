@@ -39,6 +39,8 @@ import { generateImageTool } from "../tools/GenerateImageTool"
 import { applyDiffTool as applyDiffToolClass } from "../tools/ApplyDiffTool"
 import { isValidToolName, validateToolUse } from "../tools/validateToolUse"
 import { codebaseSearchTool } from "../tools/CodebaseSearchTool"
+import { webSearchTool } from "../tools/WebSearchTool"
+import { webFetchTool } from "../tools/WebFetchTool"
 
 import { formatResponse } from "../prompts/responses"
 import { sanitizeToolUseId } from "../../utils/tool-id"
@@ -390,6 +392,15 @@ export async function presentAssistantMessage(cline: Task) {
 						return `[${block.name} for '${block.params.query}']`
 					case "read_command_output":
 						return `[${block.name} for '${block.params.artifact_id}']`
+					case "web_search": {
+						const nativeArgs = (block as ToolUse<"web_search">).nativeArgs
+						const queries = Array.isArray(nativeArgs?.queries) ? nativeArgs.queries : []
+						return queries.length > 0 ? `[${block.name} for '${queries.join("', '")}']` : `[${block.name}]`
+					}
+					case "web_fetch": {
+						const nativeArgs = (block as ToolUse<"web_fetch">).nativeArgs
+						return nativeArgs?.url ? `[${block.name} for '${nativeArgs.url}']` : `[${block.name}]`
+					}
 					case "update_todo_list":
 						return `[${block.name}]`
 					case "new_task": {
@@ -847,6 +858,22 @@ export async function presentAssistantMessage(cline: Task) {
 						askApproval,
 						handleError,
 						pushToolResult,
+					})
+					break
+				case "web_search":
+					await webSearchTool.handle(cline, block as ToolUse<"web_search">, {
+						askApproval,
+						handleError,
+						pushToolResult,
+						toolCallId,
+					})
+					break
+				case "web_fetch":
+					await webFetchTool.handle(cline, block as ToolUse<"web_fetch">, {
+						askApproval,
+						handleError,
+						pushToolResult,
+						toolCallId,
 					})
 					break
 				case "use_mcp_tool":

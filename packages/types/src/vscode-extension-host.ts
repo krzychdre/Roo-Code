@@ -340,6 +340,11 @@ export type ExtensionState = Pick<
 	| "autoDreamMinSessions"
 	| "memoryWriterApiConfigId"
 	| "autoCondenseContextApiConfigId"
+	| "webToolsEnabled"
+	| "webSearchBackend"
+	| "searxngBaseUrl"
+	| "webSearchMaxResults"
+	| "webFetchMaxBytes"
 > & {
 	lockApiConfigAcrossModes?: boolean
 	version: string
@@ -835,6 +840,8 @@ export interface ClineSayTool {
 		| "runSlashCommand"
 		| "updateTodoList"
 		| "skill"
+		| "webSearch"
+		| "webFetch"
 	path?: string
 	// For readCommandOutput
 	readStart?: number
@@ -892,6 +899,10 @@ export interface ClineSayTool {
 	description?: string
 	// Properties for skill tool
 	skill?: string
+	// Properties for the web tools: the queries web_search ran, and the URL
+	// web_fetch read (after redirects).
+	queries?: string[]
+	fetchedUrl?: string
 	// Native tool-call id, stamped by tools whose handlePartial placeholder and
 	// complete payload diverge in text (read_file, search_files). Lets the
 	// finalized-duplicate dedup recognise the placeholder and the complete card

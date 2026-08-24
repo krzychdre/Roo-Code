@@ -21,6 +21,8 @@ import searchFiles from "./search_files"
 import switchMode from "./switch_mode"
 import toolsLoad from "./tools_load"
 import updateTodoList from "./update_todo_list"
+import webFetch from "./web_fetch"
+import webSearch from "./web_search"
 import writeToFile from "./write_to_file"
 
 export { getMcpServerTools } from "./mcp_server"
@@ -71,6 +73,8 @@ export function getNativeTools(options: NativeToolsOptions = {}): OpenAI.Chat.Ch
 		switchMode,
 		toolsLoad,
 		updateTodoList,
+		webFetch,
+		webSearch,
 		writeToFile,
 	] satisfies OpenAI.Chat.ChatCompletionTool[]
 }

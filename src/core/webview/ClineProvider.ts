@@ -46,6 +46,7 @@ import {
 	DEFAULT_CHECKPOINT_TIMEOUT_SECONDS,
 	DEFAULT_PARALLEL_TASKS_MAX_CONCURRENCY,
 	DEFAULT_SUBAGENT_FOLLOWUP_TIMEOUT_SEC,
+	WEB_TOOLS_DEFAULTS,
 	getModelId,
 	isRetiredProvider,
 } from "@roo-code/types"
@@ -2430,6 +2431,11 @@ export class ClineProvider
 			autoCondenseContextPercent,
 			autoCondenseContextApiConfigId,
 			memoryWriterApiConfigId,
+			webToolsEnabled,
+			webSearchBackend,
+			searxngBaseUrl,
+			webSearchMaxResults,
+			webFetchMaxBytes,
 			soundEnabled,
 			enableCheckpoints,
 			checkpointTimeout,
@@ -2565,6 +2571,11 @@ export class ClineProvider
 			autoCondenseContextPercent: autoCondenseContextPercent ?? 100,
 			autoCondenseContextApiConfigId,
 			memoryWriterApiConfigId,
+			webToolsEnabled: webToolsEnabled ?? false,
+			webSearchBackend: webSearchBackend ?? "searxng",
+			searxngBaseUrl: searxngBaseUrl ?? "",
+			webSearchMaxResults: webSearchMaxResults ?? WEB_TOOLS_DEFAULTS.DEFAULT_SEARCH_RESULTS,
+			webFetchMaxBytes: webFetchMaxBytes ?? WEB_TOOLS_DEFAULTS.DEFAULT_FETCH_BYTES,
 			uriScheme: vscode.env.uriScheme,
 			currentTaskId: currentTask?.taskId,
 			currentTaskItem: currentTask?.taskId ? taskHistoryStore.get(currentTask.taskId) : undefined,
@@ -2829,6 +2840,11 @@ export class ClineProvider
 			autoCondenseContextPercent: stateValues.autoCondenseContextPercent ?? 100,
 			autoCondenseContextApiConfigId: stateValues.autoCondenseContextApiConfigId,
 			memoryWriterApiConfigId: stateValues.memoryWriterApiConfigId,
+			webToolsEnabled: stateValues.webToolsEnabled ?? false,
+			webSearchBackend: stateValues.webSearchBackend ?? "searxng",
+			searxngBaseUrl: stateValues.searxngBaseUrl ?? "",
+			webSearchMaxResults: stateValues.webSearchMaxResults ?? WEB_TOOLS_DEFAULTS.DEFAULT_SEARCH_RESULTS,
+			webFetchMaxBytes: stateValues.webFetchMaxBytes ?? WEB_TOOLS_DEFAULTS.DEFAULT_FETCH_BYTES,
 			// `getState` is a hot path consumed by many internal call sites
 			// (system prompt building, auto-approval, retry, plan review…)
 			// that never read task history. Materializing and sorting the

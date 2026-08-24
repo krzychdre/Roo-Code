@@ -14,6 +14,7 @@ import { modeConfigSchema } from "./mode.js"
 import { customModePromptsSchema, customSupportPromptsSchema } from "./mode.js"
 import { toolNamesSchema } from "./tool.js"
 import { languagesSchema } from "./vscode.js"
+import { webToolsSettingsSchema } from "./web-tools.js"
 
 /**
  * Default delay in milliseconds after writes to allow diagnostics to detect potential problems.
@@ -356,6 +357,12 @@ export const globalSettingsSchema = z.object({
 	 * Tools in this list will be excluded from prompt generation and rejected at execution time.
 	 */
 	disabledTools: z.array(toolNamesSchema).optional(),
+
+	// Native `web_search` / `web_fetch` settings. Spread flat (not nested like
+	// `codebaseIndexConfig`) so they travel through the generic global-state
+	// plumbing without a bespoke message channel; `web-tools.ts` stays the
+	// single source of truth for their shape and bounds.
+	...webToolsSettingsSchema.shape,
 })
 
 export type GlobalSettings = z.infer<typeof globalSettingsSchema>

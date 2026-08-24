@@ -269,6 +269,7 @@ export class TaskContextManager {
 			state?.experiments,
 			apiConfiguration,
 			state?.disabledTools,
+			state?.webToolsEnabled,
 		)
 
 		// Generate environment details to include in the condensed summary
@@ -417,6 +418,7 @@ export class TaskContextManager {
 			state?.experiments,
 			apiConfiguration,
 			state?.disabledTools,
+			state?.webToolsEnabled,
 		)
 
 		try {
@@ -549,6 +551,7 @@ export class TaskContextManager {
 			state?.experiments,
 			apiConfiguration,
 			state?.disabledTools,
+			state?.webToolsEnabled,
 		)
 
 		// Only generate environment details / folded files when a condense could
@@ -756,6 +759,7 @@ export class TaskContextManager {
 		experiments: Record<string, boolean> | undefined,
 		apiConfiguration: ProviderSettings | undefined,
 		disabledTools: string[] | undefined,
+		webToolsEnabled: boolean | undefined,
 	): Promise<ApiHandlerCreateMessageMetadata> {
 		const provider = this.access.providerRef.deref()
 		const modelInfo = this.access.api.getModel().info
@@ -771,6 +775,7 @@ export class TaskContextManager {
 				apiConfiguration,
 				disabledTools,
 				modelInfo,
+				webToolsEnabled,
 				includeAllToolsWithRestrictions: false,
 			})
 			allTools = toolsResult.tools

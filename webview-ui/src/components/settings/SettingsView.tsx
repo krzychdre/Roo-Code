@@ -30,6 +30,7 @@ import {
 	Users2,
 	ArrowLeft,
 	GitCommitVertical,
+	GlobeLock,
 	GraduationCap,
 } from "lucide-react"
 
@@ -38,6 +39,7 @@ import {
 	type ExperimentId,
 	type TelemetrySetting,
 	DEFAULT_CHECKPOINT_TIMEOUT_SECONDS,
+	WEB_TOOLS_DEFAULTS,
 	ImageGenerationProvider,
 } from "@roo-code/types"
 
@@ -70,6 +72,7 @@ import ApiOptions from "./ApiOptions"
 import { AutoApproveSettings } from "./AutoApproveSettings"
 import { CheckpointSettings } from "./CheckpointSettings"
 import { MemorySettings } from "./MemorySettings"
+import { WebToolsSettings } from "./WebToolsSettings"
 import { NotificationSettings } from "./NotificationSettings"
 import { ContextManagementSettings } from "./ContextManagementSettings"
 import { SubagentSettings } from "./SubagentSettings"
@@ -106,6 +109,7 @@ export const sectionNames = [
 	"skills",
 	"checkpoints",
 	"memory",
+	"web",
 	"notifications",
 	"contextManagement",
 	"terminal",
@@ -181,6 +185,11 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 		autoDreamMinHours,
 		autoDreamMinSessions,
 		memoryWriterApiConfigId,
+		webToolsEnabled,
+		webSearchBackend,
+		searxngBaseUrl,
+		webSearchMaxResults,
+		webFetchMaxBytes,
 		experiments,
 		maxOpenTabsContext,
 		maxWorkspaceFiles,
@@ -411,6 +420,13 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 					autoDreamMinSessions: autoDreamMinSessions ?? 5,
 					memoryWriterApiConfigId: memoryWriterApiConfigId || undefined,
 					autoCondenseContextApiConfigId: autoCondenseContextApiConfigId || undefined,
+					webToolsEnabled: webToolsEnabled ?? false,
+					webSearchBackend: webSearchBackend ?? "searxng",
+					// Sent as "" rather than undefined so clearing the field
+					// actually clears it: JSON.stringify drops undefined.
+					searxngBaseUrl: searxngBaseUrl ?? "",
+					webSearchMaxResults: webSearchMaxResults ?? WEB_TOOLS_DEFAULTS.DEFAULT_SEARCH_RESULTS,
+					webFetchMaxBytes: webFetchMaxBytes ?? WEB_TOOLS_DEFAULTS.DEFAULT_FETCH_BYTES,
 					writeDelayMs,
 					terminalShellIntegrationTimeout: terminalShellIntegrationTimeout ?? 30_000,
 					terminalShellIntegrationDisabled,
@@ -544,6 +560,7 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 			{ id: "mcp", icon: Server },
 			{ id: "checkpoints", icon: GitCommitVertical },
 			{ id: "memory", icon: Brain },
+			{ id: "web", icon: GlobeLock },
 			{ id: "notifications", icon: Bell },
 			{ id: "contextManagement", icon: Database },
 			{ id: "terminal", icon: SquareTerminal },
@@ -857,6 +874,16 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 								autoDreamMinSessions={autoDreamMinSessions}
 								memoryWriterApiConfigId={memoryWriterApiConfigId}
 								listApiConfigMeta={listApiConfigMeta ?? []}
+								setCachedStateField={setCachedStateField}
+							/>
+						)}
+
+						{/* Web Tools Section */}
+						{renderTab === "web" && (
+							<WebToolsSettings
+								webToolsEnabled={webToolsEnabled}
+								searxngBaseUrl={searxngBaseUrl}
+								webSearchMaxResults={webSearchMaxResults}
 								setCachedStateField={setCachedStateField}
 							/>
 						)}
