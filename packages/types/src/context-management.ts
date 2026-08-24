@@ -9,6 +9,7 @@
  * - `condense_context`: Context was condensed using AI summarization
  * - `condense_context_error`: An error occurred during context condensation
  * - `sliding_window_truncation`: Context was truncated using sliding window strategy
+ * - `context_pruned`: Old oversized tool results were moved to task artifacts
  */
 
 /**
@@ -19,6 +20,7 @@ export const CONTEXT_MANAGEMENT_EVENTS = [
 	"condense_context",
 	"condense_context_error",
 	"sliding_window_truncation",
+	"context_pruned",
 ] as const
 
 /**

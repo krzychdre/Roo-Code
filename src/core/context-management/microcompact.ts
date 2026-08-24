@@ -1,6 +1,6 @@
 import { Anthropic } from "@anthropic-ai/sdk"
 
-import { extractSpillNotice } from "../artifacts/spillPolicy"
+import { extractArtifactNotice } from "../artifacts/spillPolicy"
 import { ApiMessage } from "../task-persistence/apiMessages"
 import { getEffectiveApiHistory } from "../condense"
 
@@ -249,18 +249,43 @@ function toolResultContentToText(content: Anthropic.Messages.ToolResultBlockPara
 }
 
 /**
+ * Splits a tool_result block's content into its separate text payloads.
+ *
+ * Separate, not joined: a notice line is only recognisable at the START of the
+ * payload that carries it, so flattening an array to one string would hide a
+ * notice that sits in any block but the first.
+ */
+function toolResultTextParts(content: Anthropic.Messages.ToolResultBlockParam["content"]): string[] {
+	if (typeof content === "string") {
+		return [content]
+	}
+	if (Array.isArray(content)) {
+		return content.filter((block) => block.type === "text").map((block) => block.text)
+	}
+	return []
+}
+
+/**
  * The content a cleared result is replaced by.
  *
- * A result the spill policy already reduced to "notice + preview" keeps its
- * notice line: that line names the artifact holding the full output and tells
- * the model to reach it with `read_artifact`. Dropping it would delete the only
- * recovery path at exactly the moment context pressure is highest, and the
- * generic placeholder ("re-run the command") would send the model to redo work
- * whose result is already sitting on disk.
+ * A result the spill policy (at push time) or the pruner (under context
+ * pressure) already reduced to "notice + preview" keeps its notice line: that
+ * line names the artifact holding the full output and tells the model to reach
+ * it with `read_artifact`. Dropping it would delete the only recovery path at
+ * exactly the moment context pressure is highest, and the generic placeholder
+ * ("re-run the command") would send the model to redo work whose result is
+ * already sitting on disk.
+ *
+ * @param parts - The result's text payloads, in order (see `toolResultTextParts`).
  */
-function clearedContentFor(text: string): string {
-	const notice = extractSpillNotice(text)
-	return notice ? `${notice}\n${MICROCOMPACT_CLEARED_PLACEHOLDER}` : MICROCOMPACT_CLEARED_PLACEHOLDER
+function clearedContentFor(parts: readonly string[]): string {
+	for (const part of parts) {
+		const notice = extractArtifactNotice(part)
+		if (notice) {
+			return `${notice}\n${MICROCOMPACT_CLEARED_PLACEHOLDER}`
+		}
+	}
+	return MICROCOMPACT_CLEARED_PLACEHOLDER
 }
 
 /**
@@ -464,7 +489,7 @@ export function microcompactToolResults(messages: ApiMessage[], options: Microco
 					}
 					clearedToolUseIds.push(tr.tool_use_id)
 					touched = true
-					return { ...tr, content: clearedContentFor(text) }
+					return { ...tr, content: clearedContentFor(toolResultTextParts(tr.content)) }
 				}
 			}
 			return block
@@ -521,7 +546,7 @@ export function applyMicrocompactCleared(messages: ApiMessage[], clearedToolUseI
 				const tr = block as Anthropic.Messages.ToolResultBlockParam
 				if (clearedToolUseIds.has(tr.tool_use_id) && !isAlreadyCleared(tr)) {
 					touched = true
-					return { ...tr, content: clearedContentFor(toolResultContentToText(tr.content)) }
+					return { ...tr, content: clearedContentFor(toolResultTextParts(tr.content)) }
 				}
 			}
 			return block

@@ -48,6 +48,8 @@ import {
 	DEFAULT_SUBAGENT_FOLLOWUP_TIMEOUT_SEC,
 	WEB_TOOLS_DEFAULTS,
 	resolveMaxInlineToolResultBytes,
+	isPruneBeforeCondenseEnabled,
+	resolvePruneToolResultBudget,
 	getModelId,
 	isRetiredProvider,
 } from "@roo-code/types"
@@ -2438,6 +2440,8 @@ export class ClineProvider
 			webSearchMaxResults,
 			webFetchMaxBytes,
 			maxInlineToolResultBytes,
+			pruneBeforeCondense,
+			pruneToolResultBudget,
 			soundEnabled,
 			enableCheckpoints,
 			checkpointTimeout,
@@ -2579,6 +2583,8 @@ export class ClineProvider
 			webSearchMaxResults: webSearchMaxResults ?? WEB_TOOLS_DEFAULTS.DEFAULT_SEARCH_RESULTS,
 			webFetchMaxBytes: webFetchMaxBytes ?? WEB_TOOLS_DEFAULTS.DEFAULT_FETCH_BYTES,
 			maxInlineToolResultBytes: resolveMaxInlineToolResultBytes({ maxInlineToolResultBytes }),
+			pruneBeforeCondense: isPruneBeforeCondenseEnabled({ pruneBeforeCondense }),
+			pruneToolResultBudget: resolvePruneToolResultBudget({ pruneToolResultBudget }),
 			uriScheme: vscode.env.uriScheme,
 			currentTaskId: currentTask?.taskId,
 			currentTaskItem: currentTask?.taskId ? taskHistoryStore.get(currentTask.taskId) : undefined,
@@ -2849,6 +2855,8 @@ export class ClineProvider
 			webSearchMaxResults: stateValues.webSearchMaxResults ?? WEB_TOOLS_DEFAULTS.DEFAULT_SEARCH_RESULTS,
 			webFetchMaxBytes: stateValues.webFetchMaxBytes ?? WEB_TOOLS_DEFAULTS.DEFAULT_FETCH_BYTES,
 			maxInlineToolResultBytes: resolveMaxInlineToolResultBytes(stateValues),
+			pruneBeforeCondense: isPruneBeforeCondenseEnabled(stateValues),
+			pruneToolResultBudget: resolvePruneToolResultBudget(stateValues),
 			// `getState` is a hot path consumed by many internal call sites
 			// (system prompt building, auto-approval, retry, plan review…)
 			// that never read task history. Materializing and sorting the

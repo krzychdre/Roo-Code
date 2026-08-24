@@ -264,6 +264,14 @@ export type SummarizeConversationOptions = {
 	 * imports `getEffectiveApiHistory` from here.
 	 */
 	ledger?: ContextLedger
+	/**
+	 * What the deterministic prune pass reclaimed before this summary was
+	 * reached. Reported on the condense telemetry event so the metrics page can
+	 * pair "pruning was not enough" rounds (this one, `summarySkipped: false`)
+	 * with the rounds pruning alone resolved, which `manageContext` reports.
+	 * Absent when no pruning happened, keeping the event's historical shape.
+	 */
+	pruneStats?: { prunedCount: number; bytesSaved: number }
 }
 
 /**
@@ -403,12 +411,24 @@ export async function summarizeConversation(options: SummarizeConversationOption
 		cwd,
 		rooIgnoreController,
 		ledger,
+		pruneStats,
 	} = options
-	TelemetryService.instance.captureContextCondensed(
-		taskId,
-		isAutomaticTrigger ?? false,
-		!!customCondensingPrompt?.trim(),
-	)
+	// Only widen the event when a prune actually ran, so rounds that never
+	// reached the pruner keep emitting exactly the properties they always did.
+	if (pruneStats) {
+		TelemetryService.instance.captureContextCondensed(
+			taskId,
+			isAutomaticTrigger ?? false,
+			!!customCondensingPrompt?.trim(),
+			{ ...pruneStats, summarySkipped: false },
+		)
+	} else {
+		TelemetryService.instance.captureContextCondensed(
+			taskId,
+			isAutomaticTrigger ?? false,
+			!!customCondensingPrompt?.trim(),
+		)
+	}
 
 	const response: SummarizeResponse = { messages, cost: 0, summary: "" }
 

@@ -251,6 +251,12 @@
 			"messagesRemoved": "{{count}} message removed",
 			"messagesRemoved_other": "{{count}} messages removed",
 			"description": "Older messages were removed from the conversation to stay within the context window limit. This is a fast but less context-preserving approach compared to condensation."
+		},
+		"prune": {
+			"title": "Old Tool Output Moved to Disk",
+			"summary": "{{count}} tool result, about {{kb}} KB freed",
+			"summary_other": "{{count}} tool results, about {{kb}} KB freed",
+			"description": "Old, oversized tool results were saved as task artifacts and replaced with a short preview. Nothing was lost: each preview names its artifact, and the model can read the full text back with read_artifact. This ran instead of an AI summary, so no conversation text was rewritten."
 		}
 	},
 	"skill": {

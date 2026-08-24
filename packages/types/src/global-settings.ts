@@ -13,6 +13,7 @@ import { experimentsSchema } from "./experiment.js"
 import { telemetrySettingsSchema } from "./telemetry.js"
 import { modeConfigSchema } from "./mode.js"
 import { customModePromptsSchema, customSupportPromptsSchema } from "./mode.js"
+import { pruneCondenseSettingsSchema } from "./prune-condense.js"
 import { toolNamesSchema } from "./tool.js"
 import { languagesSchema } from "./vscode.js"
 import { webToolsSettingsSchema } from "./web-tools.js"
@@ -369,6 +370,12 @@ export const globalSettingsSchema = z.object({
 	// for the same reason as the web-tool settings above; `artifact-spill.ts`
 	// stays the single source of truth for its bounds and default.
 	...artifactSpillSettingsSchema.shape,
+
+	// Deterministic prune pass that runs before the LLM condense
+	// (`pruneBeforeCondense`, `pruneToolResultBudget`). Spread flat for the same
+	// reason as the two groups above; `prune-condense.ts` stays the single
+	// source of truth for their bounds and defaults.
+	...pruneCondenseSettingsSchema.shape,
 })
 
 export type GlobalSettings = z.infer<typeof globalSettingsSchema>

@@ -346,6 +346,8 @@ export type ExtensionState = Pick<
 	| "webSearchMaxResults"
 	| "webFetchMaxBytes"
 	| "maxInlineToolResultBytes"
+	| "pruneBeforeCondense"
+	| "pruneToolResultBudget"
 > & {
 	lockApiConfigAcrossModes?: boolean
 	version: string

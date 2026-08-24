@@ -166,12 +166,42 @@ export class TelemetryService {
 		this.captureEvent(TelemetryEventName.CHECKPOINT_RESTORED, { taskId })
 	}
 
-	public captureContextCondensed(taskId: string, isAutomaticTrigger: boolean, usedCustomPrompt?: boolean): void {
+	/**
+	 * Captures a condense round, i.e. a round that DID call the summarizer.
+	 *
+	 * `prune` describes the deterministic pre-pass that now runs first
+	 * (`src/core/condense/toolResultPruner.ts`) and, on this event, always ran
+	 * and was NOT enough. It is omitted entirely when no pruning happened, so
+	 * the event keeps its historical shape.
+	 *
+	 * Rounds the pruner resolved on its own are reported by
+	 * `captureContextPruned` instead, so this event still counts exactly what it
+	 * always counted: summaries actually written.
+	 */
+	public captureContextCondensed(
+		taskId: string,
+		isAutomaticTrigger: boolean,
+		usedCustomPrompt?: boolean,
+		prune?: { prunedCount: number; bytesSaved: number; summarySkipped: boolean },
+	): void {
 		this.captureEvent(TelemetryEventName.CONTEXT_CONDENSED, {
 			taskId,
 			isAutomaticTrigger,
 			...(usedCustomPrompt !== undefined && { usedCustomPrompt }),
+			...(prune !== undefined && prune),
 		})
+	}
+
+	/**
+	 * Captures a round where the deterministic pruner alone relieved the context
+	 * pressure and no summary was requested.
+	 *
+	 * Paired with `captureContextCondensed`, this is what answers "how often did
+	 * the cheap pass avoid an LLM summary": count these against condense events
+	 * carrying `summarySkipped: false`.
+	 */
+	public captureContextPruned(taskId: string, properties: { prunedCount: number; bytesSaved: number }): void {
+		this.captureEvent(TelemetryEventName.CONTEXT_PRUNED, { taskId, ...properties })
 	}
 
 	public captureSlidingWindowTruncation(taskId: string): void {

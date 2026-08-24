@@ -14,6 +14,18 @@ import type { ArtifactStore } from "./ArtifactStore"
 export const SPILL_NOTICE_PREFIX = "[Tool result:"
 
 /**
+ * Marker that opens the notice of a tool result PRUNED under context pressure
+ * (`src/core/condense/toolResultPruner.ts`).
+ *
+ * It lives here, beside the spill prefix, because the two are one vocabulary:
+ * both notices are the only place an artifact id survives, and every later pass
+ * has to recognise both. Keeping them together is also what lets this module
+ * stay a leaf: the pruner imports the prefix, instead of this module importing
+ * the pruner and closing a cycle.
+ */
+export const PRUNE_NOTICE_PREFIX = "[Pruned "
+
+/**
  * Byte allowance reserved for the notice line when judging whether a spill is
  * worth it. The real notice is a fixed sentence plus a fixed-width artifact id,
  * so a constant is accurate to within a few bytes.
@@ -71,9 +83,12 @@ export interface SpillOutcome {
 }
 
 /**
- * Formats a byte count the way the spill notice quotes it.
+ * Formats a byte count the way an artifact notice quotes it.
+ *
+ * Exported so the spill notice and the prune notice cannot drift into two
+ * different roundings of the same number.
  */
-function formatKb(bytes: number): string {
+export function formatArtifactKb(bytes: number): string {
 	return `${Math.max(1, Math.round(bytes / 1024))} KB`
 }
 
@@ -230,7 +245,7 @@ export function applyToolResultSpill(
 	}
 
 	const notice =
-		`${SPILL_NOTICE_PREFIX} ${formatKb(bytes)}, showing first ${preview.headLines} and last ${preview.tailLines} lines. ` +
+		`${SPILL_NOTICE_PREFIX} ${formatArtifactKb(bytes)}, showing first ${preview.headLines} and last ${preview.tailLines} lines. ` +
 		`Full output saved as artifact "${artifactId}". ` +
 		`Use read_artifact (search/offset/limit) to inspect the rest.]`
 
@@ -248,6 +263,25 @@ export function applyToolResultSpill(
  */
 export function extractSpillNotice(text: string): string | undefined {
 	if (!text.startsWith(SPILL_NOTICE_PREFIX)) {
+		return undefined
+	}
+
+	const firstLine = text.split("\n", 1)[0]
+	return firstLine.includes('artifact "') ? firstLine : undefined
+}
+
+/**
+ * Returns the artifact-citing notice line of a reduced tool result, whether it
+ * was reduced by the spill policy at push time or by the pruner under context
+ * pressure, or `undefined` when the text carries no such line.
+ *
+ * This is what a pass that clears a result's body should call: after WS-C a
+ * block can carry either notice, and dropping a prune notice strands the
+ * `prune-*.txt` artifact exactly as dropping a spill notice would strand the
+ * `tool-*.txt` one.
+ */
+export function extractArtifactNotice(text: string): string | undefined {
+	if (!text.startsWith(SPILL_NOTICE_PREFIX) && !text.startsWith(PRUNE_NOTICE_PREFIX)) {
 		return undefined
 	}
 

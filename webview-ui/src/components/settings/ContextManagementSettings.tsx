@@ -4,6 +4,8 @@ import { useAppTranslation } from "@/i18n/TranslationContext"
 import { VSCodeCheckbox, VSCodeTextArea } from "@vscode/webview-ui-toolkit/react"
 import { FoldVertical } from "lucide-react"
 
+import { PRUNE_CONDENSE_DEFAULTS } from "@roo-code/types"
+
 import { supportPrompt } from "@roo/support-prompt"
 
 import { cn } from "@/lib/utils"
@@ -31,6 +33,8 @@ type ContextManagementSettingsProps = HTMLAttributes<HTMLDivElement> & {
 	autoCondenseContext: boolean
 	autoCondenseContextPercent: number
 	autoCondenseContextApiConfigId?: string
+	pruneBeforeCondense?: boolean
+	pruneToolResultBudget?: number
 	listApiConfigMeta: any[]
 	maxOpenTabsContext: number
 	maxWorkspaceFiles: number
@@ -51,6 +55,8 @@ type ContextManagementSettingsProps = HTMLAttributes<HTMLDivElement> & {
 		| "autoCondenseContext"
 		| "autoCondenseContextPercent"
 		| "autoCondenseContextApiConfigId"
+		| "pruneBeforeCondense"
+		| "pruneToolResultBudget"
 		| "maxOpenTabsContext"
 		| "maxWorkspaceFiles"
 		| "showRooIgnoredFiles"
@@ -71,6 +77,8 @@ export const ContextManagementSettings = ({
 	autoCondenseContext,
 	autoCondenseContextPercent,
 	autoCondenseContextApiConfigId,
+	pruneBeforeCondense,
+	pruneToolResultBudget,
 	listApiConfigMeta,
 	maxOpenTabsContext,
 	maxWorkspaceFiles,
@@ -600,6 +608,61 @@ export const ContextManagementSettings = ({
 							</div>
 						</SearchableSetting>
 					</div>
+				)}
+
+				{/* Prune Before Condense */}
+				<SearchableSetting
+					settingId="context-prune-before-condense"
+					section="contextManagement"
+					label={t("settings:contextManagement.pruneBeforeCondense.label")}>
+					<VSCodeCheckbox
+						checked={pruneBeforeCondense !== false}
+						onChange={(e: any) => setCachedStateField("pruneBeforeCondense", e.target.checked)}
+						data-testid="prune-before-condense-checkbox">
+						<span className="font-medium">{t("settings:contextManagement.pruneBeforeCondense.label")}</span>
+					</VSCodeCheckbox>
+					<div className="text-vscode-descriptionForeground text-sm mt-1">
+						{t("settings:contextManagement.pruneBeforeCondense.description")}
+					</div>
+				</SearchableSetting>
+
+				{pruneBeforeCondense !== false && (
+					<SearchableSetting
+						settingId="context-prune-tool-result-budget"
+						section="contextManagement"
+						label={t("settings:contextManagement.pruneToolResultBudget.label")}>
+						<div className="flex flex-col gap-2">
+							<span className="font-medium">
+								{t("settings:contextManagement.pruneToolResultBudget.label")}
+							</span>
+							<div className="flex items-center gap-4">
+								<Input
+									type="number"
+									pattern="[0-9]*"
+									className="w-28 bg-vscode-input-background text-vscode-input-foreground border border-vscode-input-border px-2 py-1 rounded text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+									value={pruneToolResultBudget ?? PRUNE_CONDENSE_DEFAULTS.DEFAULT_TOOL_RESULT_BUDGET}
+									min={PRUNE_CONDENSE_DEFAULTS.MIN_TOOL_RESULT_BUDGET}
+									max={PRUNE_CONDENSE_DEFAULTS.MAX_TOOL_RESULT_BUDGET}
+									onChange={(e) => {
+										const newValue = parseInt(e.target.value, 10)
+										if (
+											!isNaN(newValue) &&
+											newValue >= PRUNE_CONDENSE_DEFAULTS.MIN_TOOL_RESULT_BUDGET &&
+											newValue <= PRUNE_CONDENSE_DEFAULTS.MAX_TOOL_RESULT_BUDGET
+										) {
+											setCachedStateField("pruneToolResultBudget", newValue)
+										}
+									}}
+									onClick={(e) => e.currentTarget.select()}
+									data-testid="prune-tool-result-budget-input"
+								/>
+								<span>{t("settings:contextManagement.pruneToolResultBudget.bytes")}</span>
+							</div>
+						</div>
+						<div className="text-vscode-descriptionForeground text-sm mt-2">
+							{t("settings:contextManagement.pruneToolResultBudget.description")}
+						</div>
+					</SearchableSetting>
 				)}
 			</Section>
 		</div>

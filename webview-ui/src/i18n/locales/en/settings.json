@@ -743,6 +743,15 @@
 			"name": "Automatically trigger intelligent context condensing",
 			"description": "When enabled, Tumble will automatically condense the context when the threshold is reached. When disabled, you can still manually trigger context condensing."
 		},
+		"pruneBeforeCondense": {
+			"label": "Prune old tool output before condensing",
+			"description": "When context runs short, first move old, oversized tool results to task artifacts and leave a short preview that names the artifact. This costs no API call and loses nothing: the model reads the full text back with read_artifact. An AI summary only runs if pruning was not enough. Turn this off to go straight to the summary."
+		},
+		"pruneToolResultBudget": {
+			"label": "Prune threshold for a single tool result",
+			"bytes": "bytes",
+			"description": "Old tool results larger than this are moved to an artifact and replaced with their first and last 20 lines. Lower values free more context per pass; higher values keep more output inline."
+		},
 		"openTabs": {
 			"label": "Open tabs context limit",
 			"description": "Maximum number of VSCode open tabs to include in context. Higher values provide more context but increase token usage."

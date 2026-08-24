@@ -17,8 +17,9 @@ import { BaseTool, ToolCallbacks } from "./BaseTool"
  * cheaper than another round of guessing.
  */
 const ARTIFACT_ID_GUIDANCE =
-	'Valid ids look like "cmd-1706119234567.txt" (full output of an execute_command run) or ' +
-	'"tool-1706119234567.txt" (a tool result that was too large to keep inline). ' +
+	'Valid ids look like "cmd-1706119234567.txt" (full output of an execute_command run), ' +
+	'"tool-1706119234567.txt" (a tool result that was too large to keep inline) or ' +
+	'"prune-1706119234567.txt" (an older tool result moved to disk to free context). ' +
 	"Copy the id verbatim from the message that announced it instead of constructing one. " +
 	"If no message announced an artifact, re-run the command or the tool that produced the output."
 
@@ -53,14 +54,16 @@ interface ReadArtifactParams {
 /**
  * ReadArtifactTool lets the LLM retrieve text that was too large to keep inline.
  *
- * Two producers write artifacts:
+ * Three producers write artifacts:
  *
  * - `execute_command`, whose full output the `OutputInterceptor` streams to a
  *   `cmd-*.txt` artifact once it passes the terminal preview threshold.
  * - the tool-result spill policy, which moves any oversized tool result to a
  *   `tool-*.txt` artifact and leaves a head/tail preview in the conversation.
+ * - the deterministic pruner, which under context pressure moves an OLD tool
+ *   result to a `prune-*.txt` artifact and leaves a head/tail preview behind.
  *
- * In both cases this tool provides:
+ * In every case this tool provides:
  *
  * 1. **Read full text**: retrieve content beyond the preview
  * 2. **Search**: filter lines matching a pattern (like grep)

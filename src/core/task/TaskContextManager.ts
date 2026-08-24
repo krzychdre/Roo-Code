@@ -6,8 +6,11 @@ import {
 	type TokenUsage,
 	type ContextCondense,
 	type ContextTruncation,
+	type ContextPrune,
 	RooCodeEventName,
 	countEnabledMcpTools,
+	isPruneBeforeCondenseEnabled,
+	resolvePruneToolResultBudget,
 } from "@roo-code/types"
 import { TelemetryService } from "@roo-code/telemetry"
 
@@ -24,6 +27,7 @@ import { type TaskAskSay } from "./TaskAskSay"
 import { type ClineProvider } from "../webview/ClineProvider"
 import { FileContextTracker } from "../context-tracking/FileContextTracker"
 import { RooIgnoreController } from "../ignore/RooIgnoreController"
+import type { ArtifactStore } from "../artifacts/ArtifactStore"
 
 /**
  * Module-level constants for context management
@@ -160,6 +164,13 @@ export interface TaskContextManagerAccess {
 	history: TaskHistory
 	askSay: TaskAskSay
 
+	/**
+	 * Resolves the task's artifact store, where the deterministic pruner parks
+	 * the originals of the tool results it shrinks. Resolves to `undefined` when
+	 * the store cannot be created, which simply disables the prune pass.
+	 */
+	getArtifactStore(): Promise<ArtifactStore | undefined>
+
 	// Methods needed
 	getTokenUsage(): TokenUsage
 	getSystemPrompt(): Promise<string>
@@ -197,6 +208,12 @@ export interface ManageContextResult {
 	truncationId?: string
 	messagesRemoved?: number
 	condenseId?: string
+	/** Tool results the deterministic prune pass moved to `prune` artifacts. */
+	prunedCount?: number
+	/** Bytes the prune pass removed from the conversation, net of the previews. */
+	prunedBytesSaved?: number
+	/** True when pruning alone relieved the pressure and no LLM summary ran. */
+	summarySkipped?: boolean
 }
 
 /**
@@ -430,6 +447,10 @@ export class TaskContextManager {
 			// routes the forced-truncation condense to the chosen profile.
 			const condenseApiHandler = await this.access.getCondenseApiHandler()
 
+			// The context window is already exceeded, so the prune pass is
+			// certain to be reached: resolve the store unconditionally here.
+			const pruneOptions = await this.resolvePruneOptions(state, true)
+
 			// Force aggressive truncation by keeping only 75% of the conversation history
 			const truncateResult = await manageContext({
 				messages: this.access.apiConversationHistory,
@@ -445,6 +466,7 @@ export class TaskContextManager {
 				currentProfileId,
 				metadata,
 				environmentDetails,
+				...pruneOptions,
 			})
 
 			if (truncateResult.messages !== this.access.apiConversationHistory) {
@@ -595,6 +617,13 @@ export class TaskContextManager {
 				? await this.access.getCondenseApiHandler()
 				: this.access.api
 
+			// The deterministic prune pass runs inside manageContext, between the
+			// microcompaction pre-pass and the LLM summary. It is gated on
+			// `contextManagementWillRun` for the same reason the environment
+			// details are: below the thresholds nothing in manageContext reaches
+			// the pruner, so resolving its store would be wasted I/O.
+			const pruneOptions = await this.resolvePruneOptions(state, contextManagementWillRun)
+
 			truncateResult = await manageContext({
 				messages: this.access.apiConversationHistory,
 				totalTokens: contextTokens,
@@ -621,6 +650,7 @@ export class TaskContextManager {
 				// pass the live set — manageContext only reads it, and it is rewritten
 				// from the result below.
 				previouslyClearedToolUseIds: this.access.microcompactedToolUseIds,
+				...pruneOptions,
 			})
 
 			// Update the auto-condense circuit breaker from the condense outcome
@@ -698,6 +728,32 @@ export class TaskContextManager {
 					undefined /* contextCondense */,
 					contextTruncation,
 				)
+			} else if (truncateResult.summarySkipped && truncateResult.prunedCount) {
+				// A prune-only round. It gets its own row because pruning is the one
+				// context pass that REWRITES what the user can scroll back through:
+				// old tool output the transcript used to hold in full now lives in a
+				// task artifact. Microcompaction stays silent because it changes
+				// nothing on disk; this does, so saying nothing would mean text
+				// quietly vanishing from the conversation with no explanation and no
+				// hint that read_artifact can bring it back.
+				const contextPrune: ContextPrune = {
+					prunedCount: truncateResult.prunedCount,
+					bytesSaved: truncateResult.prunedBytesSaved ?? 0,
+					prevContextTokens: truncateResult.prevContextTokens,
+					newContextTokens: truncateResult.newContextTokens ?? 0,
+				}
+				await this.access.askSay.say(
+					"context_pruned",
+					undefined /* text */,
+					undefined /* images */,
+					false /* partial */,
+					undefined /* checkpoint */,
+					undefined /* progressStatus */,
+					{ isNonInteractive: true } /* options */,
+					undefined /* contextCondense */,
+					undefined /* contextTruncation */,
+					contextPrune,
+				)
 			}
 
 			return {
@@ -709,6 +765,9 @@ export class TaskContextManager {
 				error: truncateResult.error,
 				truncationId: truncateResult.truncationId,
 				messagesRemoved: truncateResult.messagesRemoved,
+				prunedCount: truncateResult.prunedCount,
+				prunedBytesSaved: truncateResult.prunedBytesSaved,
+				summarySkipped: truncateResult.summarySkipped,
 			}
 		} catch (error) {
 			// Claim 1: a thrown condense (e.g. summarizeConversation threw after
@@ -736,6 +795,39 @@ export class TaskContextManager {
 					?.postMessageToWebview({ type: "condenseTaskContextResponse", text: this.access.taskId })
 			}
 		}
+	}
+
+	/**
+	 * Resolves the deterministic prune pass options for a `manageContext` call.
+	 *
+	 * The artifact store is only resolved when the pass can actually run, because
+	 * resolving it creates the task directory: doing that on every request, for
+	 * users who turned the pass off, would be pure I/O for nothing.
+	 *
+	 * @param state - Provider state (carries `pruneBeforeCondense` / `pruneToolResultBudget`).
+	 * @param willRun - Whether context management is expected to run this pass.
+	 */
+	private async resolvePruneOptions(
+		state: any,
+		willRun: boolean,
+	): Promise<{ pruneBeforeCondense: boolean; pruneToolResultBudget: number; artifactStore?: ArtifactStore }> {
+		const pruneBeforeCondense = isPruneBeforeCondenseEnabled(state)
+		const pruneToolResultBudget = resolvePruneToolResultBudget(state)
+
+		if (!willRun || !pruneBeforeCondense) {
+			return { pruneBeforeCondense, pruneToolResultBudget }
+		}
+
+		let artifactStore: ArtifactStore | undefined
+		try {
+			artifactStore = await this.access.getArtifactStore()
+		} catch (error) {
+			// Never fatal: without a store the prune pass is skipped and the
+			// existing microcompact/condense/truncate chain handles the pressure.
+			console.warn("[TaskContextManager#resolvePruneOptions] Artifact store unavailable, prune disabled:", error)
+		}
+
+		return { pruneBeforeCondense, pruneToolResultBudget, artifactStore }
 	}
 
 	/**

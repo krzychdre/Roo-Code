@@ -39,6 +39,7 @@ import {
 	type ExperimentId,
 	type TelemetrySetting,
 	DEFAULT_CHECKPOINT_TIMEOUT_SECONDS,
+	PRUNE_CONDENSE_DEFAULTS,
 	WEB_TOOLS_DEFAULTS,
 	ImageGenerationProvider,
 } from "@roo-code/types"
@@ -175,6 +176,8 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 		autoCondenseContext,
 		autoCondenseContextPercent,
 		autoCondenseContextApiConfigId,
+		pruneBeforeCondense,
+		pruneToolResultBudget,
 		enableCheckpoints,
 		checkpointTimeout,
 		autoMemoryEnabled,
@@ -427,6 +430,8 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 					searxngBaseUrl: searxngBaseUrl ?? "",
 					webSearchMaxResults: webSearchMaxResults ?? WEB_TOOLS_DEFAULTS.DEFAULT_SEARCH_RESULTS,
 					webFetchMaxBytes: webFetchMaxBytes ?? WEB_TOOLS_DEFAULTS.DEFAULT_FETCH_BYTES,
+					pruneBeforeCondense: pruneBeforeCondense ?? true,
+					pruneToolResultBudget: pruneToolResultBudget ?? PRUNE_CONDENSE_DEFAULTS.DEFAULT_TOOL_RESULT_BUDGET,
 					writeDelayMs,
 					terminalShellIntegrationTimeout: terminalShellIntegrationTimeout ?? 30_000,
 					terminalShellIntegrationDisabled,
@@ -903,6 +908,8 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 								autoCondenseContext={autoCondenseContext}
 								autoCondenseContextPercent={autoCondenseContextPercent}
 								autoCondenseContextApiConfigId={autoCondenseContextApiConfigId}
+								pruneBeforeCondense={pruneBeforeCondense}
+								pruneToolResultBudget={pruneToolResultBudget}
 								listApiConfigMeta={listApiConfigMeta ?? []}
 								maxOpenTabsContext={maxOpenTabsContext}
 								maxWorkspaceFiles={maxWorkspaceFiles ?? 200}

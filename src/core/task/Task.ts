@@ -641,8 +641,40 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	 */
 	private toolResultSpill?: ToolResultSpillContext
 
-	/** In-flight store construction, so concurrent tool calls share one resolve. */
-	private toolResultSpillInit?: Promise<void>
+	/** The task's artifact store; see `getArtifactStore`. */
+	private artifactStore?: ArtifactStore
+
+	/** In-flight store construction, so concurrent callers share one resolve. */
+	private artifactStoreInit?: Promise<void>
+
+	/**
+	 * Resolves (once) the artifact store for this task.
+	 *
+	 * Shared by every feature that persists oversized text: the push-time spill
+	 * policy and the deterministic pruner that runs under context pressure.
+	 * Failure is not fatal and is not retried per call: the callers degrade to
+	 * "keep everything inline", which is exactly the pre-artifact behavior.
+	 */
+	public async getArtifactStore(): Promise<ArtifactStore | undefined> {
+		if (this.artifactStore) {
+			return this.artifactStore
+		}
+
+		if (!this.artifactStoreInit) {
+			this.artifactStoreInit = (async () => {
+				try {
+					this.artifactStore = await ArtifactStore.forTask(this.globalStoragePath, this.taskId)
+				} catch (error) {
+					console.warn("[Task#getArtifactStore] Artifact store unavailable:", error)
+				} finally {
+					this.artifactStoreInit = undefined
+				}
+			})()
+		}
+
+		await this.artifactStoreInit
+		return this.artifactStore
+	}
 
 	/**
 	 * Prepares (or refreshes) the tool-result spill policy for this task.
@@ -660,20 +692,11 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			return
 		}
 
-		if (!this.toolResultSpillInit) {
-			this.toolResultSpillInit = (async () => {
-				try {
-					const store = await ArtifactStore.forTask(this.globalStoragePath, this.taskId)
-					this.toolResultSpill = { store, maxInlineBytes }
-				} catch (error) {
-					console.warn("[Task#ensureToolResultSpill] Artifact store unavailable, spilling disabled:", error)
-				} finally {
-					this.toolResultSpillInit = undefined
-				}
-			})()
-		}
+		const store = await this.getArtifactStore()
 
-		await this.toolResultSpillInit
+		if (store) {
+			this.toolResultSpill = { store, maxInlineBytes }
+		}
 	}
 
 	/**

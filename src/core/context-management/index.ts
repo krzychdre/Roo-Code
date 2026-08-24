@@ -4,9 +4,17 @@ import crypto from "crypto"
 import { TelemetryService } from "@roo-code/telemetry"
 
 import { ApiHandler, ApiHandlerCreateMessageMetadata } from "../../api"
-import { MAX_CONDENSE_THRESHOLD, MIN_CONDENSE_THRESHOLD, summarizeConversation, SummarizeResponse } from "../condense"
+import {
+	MAX_CONDENSE_THRESHOLD,
+	MIN_CONDENSE_THRESHOLD,
+	computeCondenseKeepBoundary,
+	summarizeConversation,
+	SummarizeResponse,
+} from "../condense"
+import { pruneToolResults } from "../condense/toolResultPruner"
+import type { ArtifactStore } from "../artifacts/ArtifactStore"
 import { ApiMessage } from "../task-persistence/apiMessages"
-import { ANTHROPIC_DEFAULT_MAX_TOKENS } from "@roo-code/types"
+import { ANTHROPIC_DEFAULT_MAX_TOKENS, PRUNE_CONDENSE_DEFAULTS } from "@roo-code/types"
 import { RooIgnoreController } from "../ignore/RooIgnoreController"
 import { microcompactToolResults, microcompactTargetChars, MICROCOMPACT_PLACEHOLDER_TOKENS } from "./microcompact"
 import { buildContextLedger, type ContextLedger } from "./ledger"
@@ -246,6 +254,19 @@ export type ContextManagementOptions = {
 	 * the provider's prompt cache from that point on.
 	 */
 	previouslyClearedToolUseIds?: ReadonlySet<string>
+	/**
+	 * Run the deterministic prune pass before the LLM summary. Default true;
+	 * `false` is the user's escape hatch (setting `pruneBeforeCondense`).
+	 */
+	pruneBeforeCondense?: boolean
+	/** Byte budget an OLD tool result may keep inline once the pruner runs. */
+	pruneToolResultBudget?: number
+	/**
+	 * Where pruned originals are persisted. Omitted (or unavailable) disables
+	 * the prune pass entirely: without a store there is nowhere for the full
+	 * text to go, and a preview that cites no artifact would simply lose data.
+	 */
+	artifactStore?: ArtifactStore
 }
 
 export type ContextManagementResult = SummarizeResponse & {
@@ -267,6 +288,15 @@ export type ContextManagementResult = SummarizeResponse & {
 	 * recomputed-per-request state so they stay correct across mode switches.
 	 */
 	microcompactClearedToolUseIds?: string[]
+	/** Tool results the deterministic pruner moved to `prune` artifacts. */
+	prunedCount?: number
+	/** Bytes the pruner removed from the conversation, net of the previews. */
+	prunedBytesSaved?: number
+	/**
+	 * True when the prune pass alone brought the context back under the
+	 * thresholds, so no LLM summary was requested this round.
+	 */
+	summarySkipped?: boolean
 }
 
 /**
@@ -295,6 +325,9 @@ export async function manageContext({
 	rooIgnoreController,
 	condenseCircuitOpen,
 	previouslyClearedToolUseIds,
+	pruneBeforeCondense,
+	pruneToolResultBudget,
+	artifactStore,
 }: ContextManagementOptions): Promise<ContextManagementResult> {
 	let error: string | undefined
 	let errorDetails: string | undefined
@@ -444,17 +477,131 @@ export async function manageContext({
 		? { microcompacted, microcompactClearedCount, microcompactTokensCleared, microcompactClearedToolUseIds }
 		: undefined
 
+	// --- Deterministic prune pass (cheap, no-LLM, destructive but recoverable) ---
+	//
+	// Runs AFTER microcompaction and BEFORE the summary, and the order is the
+	// whole design (mirrors dsh's compaction-basic, where the tool-result pruner
+	// precedes any model call):
+	//
+	// 1. Microcompaction is FREE and REVERSIBLE. It only strips the outgoing copy
+	//    of the request, so a mid-task switch to a wider-context model silently
+	//    gets the full text back. If it alone relieves the pressure we already
+	//    returned above and never get here.
+	// 2. Pruning is nearly free but DESTRUCTIVE to the stored history: the
+	//    original moves to a `prune` artifact and the block keeps a head/tail
+	//    preview that cites the artifact id. Nothing is lost to the task (one
+	//    `read_artifact` call brings it back), but the change must be persisted,
+	//    which is why it only runs once microcompaction has been exhausted.
+	// 3. The LLM summary is expensive, slow, and genuinely lossy (a paraphrase
+	//    written by a model that can be wrong), so it stays the last resort.
+	//
+	// Results microcompaction already selected are skipped: their text is absent
+	// from this request's payload anyway, so pruning them would spend a disk
+	// write for zero reclaim this round.
+	let historyMessages = messages
+	let prunedCount = 0
+	let prunedBytesSaved = 0
+	let pruneTokensSaved = 0
+
+	const pruneEnabled =
+		pruneBeforeCondense !== false && !!artifactStore && (overCondenseThreshold || overAllowedTokens)
+
+	if (pruneEnabled && artifactStore) {
+		const skipToolUseIds = new Set<string>(microcompactClearedToolUseIds)
+		for (const id of previouslyClearedToolUseIds ?? []) {
+			skipToolUseIds.add(id)
+		}
+
+		// The same boundary a condense would keep verbatim, so the pruner and the
+		// summarizer agree on exactly which tail is the model's working set.
+		const pruned = pruneToolResults(messages, {
+			keepBoundary: computeCondenseKeepBoundary(messages),
+			budgetBytes: pruneToolResultBudget ?? PRUNE_CONDENSE_DEFAULTS.DEFAULT_TOOL_RESULT_BUDGET,
+			store: artifactStore,
+			skipToolUseIds,
+		})
+
+		if (pruned.prunedCount > 0) {
+			historyMessages = pruned.messages
+			prunedCount = pruned.prunedCount
+			prunedBytesSaved = pruned.bytesSaved
+
+			// Remeasure with the estimator the pressure decision itself uses, and
+			// price only what changed: the removed originals minus the previews
+			// written back in their place. Two counts on the touched text beat one
+			// count of the whole (large) history.
+			//
+			// The two numbers are NOT on the same scale, and that is a known,
+			// deliberate approximation carried over from the microcompaction
+			// pre-pass above: `prevContextTokens` comes from what the provider
+			// actually billed, while `estimateTokenCount` multiplies tiktoken by
+			// TOKEN_FUDGE_FACTOR (1.5). So the reclaim is systematically
+			// OVER-estimated, and the pass can decide it cleared enough when it
+			// did not. The cost of being wrong is bounded and self-correcting:
+			// the next turn measures the real size, finds itself over the
+			// threshold again, and runs another round (which by then has less
+			// left to prune, since the pass is idempotent). Under-estimating
+			// would be the worse failure, because it would summarize when a free
+			// pass would have done.
+			const removedTokens = await estimateTokenCount([{ type: "text", text: pruned.prunedText }], apiHandler)
+			const replacementTokens = await estimateTokenCount(
+				[{ type: "text", text: pruned.replacementText }],
+				apiHandler,
+			)
+			pruneTokensSaved = Math.max(0, removedTokens - replacementTokens)
+
+			const newContextTokens = Math.max(0, prevContextTokens - microcompactTokensCleared - pruneTokensSaved)
+			const newContextPercent = (100 * newContextTokens) / contextWindow
+			const stillOverCondense = autoCondenseContext && newContextPercent >= effectiveThreshold
+			const stillOverAllowed = newContextTokens > allowedTokens
+
+			if (!stillOverCondense && !stillOverAllowed) {
+				// The cheap pass was enough: advance the surface without a summary.
+				// Its OWN event, not the condense one: no summary was written this
+				// round, and firing "Context Condensed" here would inflate every
+				// existing condense count and cost chart. How often the summary was
+				// avoided is this event's count against the condense events that
+				// carry `summarySkipped: false`.
+				TelemetryService.instance.captureContextPruned(taskId, {
+					prunedCount,
+					bytesSaved: prunedBytesSaved,
+				})
+
+				return {
+					// PRUNED, not pristine: the originals now live on disk, so this
+					// rewrite has to be persisted or the artifact ids in the
+					// previews would point at text the history still holds inline.
+					messages: historyMessages,
+					summary: "",
+					cost: 0,
+					prevContextTokens,
+					newContextTokens,
+					prunedCount,
+					prunedBytesSaved,
+					summarySkipped: true,
+					...microcompactFields,
+				}
+			}
+		}
+	}
+
+	// Surfaced on every later return so the caller can report the pass even when
+	// it was not enough on its own.
+	const pruneFields = prunedCount > 0 ? { prunedCount, prunedBytesSaved, summarySkipped: false } : undefined
+
 	// Skip the expensive condense step when the circuit breaker is tripped: too
 	// many consecutive condense attempts have failed to reduce the context, so
 	// retrying the lossy summary is futile. Microcompaction (above) and truncation
 	// (below) still run — they always reduce and cannot "fail" like an LLM summary.
 	if (autoCondenseContext && !condenseCircuitOpen) {
 		if (contextPercent >= effectiveThreshold || prevContextTokens > allowedTokens) {
-			// Attempt to intelligently condense the PRISTINE context (the send-time
-			// strip handles old tool output; condensing pristine keeps the kept raw
-			// tail pristine and the stored transcript intact).
+			// Condense the history as the prune pass left it (identical to the
+			// pristine array when nothing was pruned). Microcompaction's clearing
+			// is NOT applied here: that one is a send-time strip, so the kept raw
+			// tail and the stored transcript stay pristine apart from the pruned
+			// previews, which are themselves a persisted rewrite.
 			const result = await summarizeConversation({
-				messages,
+				messages: historyMessages,
 				apiHandler,
 				systemPrompt,
 				taskId,
@@ -469,20 +616,23 @@ export async function manageContext({
 				// checklist it is validated against, so dropped critical facts are restored
 				// deterministically instead of silently lost.
 				ledger: getLedger(),
+				// Reported on the single condense event this call emits, with
+				// `summarySkipped: false`: pruning ran but was not enough.
+				pruneStats: pruneFields ? { prunedCount, bytesSaved: prunedBytesSaved } : undefined,
 			})
 			if (result.error) {
 				error = result.error
 				errorDetails = result.errorDetails
 				cost = result.cost
 			} else {
-				return { ...result, prevContextTokens, ...microcompactFields }
+				return { ...result, prevContextTokens, ...microcompactFields, ...pruneFields }
 			}
 		}
 	}
 
 	// Fall back to sliding window truncation if needed
 	if (prevContextTokens > allowedTokens) {
-		const truncationResult = truncateConversation(messages, 0.5, taskId)
+		const truncationResult = truncateConversation(historyMessages, 0.5, taskId)
 
 		// Calculate new context tokens after truncation by counting non-truncated messages
 		// Messages with truncationParent are hidden, so we count only those without it
@@ -520,18 +670,21 @@ export async function manageContext({
 			messagesRemoved: truncationResult.messagesRemoved,
 			newContextTokensAfterTruncation,
 			...microcompactFields,
+			...pruneFields,
 		}
 	}
-	// No truncation or condensation needed. Return the PRISTINE messages — any
-	// microcompaction is carried as `microcompactClearedToolUseIds` (in
-	// `microcompactFields`) and applied at send time, never persisted here.
+	// No truncation or condensation needed. Microcompaction is carried as
+	// `microcompactClearedToolUseIds` (in `microcompactFields`) and applied at
+	// send time, never persisted here. A prune, if one ran, IS persisted, so
+	// return the history as the pruner left it.
 	return {
-		messages,
+		messages: historyMessages,
 		summary: "",
 		cost,
 		prevContextTokens,
 		error,
 		errorDetails,
 		...microcompactFields,
+		...pruneFields,
 	}
 }

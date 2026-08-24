@@ -166,6 +166,7 @@ export const clineSays = [
 	"condense_context",
 	"condense_context_error",
 	"sliding_window_truncation",
+	"context_pruned",
 	"codebase_search_result",
 	"user_edit_todos",
 	"too_many_tools_warning",
@@ -235,6 +236,31 @@ export const contextTruncationSchema = z.object({
 export type ContextTruncation = z.infer<typeof contextTruncationSchema>
 
 /**
+ * ContextPrune
+ *
+ * Data associated with a deterministic tool-result prune. Attached to messages
+ * with `say: "context_pruned"`.
+ *
+ * The prune pass rewrites stored history: the full text of old oversized tool
+ * results is moved to task artifacts and only a head/tail preview stays in the
+ * conversation. That is a destructive change to what the user can scroll back
+ * through, so unlike the free microcompaction pre-pass it must not be silent.
+ *
+ * @property prunedCount - Number of tool results moved to artifacts
+ * @property bytesSaved - Bytes removed from the conversation, net of the previews
+ * @property prevContextTokens - Estimated token count before the prune
+ * @property newContextTokens - Estimated token count after the prune
+ */
+export const contextPruneSchema = z.object({
+	prunedCount: z.number(),
+	bytesSaved: z.number(),
+	prevContextTokens: z.number(),
+	newContextTokens: z.number(),
+})
+
+export type ContextPrune = z.infer<typeof contextPruneSchema>
+
+/**
  * ClineMessage
  *
  * The main message type used for communication between the extension and webview.
@@ -243,6 +269,7 @@ export type ContextTruncation = z.infer<typeof contextTruncationSchema>
  * Context Management Fields:
  * - `contextCondense`: Present when `say: "condense_context"` and condensation succeeded
  * - `contextTruncation`: Present when `say: "sliding_window_truncation"` and truncation occurred
+ * - `contextPrune`: Present when `say: "context_pruned"` and the deterministic pruner ran alone
  *
  * Note: These fields are mutually exclusive - a message will have at most one of them.
  */
@@ -268,6 +295,11 @@ export const clineMessageSchema = z.object({
 	 * Present when `say: "sliding_window_truncation"`.
 	 */
 	contextTruncation: contextTruncationSchema.optional(),
+	/**
+	 * Data for a deterministic tool-result prune.
+	 * Present when `say: "context_pruned"`.
+	 */
+	contextPrune: contextPruneSchema.optional(),
 	isProtected: z.boolean().optional(),
 	apiProtocol: z.union([z.literal("openai"), z.literal("anthropic")]).optional(),
 	isAnswered: z.boolean().optional(),

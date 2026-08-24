@@ -7,7 +7,8 @@ describe("context-management", () => {
 			expect(CONTEXT_MANAGEMENT_EVENTS).toContain("condense_context")
 			expect(CONTEXT_MANAGEMENT_EVENTS).toContain("condense_context_error")
 			expect(CONTEXT_MANAGEMENT_EVENTS).toContain("sliding_window_truncation")
-			expect(CONTEXT_MANAGEMENT_EVENTS).toHaveLength(3)
+			expect(CONTEXT_MANAGEMENT_EVENTS).toContain("context_pruned")
+			expect(CONTEXT_MANAGEMENT_EVENTS).toHaveLength(4)
 		})
 	})
 
@@ -16,6 +17,7 @@ describe("context-management", () => {
 			expect(isContextManagementEvent("condense_context")).toBe(true)
 			expect(isContextManagementEvent("condense_context_error")).toBe(true)
 			expect(isContextManagementEvent("sliding_window_truncation")).toBe(true)
+			expect(isContextManagementEvent("context_pruned")).toBe(true)
 		})
 
 		it("should return false for non-context-management events", () => {

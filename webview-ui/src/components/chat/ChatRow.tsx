@@ -47,7 +47,13 @@ import { Markdown } from "./Markdown"
 import { CommandExecution } from "./CommandExecution"
 import { CommandExecutionError } from "./CommandExecutionError"
 import { AutoApprovedRequestLimitWarning } from "./AutoApprovedRequestLimitWarning"
-import { InProgressRow, CondensationResultRow, CondensationErrorRow, TruncationResultRow } from "./context-management"
+import {
+	InProgressRow,
+	CondensationResultRow,
+	CondensationErrorRow,
+	TruncationResultRow,
+	PruneResultRow,
+} from "./context-management"
 import CodebaseSearchResultsDisplay from "./CodebaseSearchResultsDisplay"
 import { appendImages } from "@src/utils/imageUtils"
 import { McpExecution } from "./McpExecution"
@@ -1457,6 +1463,14 @@ export const ChatRowContent = ({
 					// Completed state
 					if (message.contextTruncation) {
 						return <TruncationResultRow data={message.contextTruncation} />
+					}
+					return null
+				case "context_pruned":
+					// Deterministic prune: old oversized tool results moved to task
+					// artifacts. There is no in-progress state, the pass is local
+					// and finishes in milliseconds.
+					if (message.contextPrune) {
+						return <PruneResultRow data={message.contextPrune} />
 					}
 					return null
 				case "codebase_search_result":
