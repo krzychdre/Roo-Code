@@ -12,6 +12,7 @@ import { CodeIndexManager } from "../../services/code-index/manager"
 import { SkillsManager } from "../../services/skills/SkillsManager"
 
 import type { SystemPromptSettings } from "./types"
+import { slimToolsetHidesMcp } from "./tools/filter-tools-for-mode"
 import {
 	getRulesSection,
 	getSystemInfoSection,
@@ -69,8 +70,13 @@ async function generatePrompt(
 	const modeConfig = getModeBySlug(mode, customModeConfigs) || modes.find((m) => m.slug === mode) || modes[0]
 	const { roleDefinition, baseInstructions } = getModeSelection(mode, promptComponent, customModeConfigs)
 
-	// Check if MCP functionality should be included
-	const hasMcpGroup = modeConfig.groups.some((groupEntry) => getGroupName(groupEntry) === "mcp")
+	// Check if MCP functionality should be included.
+	// A slim profile that hides MCP removes the tool schemas from the request, so
+	// every MCP mention in the prompt has to disappear with them: the tool filter
+	// (`slimToolsetHidesMcp`) is the single source of truth for that decision.
+	const mcpHiddenBySlimToolset = slimToolsetHidesMcp(settings)
+	const hasMcpGroup =
+		!mcpHiddenBySlimToolset && modeConfig.groups.some((groupEntry) => getGroupName(groupEntry) === "mcp")
 	// Resolve the per-mode MCP allowlist. For built-in modes the allowlist lives in the prompt
 	// override (promptComponent, already resolved for this mode); custom modes carry it on the
 	// ModeConfig. The override wins when present (matches getModeAllowedMcpServers precedence).

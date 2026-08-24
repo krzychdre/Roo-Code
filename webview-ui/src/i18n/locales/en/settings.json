@@ -921,6 +921,14 @@
 		"todoList": {
 			"label": "Enable todo list tool",
 			"description": "When enabled, Tumble can create and manage todo lists to track task progress. This helps organize complex tasks into manageable steps."
+		},
+		"slimToolset": {
+			"label": "Slim toolset (small models)",
+			"description": "Offer this profile one obvious tool per job: read_file, search_files, list_files, codebase_search, apply_diff, write_to_file, execute_command, read_artifact, the web tools, and the task tools (ask, complete, switch mode, new task, todo list, skill, load tools). The spare edit verbs (edit, search_replace, edit_file, apply_patch), image generation, parallel tasks and slash commands are hidden. Small models stop choosing the wrong editor. If the model calls a hidden tool anyway, it still runs.",
+			"hideMcp": {
+				"label": "Also hide MCP tools",
+				"description": "MCP tool schemas are usually the biggest part of the tool prompt. Keep this on unless this profile needs an MCP server."
+			}
 		}
 	},
 	"experimental": {

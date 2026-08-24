@@ -11,6 +11,8 @@ export const sharedProfileSettingsSchema = z
 		modelTemperature: z.number().nullish(),
 		rateLimitSeconds: z.number().optional(),
 		consecutiveMistakeLimit: z.number().min(0).optional(),
+		slimToolset: z.boolean().optional(),
+		slimHidesMcp: z.boolean().optional(),
 		reasoningEffort: reasoningEffortSettingSchema.optional(),
 		modelMaxTokens: z.number().optional(),
 		modelMaxThinkingTokens: z.number().optional(),

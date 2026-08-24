@@ -173,6 +173,10 @@ export class ApiRequestBuilder {
 					.getConfiguration(Package.name)
 					.get<boolean>("newTaskRequireTodos", false),
 				isStealthModel: modelInfo?.isStealthModel,
+				// Slim toolset comes off the ACTIVE profile so it follows every
+				// mode switch through modeApiConfigs (nothing is cached on the task).
+				slimToolset: apiConfiguration?.slimToolset,
+				slimHidesMcp: apiConfiguration?.slimHidesMcp,
 			},
 			undefined, // todoList
 			this.access.api.getModel().id,

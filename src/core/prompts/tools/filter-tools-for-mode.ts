@@ -52,6 +52,158 @@ for (const [canonical, aliases] of CANONICAL_TO_ALIASES.entries()) {
 const WEB_GROUP_TOOLS: readonly string[] = TOOL_GROUPS.web.tools
 
 /**
+ * The slim toolset: the only tool names a profile with `slimToolset` on may
+ * advertise, on top of whatever the mode already allows.
+ *
+ * Small models do not fail because a capability is missing, they fail because
+ * six near-identical editing verbs are on offer and they pick the wrong one.
+ * This list keeps exactly one obvious tool per job:
+ *
+ * - read:     read_file, search_files, list_files, codebase_search
+ * - edit:     apply_diff (surgical), write_to_file (whole file)
+ * - command:  execute_command, read_artifact (+ its `read_command_output` alias)
+ * - web:      web_search, web_fetch (still gated by `webToolsEnabled`)
+ * - protocol: ask_followup_question, attempt_completion, switch_mode, new_task,
+ *             update_todo_list, skill, tools_load
+ *
+ * Deliberately absent: the alternative edit verbs (`edit`, `search_replace`,
+ * `edit_file`, `apply_patch`), `generate_image`, `run_parallel_tasks` and
+ * `run_slash_command` (weak models fan out or expand slash commands instead of
+ * doing the work; orchestrating modes run on strong profiles anyway), and the
+ * MCP tools, which are governed separately by `slimHidesMcp`.
+ *
+ * Both `read_artifact` and its legacy alias `read_command_output` are listed so
+ * the intersection is correct no matter whether alias resolution ran first. Any
+ * OTHER alias pointing at an allowlisted tool is folded in automatically by
+ * SLIM_TOOLSET_ALLOWSET below, so this list only has to name canonical intent.
+ */
+export const SLIM_TOOLSET_ALLOWLIST: readonly string[] = [
+	// read
+	"read_file",
+	"search_files",
+	"list_files",
+	"codebase_search",
+	// edit
+	"apply_diff",
+	"write_to_file",
+	// command
+	"execute_command",
+	"read_artifact",
+	"read_command_output",
+	// web (still subject to the webToolsEnabled gate above)
+	"web_search",
+	"web_fetch",
+	// protocol / always-available
+	"ask_followup_question",
+	"attempt_completion",
+	"switch_mode",
+	"new_task",
+	"update_todo_list",
+	"skill",
+	"tools_load",
+]
+
+/**
+ * The allowlist as a lookup set, widened with every alias whose TARGET is
+ * allowlisted (today: `write_file` for `write_to_file`, `read_command_output`
+ * for `read_artifact`).
+ *
+ * This matters because callers hand us either form. `isToolAllowedInMode`
+ * checks the raw name before it resolves aliases, so an allowlist holding only
+ * canonical names would answer "no" for `write_file` under a slim profile while
+ * answering "yes" without one. Deriving the aliases from TOOL_ALIASES rather
+ * than typing them out means a future alias cannot silently fall outside the
+ * slim set. Aliases pointing at a hidden tool (`search_and_replace` resolves to
+ * `edit`) are correctly left out.
+ */
+export const SLIM_TOOLSET_ALLOWSET: ReadonlySet<string> = (() => {
+	const allowset = new Set<string>(SLIM_TOOLSET_ALLOWLIST)
+
+	for (const [alias, canonical] of Object.entries(TOOL_ALIASES)) {
+		if (allowset.has(canonical)) {
+			allowset.add(alias)
+		}
+	}
+
+	return allowset
+})()
+
+/** MCP tool names, kept only when the slim profile does not hide MCP. */
+const MCP_GROUP_TOOLS: readonly string[] = TOOL_GROUPS.mcp.tools
+
+/**
+ * Settings subset that drives the slim toolset. Deliberately structural so both
+ * the loose `Record<string, any>` filter settings and a `ProviderSettings`
+ * object can be passed without conversion.
+ */
+export interface SlimToolsetSettings {
+	slimToolset?: boolean
+	slimHidesMcp?: boolean
+}
+
+/**
+ * Whether the active profile asked for the slim toolset.
+ */
+export function isSlimToolsetEnabled(settings?: SlimToolsetSettings): boolean {
+	return settings?.slimToolset === true
+}
+
+/**
+ * Whether MCP must be hidden for the active profile.
+ *
+ * `slimHidesMcp` only means anything while `slimToolset` is on, and there an
+ * undefined value counts as true: MCP schemas are the largest single chunk of
+ * the tool prompt, so the slim default hides them. Setting it explicitly to
+ * false keeps MCP reachable (through the deferred-tools catalog when that
+ * experiment is on).
+ */
+export function slimToolsetHidesMcp(settings?: SlimToolsetSettings): boolean {
+	return isSlimToolsetEnabled(settings) && settings?.slimHidesMcp !== false
+}
+
+/**
+ * Intersect an already mode-resolved tool set with the slim allowlist.
+ *
+ * This runs AFTER mode/group resolution, so it can only ever remove names: a
+ * mode that never had `execute_command` does not gain it here. When the profile
+ * does not ask for the slim toolset the input set is returned untouched
+ * (identity), which keeps the advertised array, and therefore the request
+ * prefix, byte-identical for every existing profile.
+ *
+ * Note this is a PROMPT-SIDE restriction only. Dispatch is intentionally left
+ * tolerant: a model that still calls a hidden-but-real tool name executes it
+ * (aliases resolve as usual). Hiding a schema must never turn a well-formed
+ * call into an error. The one place this is impossible is the Gemini branch of
+ * `buildNativeToolsArrayWithRestrictions`, which documents why.
+ *
+ * Considered interaction with the teaching errors (WS-D): a MALFORMED call to a
+ * hidden verb still gets that verb's `minimal_valid_example` back from
+ * `responses.ts`, so the prompt says "this tool does not exist here" while the
+ * error says "here is how to call it". That is deliberate and harmless. The
+ * example only ever fires on a call that was already going to be retried, the
+ * hidden verb really does execute (dispatch tolerance), and so following the
+ * example completes the user's edit instead of dead-ending. Suppressing the
+ * example would leave a small model with a broken call and no way to fix it,
+ * which is strictly worse than a slightly inconsistent message.
+ */
+export function applySlimToolset(allowedTools: Set<string>, settings?: SlimToolsetSettings): Set<string> {
+	if (!isSlimToolsetEnabled(settings)) {
+		return allowedTools
+	}
+
+	const keepMcp = !slimToolsetHidesMcp(settings)
+	const result = new Set<string>()
+
+	for (const tool of allowedTools) {
+		if (SLIM_TOOLSET_ALLOWSET.has(tool) || (keepMcp && MCP_GROUP_TOOLS.includes(tool))) {
+			result.add(tool)
+		}
+	}
+
+	return result
+}
+
+/**
  * Cache for renamed tool definitions.
  * Maps "canonicalName:aliasName" to the pre-built tool definition.
  * This avoids creating new objects via spread operators on every assistant message.
@@ -275,6 +427,13 @@ export function filterNativeToolsForMode(
 	)
 	allowedToolNames = customizedTools
 
+	// Slim toolset: intersect the mode-resolved set with the small allowlist when
+	// the ACTIVE profile asks for it. Applied here, after group resolution and
+	// model customization, so it can only subtract. Because the active profile
+	// follows the mode through `modeApiConfigs`, switching modes mid-task
+	// recomputes this on the very next request with no persisted state.
+	allowedToolNames = applySlimToolset(allowedToolNames, settings)
+
 	// Conditionally exclude codebase_search if feature is disabled or not configured
 	if (
 		!codeIndexManager ||
@@ -391,6 +550,15 @@ export function isToolAllowedInMode(
 		return false
 	}
 
+	// Same slim-toolset intersection as filterNativeToolsForMode, so prompt text
+	// built from this helper never mentions a tool the model was not offered.
+	if (isSlimToolsetEnabled(settings)) {
+		const keptByMcpFlag = !slimToolsetHidesMcp(settings) && MCP_GROUP_TOOLS.includes(toolName)
+		if (!SLIM_TOOLSET_ALLOWSET.has(toolName) && !keptByMcpFlag) {
+			return false
+		}
+	}
+
 	// Check if it's an always-available tool
 	if (ALWAYS_AVAILABLE_TOOLS.includes(toolName)) {
 		// But still check for conditional exclusions
@@ -464,6 +632,7 @@ export function getAvailableToolsInGroup(
  * @param mode - Current mode slug
  * @param customModes - Custom mode configurations
  * @param experiments - Experiment flags
+ * @param settings - Additional settings for tool filtering (slim toolset flags)
  * @returns Filtered array of MCP tools if use_mcp_tool is allowed, empty array otherwise
  */
 export function filterMcpToolsForMode(
@@ -471,8 +640,15 @@ export function filterMcpToolsForMode(
 	mode: string | undefined,
 	customModes: ModeConfig[] | undefined,
 	experiments: Record<string, boolean> | undefined,
+	settings?: Record<string, any>,
 ): OpenAI.Chat.ChatCompletionTool[] {
 	const modeSlug = mode ?? defaultModeSlug
+
+	// A slim profile that hides MCP advertises no per-server tool schemas at all.
+	// This is where the bulk of the tool-prompt saving comes from.
+	if (slimToolsetHidesMcp(settings)) {
+		return []
+	}
 
 	// MCP tools are always in the mcp group, check if use_mcp_tool is allowed
 	const isMcpAllowed = isToolAllowedForMode(
