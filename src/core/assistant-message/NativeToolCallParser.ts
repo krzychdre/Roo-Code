@@ -709,6 +709,15 @@ export class NativeToolCallParser {
 				}
 				break
 
+			case "search_task_history":
+				if (partialArgs.query !== undefined) {
+					nativeArgs = {
+						query: partialArgs.query,
+						max_results: this.coerceOptionalNumber(partialArgs.max_results),
+					}
+				}
+				break
+
 			default:
 				break
 		}
@@ -997,6 +1006,17 @@ export class NativeToolCallParser {
 					if (args.url !== undefined) {
 						nativeArgs = {
 							url: args.url,
+						} as NativeArgsFor<TName>
+					}
+					break
+
+				case "search_task_history":
+					if (args.query !== undefined) {
+						nativeArgs = {
+							query: args.query,
+							// Weak models send "20" as often as 20; coerce so a
+							// string does not silently fall back to the default.
+							max_results: this.coerceOptionalNumber(args.max_results),
 						} as NativeArgsFor<TName>
 					}
 					break

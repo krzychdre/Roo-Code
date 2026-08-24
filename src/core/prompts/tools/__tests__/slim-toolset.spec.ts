@@ -177,6 +177,14 @@ describe("filterNativeToolsForMode - slim toolset intersection", () => {
 		}
 	})
 
+	it("hides search_task_history, which a full read-capable mode does advertise", () => {
+		// WS-G deliberately stays out of the slim allowlist: recovering an old
+		// turn is a repair move a strong model makes, and the slim set exists to
+		// keep exactly one obvious tool per job in front of a weak one.
+		expect(advertisedForCodeMode(fullSettings)).toContain("search_task_history")
+		expect(advertisedForCodeMode(slimSettings)).not.toContain("search_task_history")
+	})
+
 	it("changes nothing when the profile leaves the slim toolset off", () => {
 		const experiments = { runSlashCommand: true, imageGeneration: true }
 		const base = { ...fullSettings, modelInfo: { includedTools: ["edit_file"] } }

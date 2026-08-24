@@ -36,6 +36,7 @@ export const toolNames = [
 	"edit_file",
 	"apply_patch",
 	"search_files",
+	"search_task_history",
 	"list_files",
 	"use_mcp_tool",
 	"access_mcp_resource",

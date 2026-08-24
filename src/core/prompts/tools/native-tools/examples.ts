@@ -82,6 +82,10 @@ export const TOOL_MINIMAL_EXAMPLES = {
 	search_and_replace: { file_path: "src/app.ts", old_string: "const a = 1", new_string: "const a = 2" },
 	search_files: { path: "src", regex: "retryPolicy", file_pattern: null },
 	search_replace: { file_path: "src/app.ts", old_string: "const a = 1", new_string: "const a = 2" },
+	// `max_results` is deliberately absent: the schema is not strict, the
+	// default is 10, and a weak model copying the example should see the
+	// one-parameter shape.
+	search_task_history: { query: "retry wrapper" },
 	// `create-mode` is named in the skill tool's own parameter description.
 	skill: { skill: "create-mode", args: null },
 	switch_mode: { mode_slug: "code", reason: "The plan is approved and needs implementing." },

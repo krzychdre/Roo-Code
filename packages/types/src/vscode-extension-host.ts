@@ -837,6 +837,7 @@ export interface ClineSayTool {
 		| "listFilesTopLevel"
 		| "listFilesRecursive"
 		| "searchFiles"
+		| "searchTaskHistory"
 		| "switchMode"
 		| "newTask"
 		| "finishTask"

@@ -80,6 +80,7 @@ import {
 	Check,
 	MessageSquarePlus,
 	ClipboardCheck,
+	History,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { PathTooltip } from "../ui/PathTooltip"
@@ -1586,6 +1587,21 @@ export const ChatRowContent = ({
 										</ToolUseBlock>
 									</div>
 								</>
+							)
+						}
+						case "searchTaskHistory": {
+							return (
+								<div style={headerStyle}>
+									<History className="w-4 shrink-0" aria-label="Search task history icon" />
+									<span style={{ fontWeight: "bold" }}>{t("chat:searchTaskHistory.title")}</span>
+									{sayTool.query && (
+										<span
+											className="text-xs ml-1"
+											style={{ color: "var(--vscode-descriptionForeground)" }}>
+											({sayTool.query})
+										</span>
+									)}
+								</div>
 							)
 						}
 						case "readArtifact":

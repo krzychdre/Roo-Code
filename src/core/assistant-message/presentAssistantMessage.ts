@@ -17,6 +17,7 @@ import { Task } from "../task/Task"
 import { listFilesTool } from "../tools/ListFilesTool"
 import { readFileTool } from "../tools/ReadFileTool"
 import { readArtifactTool } from "../tools/ReadArtifactTool"
+import { searchTaskHistoryTool } from "../tools/SearchTaskHistoryTool"
 import { writeToFileTool } from "../tools/WriteToFileTool"
 import { editTool } from "../tools/EditTool"
 import { searchReplaceTool } from "../tools/SearchReplaceTool"
@@ -428,6 +429,8 @@ export async function presentAssistantMessage(cline: Task) {
 					case "read_artifact":
 					case "read_command_output":
 						return `[${block.name} for '${block.params.artifact_id}']`
+					case "search_task_history":
+						return `[${block.name} for '${block.params.query}']`
 					case "web_search": {
 						const nativeArgs = (block as ToolUse<"web_search">).nativeArgs
 						const queries = Array.isArray(nativeArgs?.queries) ? nativeArgs.queries : []
@@ -907,6 +910,14 @@ export async function presentAssistantMessage(cline: Task) {
 						askApproval,
 						handleError,
 						pushToolResult,
+					})
+					break
+				case "search_task_history":
+					await searchTaskHistoryTool.handle(cline, block as ToolUse<"search_task_history">, {
+						askApproval,
+						handleError,
+						pushToolResult,
+						toolCallId,
 					})
 					break
 				case "web_search":

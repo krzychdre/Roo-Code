@@ -18,6 +18,7 @@ import skill from "./skill"
 import searchReplace from "./search_replace"
 import edit_file from "./edit_file"
 import searchFiles from "./search_files"
+import searchTaskHistory from "./search_task_history"
 import switchMode from "./switch_mode"
 import toolsLoad from "./tools_load"
 import updateTodoList from "./update_todo_list"
@@ -76,6 +77,11 @@ export function getNativeTools(options: NativeToolsOptions = {}): OpenAI.Chat.Ch
 		webFetch,
 		webSearch,
 		writeToFile,
+		// Appended at the tail on purpose (WS-F prefix-stability contract): the
+		// tools array is part of the cached request prefix, so a new schema
+		// inserted in the middle would move every schema after it and cost
+		// existing users their tool-array cache hit. New tools go last.
+		searchTaskHistory,
 	] satisfies OpenAI.Chat.ChatCompletionTool[]
 }
 

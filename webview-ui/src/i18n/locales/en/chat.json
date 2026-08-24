@@ -550,6 +550,9 @@
 	"readArtifact": {
 		"title": "Tumble read artifact"
 	},
+	"searchTaskHistory": {
+		"title": "Tumble searched this task's history"
+	},
 	"readCommandOutput": {
 		"title": "Tumble read command output"
 	},

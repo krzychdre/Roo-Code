@@ -49,6 +49,12 @@ const SPILL_NOTICE_BYTES = 200
  *    (offset/limit/search - spilling a window into a new artifact would make the
  *    model chase its own tail) and `access_mcp_resource` (a resource the model
  *    asked for by URI, usually a schema or document it needs whole).
+ * 4. `search_task_history` for the same reason as `read_artifact`, plus a
+ *    sharper one: it SEARCHES the artifact directory. Spilling its result would
+ *    write an artifact that the next search then finds, so the tool would start
+ *    returning its own past output instead of the conversation. It caps itself
+ *    (50 hits of at most 800 bytes) and, being on this list, the WS-C pruner
+ *    leaves it alone too.
  */
 export const SPILL_BYPASS_TOOLS: ReadonlySet<string> = new Set<string>([
 	...PROTOCOL_TOOL_NAMES,
@@ -58,6 +64,7 @@ export const SPILL_BYPASS_TOOLS: ReadonlySet<string> = new Set<string>([
 	// build can still carry this name.
 	"read_command_output",
 	"access_mcp_resource",
+	"search_task_history",
 ])
 
 /**

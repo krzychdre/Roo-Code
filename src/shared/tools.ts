@@ -88,6 +88,9 @@ export const toolParamNames = [
 	"line_ranges",
 	// web_search parameter (array of 1-4 queries)
 	"queries",
+	// search_task_history parameter (`query` is already listed above, shared
+	// with codebase_search)
+	"max_results",
 ] as const
 
 export type ToolParamName = (typeof toolParamNames)[number]
@@ -124,6 +127,7 @@ export type NativeToolArgs = {
 	run_slash_command: { command: string; args?: string }
 	skill: { skill: string; args?: string }
 	search_files: { path: string; regex: string; file_pattern?: string | null }
+	search_task_history: { query: string; max_results?: number }
 	switch_mode: { mode_slug: string; reason: string }
 	update_todo_list: { todos: string }
 	use_mcp_tool: { server_name: string; tool_name: string; arguments?: Record<string, unknown> }
@@ -293,6 +297,7 @@ export const TOOL_DISPLAY_NAMES: Record<ToolName, string> = {
 	edit_file: "edit files using search and replace",
 	apply_patch: "apply patches using codex format",
 	search_files: "search files",
+	search_task_history: "search this task's history",
 	list_files: "list files",
 	use_mcp_tool: "use mcp tools",
 	access_mcp_resource: "access mcp resources",
@@ -315,7 +320,12 @@ export const TOOL_DISPLAY_NAMES: Record<ToolName, string> = {
 // Define available tool groups.
 export const TOOL_GROUPS: Record<ToolGroup, ToolGroupConfig> = {
 	read: {
-		tools: ["read_file", "search_files", "list_files", "codebase_search"],
+		// `search_task_history` reads the task's OWN stored conversation, not
+		// the workspace, so it carries no file-access risk beyond what the user
+		// already saw. It lives in `read` (rather than `command`, next to
+		// read_artifact) so every read-capable mode, including the md-only
+		// ones, can recover a detail that condense or the pruner took away.
+		tools: ["read_file", "search_files", "list_files", "codebase_search", "search_task_history"],
 	},
 	edit: {
 		tools: ["apply_diff", "write_to_file", "generate_image"],

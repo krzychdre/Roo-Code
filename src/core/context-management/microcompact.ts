@@ -149,6 +149,10 @@ export const COMPACTABLE_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
 	"search_and_replace",
 	"web_search",
 	"web_fetch",
+	// A history search is the cheapest result in this set to re-derive: the
+	// corpus it reads is on disk and does not move, so the identical call
+	// reproduces it exactly.
+	"search_task_history",
 ])
 
 /** One compactable tool result, as selection sees it. Encounter order, oldest first. */

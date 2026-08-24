@@ -25,6 +25,7 @@ const MINIMAL_VALID_ARGS: Record<Exclude<ToolName, "custom_tool">, Record<string
 	edit_file: { file_path: "src/x.ts", old_string: "a", new_string: "b" },
 	apply_patch: { patch: "*** Begin Patch\n*** End Patch" },
 	search_files: { path: ".", regex: "x" },
+	search_task_history: { query: "retry wrapper" },
 	list_files: { path: "." },
 	use_mcp_tool: { server_name: "s", tool_name: "t" },
 	access_mcp_resource: { server_name: "s", uri: "x://y" },

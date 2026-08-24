@@ -60,6 +60,8 @@ const WORKSPACE_READ_ONLY_TOOLS = new Set([
 	"read_command_output",
 	"web_search",
 	"web_fetch",
+	// Reads the task's own stored conversation, never the workspace.
+	"search_task_history",
 ])
 
 export interface TaskStreamProcessorAccess {
