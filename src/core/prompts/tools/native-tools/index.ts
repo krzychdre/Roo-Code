@@ -10,7 +10,7 @@ import executeCommand from "./execute_command"
 import generateImage from "./generate_image"
 import listFiles from "./list_files"
 import newTask from "./new_task"
-import readCommandOutput from "./read_command_output"
+import readArtifact from "./read_artifact"
 import { createReadFileTool, type ReadFileToolOptions } from "./read_file"
 import runParallelTasks from "./run_parallel_tasks"
 import runSlashCommand from "./run_slash_command"
@@ -61,7 +61,7 @@ export function getNativeTools(options: NativeToolsOptions = {}): OpenAI.Chat.Ch
 		generateImage,
 		listFiles,
 		newTask,
-		readCommandOutput,
+		readArtifact,
 		createReadFileTool(readFileOptions),
 		runParallelTasks,
 		runSlashCommand,

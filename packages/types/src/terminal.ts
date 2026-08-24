@@ -49,7 +49,7 @@ export type CommandExecutionStatus = z.infer<typeof commandExecutionStatusSchema
  * which contains:
  * - A preview of the output (for immediate display in context)
  * - Metadata about the full output (size, truncation status)
- * - A path to the artifact file for later retrieval via `read_command_output`
+ * - A path to the artifact file for later retrieval via `read_artifact`
  *
  * ## Usage in execute_command Response
  *
@@ -99,7 +99,7 @@ export interface PersistedCommandOutput {
 
 	/**
 	 * Whether the output was truncated (exceeded preview threshold).
-	 * When `true`, use `read_command_output` to retrieve full content.
+	 * When `true`, use `read_artifact` to retrieve full content.
 	 */
 	truncated: boolean
 }

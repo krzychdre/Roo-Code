@@ -1,8 +1,8 @@
 import { serializeError } from "serialize-error"
 import { Anthropic } from "@anthropic-ai/sdk"
 
-import type { ToolName, ClineAsk, ToolProgressStatus } from "@roo-code/types"
-import { ConsecutiveMistakeError, TelemetryEventName } from "@roo-code/types"
+import type { ToolName, ClineAsk, ToolProgressStatus, ArtifactSpillSettings } from "@roo-code/types"
+import { ConsecutiveMistakeError, TelemetryEventName, resolveMaxInlineToolResultBytes } from "@roo-code/types"
 import { TelemetryService } from "@roo-code/telemetry"
 import { customToolRegistry } from "@roo-code/core"
 
@@ -16,7 +16,7 @@ import { Task } from "../task/Task"
 
 import { listFilesTool } from "../tools/ListFilesTool"
 import { readFileTool } from "../tools/ReadFileTool"
-import { readCommandOutputTool } from "../tools/ReadCommandOutputTool"
+import { readArtifactTool } from "../tools/ReadArtifactTool"
 import { writeToFileTool } from "../tools/WriteToFileTool"
 import { editTool } from "../tools/EditTool"
 import { searchReplaceTool } from "../tools/SearchReplaceTool"
@@ -62,6 +62,27 @@ import { tryAutoMaterializeDirectCall } from "../task/deferred-tools-resolver"
  * API response pattern, where content arrives incrementally and needs to be processed
  * as it becomes available.
  */
+
+/**
+ * Makes sure the task can spill an oversized tool result to an artifact.
+ *
+ * The spill decision happens inside `Task#pushToolResultToUserContent`, which is
+ * synchronous, so the artifact store (whose directory resolves asynchronously)
+ * has to be primed here, on the dispatch path. Best-effort: a failure leaves the
+ * policy off and every result stays inline, exactly as before the policy existed.
+ */
+async function prepareToolResultSpill(cline: Task, state?: ArtifactSpillSettings): Promise<void> {
+	try {
+		if (typeof cline.ensureToolResultSpill !== "function") {
+			return
+		}
+
+		const resolvedState = state ?? (await cline.providerRef.deref()?.getState())
+		await cline.ensureToolResultSpill(resolveMaxInlineToolResultBytes(resolvedState))
+	} catch (error) {
+		console.warn("[presentAssistantMessage] Could not prepare the tool-result spill policy:", error)
+	}
+}
 
 export async function presentAssistantMessage(cline: Task) {
 	if (cline.abort) {
@@ -172,11 +193,14 @@ export async function presentAssistantMessage(cline: Task) {
 				}
 
 				if (toolCallId) {
-					cline.pushToolResultToUserContent({
-						type: "tool_result",
-						tool_use_id: sanitizeToolUseId(toolCallId),
-						content: resultContent,
-					})
+					cline.pushToolResultToUserContent(
+						{
+							type: "tool_result",
+							tool_use_id: sanitizeToolUseId(toolCallId),
+							content: resultContent,
+						},
+						{ toolName: "use_mcp_tool" },
+					)
 
 					if (imageBlocks.length > 0) {
 						cline.userMessageContent.push(...imageBlocks)
@@ -241,6 +265,11 @@ export async function presentAssistantMessage(cline: Task) {
 			if (!mcpBlock.partial) {
 				cline.recordToolUsage("use_mcp_tool") // Record as use_mcp_tool for analytics
 				TelemetryService.instance.captureToolUsage(cline.taskId, "use_mcp_tool")
+
+				// Prepare the tool-result spill policy before the tool runs: MCP
+				// servers are a classic source of multi-hundred-KB payloads.
+				// Only on the final block, so streaming stays allocation-free.
+				await prepareToolResultSpill(cline)
 
 				// Auto-materialize: if the model called a deferred MCP tool directly
 				// (without using `tools_load` first), promote it to the active set so
@@ -347,6 +376,10 @@ export async function presentAssistantMessage(cline: Task) {
 			const state = await cline.providerRef.deref()?.getState()
 			const { mode, customModes, experiments: stateExperiments, disabledTools } = state ?? {}
 
+			// Prepare the tool-result spill policy before the tool runs, so the
+			// (synchronous) push below can move an oversized result to disk.
+			await prepareToolResultSpill(cline, state)
+
 			const toolDescription = (): string => {
 				switch (block.name) {
 					case "execute_command":
@@ -390,6 +423,7 @@ export async function presentAssistantMessage(cline: Task) {
 						return `[${block.name} to '${block.params.mode_slug}'${block.params.reason ? ` because: ${block.params.reason}` : ""}]`
 					case "codebase_search":
 						return `[${block.name} for '${block.params.query}']`
+					case "read_artifact":
 					case "read_command_output":
 						return `[${block.name} for '${block.params.artifact_id}']`
 					case "web_search": {
@@ -551,11 +585,14 @@ export async function presentAssistantMessage(cline: Task) {
 					}
 				}
 
-				cline.pushToolResultToUserContent({
-					type: "tool_result",
-					tool_use_id: sanitizeToolUseId(toolCallId),
-					content: resultContent,
-				})
+				cline.pushToolResultToUserContent(
+					{
+						type: "tool_result",
+						tool_use_id: sanitizeToolUseId(toolCallId),
+						content: resultContent,
+					},
+					{ toolName: String(block.name) },
+				)
 
 				if (imageBlocks.length > 0) {
 					cline.userMessageContent.push(...imageBlocks)
@@ -853,8 +890,12 @@ export async function presentAssistantMessage(cline: Task) {
 						pushToolResult,
 					})
 					break
+				// `read_command_output` is resolved to `read_artifact` by the
+				// alias table before dispatch; it is listed here only so a
+				// replayed legacy block still finds a handler.
+				case "read_artifact":
 				case "read_command_output":
-					await readCommandOutputTool.handle(cline, block as ToolUse<"read_command_output">, {
+					await readArtifactTool.handle(cline, block as ToolUse<"read_artifact">, {
 						askApproval,
 						handleError,
 						pushToolResult,

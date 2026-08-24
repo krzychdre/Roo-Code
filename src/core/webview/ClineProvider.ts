@@ -47,6 +47,7 @@ import {
 	DEFAULT_PARALLEL_TASKS_MAX_CONCURRENCY,
 	DEFAULT_SUBAGENT_FOLLOWUP_TIMEOUT_SEC,
 	WEB_TOOLS_DEFAULTS,
+	resolveMaxInlineToolResultBytes,
 	getModelId,
 	isRetiredProvider,
 } from "@roo-code/types"
@@ -2436,6 +2437,7 @@ export class ClineProvider
 			searxngBaseUrl,
 			webSearchMaxResults,
 			webFetchMaxBytes,
+			maxInlineToolResultBytes,
 			soundEnabled,
 			enableCheckpoints,
 			checkpointTimeout,
@@ -2576,6 +2578,7 @@ export class ClineProvider
 			searxngBaseUrl: searxngBaseUrl ?? "",
 			webSearchMaxResults: webSearchMaxResults ?? WEB_TOOLS_DEFAULTS.DEFAULT_SEARCH_RESULTS,
 			webFetchMaxBytes: webFetchMaxBytes ?? WEB_TOOLS_DEFAULTS.DEFAULT_FETCH_BYTES,
+			maxInlineToolResultBytes: resolveMaxInlineToolResultBytes({ maxInlineToolResultBytes }),
 			uriScheme: vscode.env.uriScheme,
 			currentTaskId: currentTask?.taskId,
 			currentTaskItem: currentTask?.taskId ? taskHistoryStore.get(currentTask.taskId) : undefined,
@@ -2845,6 +2848,7 @@ export class ClineProvider
 			searxngBaseUrl: stateValues.searxngBaseUrl ?? "",
 			webSearchMaxResults: stateValues.webSearchMaxResults ?? WEB_TOOLS_DEFAULTS.DEFAULT_SEARCH_RESULTS,
 			webFetchMaxBytes: stateValues.webFetchMaxBytes ?? WEB_TOOLS_DEFAULTS.DEFAULT_FETCH_BYTES,
+			maxInlineToolResultBytes: resolveMaxInlineToolResultBytes(stateValues),
 			// `getState` is a hot path consumed by many internal call sites
 			// (system prompt building, auto-approval, retry, plan review…)
 			// that never read task history. Materializing and sorting the

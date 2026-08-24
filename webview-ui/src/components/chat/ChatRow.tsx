@@ -1574,6 +1574,7 @@ export const ChatRowContent = ({
 								</>
 							)
 						}
+						case "readArtifact":
 						case "readCommandOutput": {
 							const formatBytes = (bytes: number) => {
 								if (bytes < 1024) return `${bytes} B`
@@ -1607,8 +1608,12 @@ export const ChatRowContent = ({
 
 							return (
 								<div style={headerStyle}>
-									<FileCode2 className="w-4 shrink-0" aria-label="Read command output icon" />
-									<span style={{ fontWeight: "bold" }}>{t("chat:readCommandOutput.title")}</span>
+									<FileCode2 className="w-4 shrink-0" aria-label="Read artifact icon" />
+									<span style={{ fontWeight: "bold" }}>
+										{sayTool.tool === "readArtifact"
+											? t("chat:readArtifact.title")
+											: t("chat:readCommandOutput.title")}
+									</span>
 									{infoText && (
 										<span
 											className="text-xs ml-1"

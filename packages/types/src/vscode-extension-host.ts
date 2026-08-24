@@ -345,6 +345,7 @@ export type ExtensionState = Pick<
 	| "searxngBaseUrl"
 	| "webSearchMaxResults"
 	| "webFetchMaxBytes"
+	| "maxInlineToolResultBytes"
 > & {
 	lockApiConfigAcrossModes?: boolean
 	version: string
@@ -827,6 +828,9 @@ export interface ClineSayTool {
 		| "newFileCreated"
 		| "codebaseSearch"
 		| "readFile"
+		| "readArtifact"
+		// Emitted by builds before `read_artifact` existed; kept so old task
+		// histories still render.
 		| "readCommandOutput"
 		| "listFilesTopLevel"
 		| "listFilesRecursive"
@@ -843,7 +847,7 @@ export interface ClineSayTool {
 		| "webSearch"
 		| "webFetch"
 	path?: string
-	// For readCommandOutput
+	// For readArtifact (and the legacy readCommandOutput)
 	readStart?: number
 	readEnd?: number
 	totalBytes?: number

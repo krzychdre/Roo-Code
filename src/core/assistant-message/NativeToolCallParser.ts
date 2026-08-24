@@ -969,6 +969,7 @@ export class NativeToolCallParser {
 					}
 					break
 
+				case "read_artifact":
 				case "read_command_output":
 					if (args.artifact_id !== undefined) {
 						nativeArgs = {

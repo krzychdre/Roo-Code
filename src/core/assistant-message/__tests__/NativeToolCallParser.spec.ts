@@ -15,6 +15,7 @@ import type { ToolName } from "@roo-code/types"
  */
 const MINIMAL_VALID_ARGS: Record<Exclude<ToolName, "custom_tool">, Record<string, unknown>> = {
 	read_file: { path: "src/x.ts" },
+	read_artifact: { artifact_id: "cmd-1.txt" },
 	read_command_output: { artifact_id: "cmd-1.txt" },
 	write_to_file: { path: "src/x.ts", content: "x" },
 	apply_diff: { path: "src/x.ts", diff: "<<<<<<< SEARCH\n=======\n>>>>>>> REPLACE" },
@@ -52,6 +53,43 @@ describe("NativeToolCallParser", () => {
 	})
 
 	describe("parseToolCall", () => {
+		describe("read_artifact tool", () => {
+			it("should parse read_artifact args", () => {
+				const result = NativeToolCallParser.parseToolCall({
+					id: "toolu_artifact",
+					name: "read_artifact" as const,
+					arguments: JSON.stringify({ artifact_id: "tool-1706119234567.txt", search: "TODO" }),
+				})
+
+				expect(result?.type).toBe("tool_use")
+				if (result?.type === "tool_use") {
+					expect(result.name).toBe("read_artifact")
+					expect(result.nativeArgs).toEqual({
+						artifact_id: "tool-1706119234567.txt",
+						search: "TODO",
+						offset: undefined,
+						limit: undefined,
+					})
+				}
+			})
+
+			it("resolves the read_command_output alias to read_artifact", () => {
+				const result = NativeToolCallParser.parseToolCall({
+					id: "toolu_alias",
+					name: "read_command_output" as const,
+					arguments: JSON.stringify({ artifact_id: "cmd-1706119234567.txt" }),
+				})
+
+				expect(result?.type).toBe("tool_use")
+				if (result?.type === "tool_use") {
+					// The alias dispatches to the same implementation: the block
+					// the executor sees carries the canonical name.
+					expect(result.name).toBe("read_artifact")
+					expect((result.nativeArgs as { artifact_id: string }).artifact_id).toBe("cmd-1706119234567.txt")
+				}
+			})
+		})
+
 		describe("read_file tool", () => {
 			it("should parse minimal single-file read_file args", () => {
 				const toolCall = {

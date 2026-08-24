@@ -628,7 +628,7 @@ function formatPersistedOutput(
 		"Preview:",
 		result.preview,
 		"",
-		"Use read_command_output tool to view full output if needed.",
+		"Use read_artifact tool to view full output if needed.",
 	].join("\n")
 }
 

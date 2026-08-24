@@ -146,9 +146,14 @@ export function extractToolSubject(toolName: string, input: unknown): string | u
 	}
 	const record = input as Record<string, unknown>
 
-	if (toolName === "execute_command" || toolName === "read_command_output") {
+	if (toolName === "execute_command") {
 		const command = record.command
 		return typeof command === "string" && command.trim() ? command.trim() : undefined
+	}
+
+	if (toolName === "read_artifact" || toolName === "read_command_output") {
+		const artifactId = record.artifact_id
+		return typeof artifactId === "string" && artifactId.trim() ? artifactId.trim() : undefined
 	}
 
 	if (toolName === "web_search") {

@@ -41,6 +41,7 @@ const TUMBLE_TOOLS: Record<string, ActionKind> = {
 	search_and_replace: "write",
 	search_replace: "write",
 	execute_command: "command",
+	read_artifact: "command",
 	read_command_output: "command",
 	search_files: "search",
 	codebase_search: "search",

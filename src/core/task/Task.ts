@@ -96,6 +96,8 @@ import { SYSTEM_PROMPT } from "../prompts/system"
 import { buildNativeToolsArrayWithRestrictions } from "./build-tools"
 
 // core modules
+import { ArtifactStore } from "../artifacts/ArtifactStore"
+import { applyToolResultSpill, type ToolResultSpillContext } from "../artifacts/spillPolicy"
 import { ToolRepetitionDetector } from "../tools/ToolRepetitionDetector"
 import { restoreTodoListForTask } from "../tools/UpdateTodoListTool"
 import { FileContextTracker } from "../context-tracking/FileContextTracker"
@@ -632,13 +634,65 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	assistantMessageSavedToHistory = false
 
 	/**
+	 * Context for the tool-result spill policy: the artifact store plus the
+	 * inline byte budget. Built lazily by `ensureToolResultSpill` because the
+	 * task directory is resolved asynchronously, while the push below (the
+	 * point where a tool result becomes conversation content) is synchronous.
+	 */
+	private toolResultSpill?: ToolResultSpillContext
+
+	/** In-flight store construction, so concurrent tool calls share one resolve. */
+	private toolResultSpillInit?: Promise<void>
+
+	/**
+	 * Prepares (or refreshes) the tool-result spill policy for this task.
+	 *
+	 * Called from the tool-dispatch path before any result is pushed. Failure is
+	 * not fatal: without a store the policy degrades to "keep everything
+	 * inline", which is exactly today's behavior.
+	 *
+	 * @param maxInlineBytes - Byte budget a single tool result may occupy inline.
+	 */
+	public async ensureToolResultSpill(maxInlineBytes: number): Promise<void> {
+		if (this.toolResultSpill) {
+			// The setting can change mid-task; the store never does.
+			this.toolResultSpill.maxInlineBytes = maxInlineBytes
+			return
+		}
+
+		if (!this.toolResultSpillInit) {
+			this.toolResultSpillInit = (async () => {
+				try {
+					const store = await ArtifactStore.forTask(this.globalStoragePath, this.taskId)
+					this.toolResultSpill = { store, maxInlineBytes }
+				} catch (error) {
+					console.warn("[Task#ensureToolResultSpill] Artifact store unavailable, spilling disabled:", error)
+				} finally {
+					this.toolResultSpillInit = undefined
+				}
+			})()
+		}
+
+		await this.toolResultSpillInit
+	}
+
+	/**
 	 * Push a tool_result block to userMessageContent, preventing duplicates.
 	 * Duplicate tool_use_ids cause API errors.
 	 *
+	 * This is the single choke point where a tool result becomes conversation
+	 * content, so it is also where the spill policy runs: an oversized result is
+	 * persisted as an artifact and replaced by a head/tail preview that cites
+	 * the artifact id.
+	 *
 	 * @param toolResult - The tool_result block to add
+	 * @param options.toolName - Canonical tool name, used for the spill bypass list
 	 * @returns true if added, false if duplicate was skipped
 	 */
-	public pushToolResultToUserContent(toolResult: Anthropic.ToolResultBlockParam): boolean {
+	public pushToolResultToUserContent(
+		toolResult: Anthropic.ToolResultBlockParam,
+		options?: { toolName?: string },
+	): boolean {
 		const existingResult = this.userMessageContent.find(
 			(block): block is Anthropic.ToolResultBlockParam =>
 				block.type === "tool_result" && block.tool_use_id === toolResult.tool_use_id,
@@ -649,7 +703,17 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			)
 			return false
 		}
-		this.userMessageContent.push(toolResult)
+
+		let blockToPush = toolResult
+
+		if (typeof toolResult.content === "string") {
+			const spilled = applyToolResultSpill(toolResult.content, options?.toolName, this.toolResultSpill)
+			if (spilled.artifactId) {
+				blockToPush = { ...toolResult, content: spilled.text }
+			}
+		}
+
+		this.userMessageContent.push(blockToPush)
 		return true
 	}
 	didRejectTool = false

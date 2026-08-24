@@ -67,10 +67,10 @@ export const toolParamNames = [
 	"replace_all", // edit tool parameter for replacing all occurrences
 	"expected_replacements", // edit_file parameter for multiple occurrences
 	"timeout", // execute_command parameter
-	"artifact_id", // read_command_output parameter
-	"search", // read_command_output parameter for grep-like search
-	"offset", // read_command_output and read_file parameter
-	"limit", // read_command_output and read_file parameter
+	"artifact_id", // read_artifact parameter
+	"search", // read_artifact parameter for grep-like search
+	"offset", // read_artifact and read_file parameter
+	"limit", // read_artifact and read_file parameter
 	// read_file indentation mode parameters
 	"indentation",
 	"anchor_line",
@@ -94,6 +94,7 @@ export type ToolParamName = (typeof toolParamNames)[number]
 export type NativeToolArgs = {
 	access_mcp_resource: { server_name: string; uri: string }
 	read_file: import("@roo-code/types").ReadFileToolParams
+	read_artifact: { artifact_id: string; search?: string; offset?: number; limit?: number }
 	read_command_output: { artifact_id: string; search?: string; offset?: number; limit?: number }
 	attempt_completion: { result: string }
 	execute_command: { command: string; cwd?: string; timeout?: number | null }
@@ -277,7 +278,8 @@ export type ToolGroupConfig = {
 export const TOOL_DISPLAY_NAMES: Record<ToolName, string> = {
 	execute_command: "run commands",
 	read_file: "read files",
-	read_command_output: "read command output",
+	read_artifact: "read artifacts",
+	read_command_output: "read artifacts",
 	write_to_file: "write files",
 	apply_diff: "apply changes",
 	edit: "edit files",
@@ -315,7 +317,7 @@ export const TOOL_GROUPS: Record<ToolGroup, ToolGroupConfig> = {
 		customTools: ["edit", "search_replace", "edit_file", "apply_patch"],
 	},
 	command: {
-		tools: ["execute_command", "read_command_output"],
+		tools: ["execute_command", "read_artifact"],
 	},
 	mcp: {
 		tools: ["use_mcp_tool", "access_mcp_resource"],
@@ -346,6 +348,34 @@ export const ALWAYS_AVAILABLE_TOOLS: ToolName[] = [
 ] as const
 
 /**
+ * Tools whose result is protocol or instructions, not data.
+ *
+ * These results are consumed by the task machinery or steer the next turn
+ * (a skill body, a loaded schema, a slash-command expansion, a mode switch
+ * acknowledgement). Shrinking or clearing one changes behaviour rather than
+ * saving context, so every context-reduction pass has to leave them alone.
+ *
+ * Single source of truth for two policies that would otherwise drift:
+ * - `SPILL_BYPASS_TOOLS` (`src/core/artifacts/spillPolicy.ts`) never spills them,
+ * - `COMPACTABLE_TOOL_NAMES` (`src/core/context-management/microcompact.ts`)
+ *   never clears them (it is an allowlist, so they are simply absent from it).
+ *
+ * A unit test asserts both invariants against this list.
+ */
+export const PROTOCOL_TOOL_NAMES: readonly string[] = [
+	"attempt_completion",
+	"ask_followup_question",
+	"update_todo_list",
+	"switch_mode",
+	"new_task",
+	"run_parallel_tasks",
+	"skill",
+	"run_slash_command",
+	"tools_load",
+	"generate_image",
+] as const
+
+/**
  * Central registry of tool aliases.
  * Maps alias name -> canonical tool name.
  *
@@ -358,6 +388,10 @@ export const ALWAYS_AVAILABLE_TOOLS: ToolName[] = [
 export const TOOL_ALIASES: Record<string, ToolName> = {
 	write_file: "write_to_file",
 	search_and_replace: "edit",
+	// `read_artifact` generalizes the old command-output-only tool. The old
+	// name stays dispatchable so histories written before the rename, and
+	// models that learned the old habit, still reach the implementation.
+	read_command_output: "read_artifact",
 } as const
 
 export type DiffResult =

@@ -812,7 +812,13 @@ export class TaskLifecycle {
 			console.error("Error releasing terminals:", error)
 		}
 
-		// Cleanup command output artifacts
+		// Cleanup command output artifacts.
+		//
+		// Deliberately NOT extended to the `artifacts/` directory: dispose() also
+		// runs when the user stops a task, and the very same task can be rehydrated
+		// afterwards with a history that still cites its spilled artifacts. Those
+		// files are reclaimed when the task itself is deleted, because
+		// `deleteTaskWithId` removes the whole task directory.
 		getTaskDirectoryPath(this.access.globalStoragePath, this.access.taskId)
 			.then((taskDir) => {
 				const outputDir = path.join(taskDir, "command-output")

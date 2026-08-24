@@ -215,7 +215,7 @@ async function runDeepSeekToolProbe(
 				alwaysAllowReadOnly: true,
 				alwaysAllowReadOnlyOutsideWorkspace: true,
 				alwaysAllowExecute: false,
-				disabledTools: ["execute_command", "read_command_output"],
+				disabledTools: ["execute_command", "read_artifact"],
 			},
 			text:
 				`${probeTag} ` +

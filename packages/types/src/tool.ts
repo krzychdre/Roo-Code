@@ -24,6 +24,9 @@ export type ToolGroup = z.infer<typeof toolGroupsSchema>
 export const toolNames = [
 	"execute_command",
 	"read_file",
+	"read_artifact",
+	// Deprecated alias of `read_artifact`, kept in the enum so histories and
+	// settings written before the rename still validate. See TOOL_ALIASES.
 	"read_command_output",
 	"write_to_file",
 	"apply_diff",

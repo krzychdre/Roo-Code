@@ -143,4 +143,22 @@ describe("applyMicrocompactCleared (send-time, non-destructive)", () => {
 		expect(result[1]).toBe(assistantText) // untouched, same ref
 		expect(resultContentFor(result, "read-p")).toBe(MICROCOMPACT_CLEARED_PLACEHOLDER)
 	})
+
+	it("keeps the artifact notice of a spilled result in the outgoing copy", () => {
+		const notice =
+			"[Tool result: 412 KB, showing first 60 and last 60 lines. Full output saved as artifact " +
+			'"tool-1706119234567.txt". Use read_artifact (search/offset/limit) to inspect the rest.]'
+		const messages: ApiMessage[] = [
+			firstUser(),
+			...toolPair("search_files", `${notice}\nfirst hit\n...\nlast hit`, "spilled"),
+		]
+
+		const result = applyMicrocompactCleared(messages, new Set(["spilled"]))
+		const cleared = resultContentFor(result, "spilled") as string
+
+		expect(cleared).toBe(`${notice}\n${MICROCOMPACT_CLEARED_PLACEHOLDER}`)
+
+		// Idempotent: a second pass recognises the kept notice as already cleared.
+		expect(applyMicrocompactCleared(result, new Set(["spilled"]))).toBe(result)
+	})
 })

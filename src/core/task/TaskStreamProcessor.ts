@@ -56,6 +56,7 @@ const WORKSPACE_READ_ONLY_TOOLS = new Set([
 	"search_files",
 	"codebase_search",
 	"list_code_definition_names",
+	"read_artifact",
 	"read_command_output",
 	"web_search",
 	"web_fetch",

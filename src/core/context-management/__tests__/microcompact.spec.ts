@@ -458,6 +458,65 @@ describe("microcompactToolResults", () => {
 		expect(result.candidateCount).toBe(MICROCOMPACT_MIN_KEEP)
 		expect(result.clearedCount).toBe(0)
 	})
+
+	describe("spilled results", () => {
+		/** A tool result the spill policy already reduced to notice + preview. */
+		function spilledResult(artifactId: string, label: string): string {
+			const notice =
+				`[Tool result: 412 KB, showing first 60 and last 60 lines. ` +
+				`Full output saved as artifact "${artifactId}". ` +
+				`Use read_artifact (search/offset/limit) to inspect the rest.]`
+			return `${notice}\n${bigText(label, 10_000)}`
+		}
+
+		it("keeps the artifact notice when clearing a spilled result", () => {
+			const pairs: ApiMessage[] = []
+			for (let i = 0; i < 8; i++) {
+				pairs.push(
+					...toolPair("search_files", spilledResult(`tool-170611923456${i}.txt`, `hit ${i}`), `sp-${i}`),
+				)
+			}
+			const messages = [firstUser(), ...pairs]
+
+			const result = microcompactToolResults(messages, { targetChars: Number.POSITIVE_INFINITY })
+
+			const cleared = resultContentFor(result.messages, "sp-0") as string
+			// The recovery path survives: id + how to reach it.
+			expect(cleared).toContain('artifact "tool-1706119234560.txt"')
+			expect(cleared).toContain("read_artifact")
+			// The bulky preview does not.
+			expect(cleared).not.toContain("hit 0 hit 0")
+			expect(cleared.endsWith(MICROCOMPACT_CLEARED_PLACEHOLDER)).toBe(true)
+		})
+
+		it("still writes the bare placeholder for results that were never spilled", () => {
+			const pairs: ApiMessage[] = []
+			for (let i = 0; i < 8; i++) {
+				pairs.push(...toolPair("search_files", bigText(`plain hit ${i}`, 10_000), `plain-${i}`))
+			}
+			const messages = [firstUser(), ...pairs]
+
+			const result = microcompactToolResults(messages, { targetChars: Number.POSITIVE_INFINITY })
+
+			expect(resultContentFor(result.messages, "plain-0")).toBe(MICROCOMPACT_CLEARED_PLACEHOLDER)
+		})
+
+		it("does not re-clear an already cleared spilled result", () => {
+			const pairs: ApiMessage[] = []
+			for (let i = 0; i < 8; i++) {
+				pairs.push(
+					...toolPair("search_files", spilledResult(`tool-170611923456${i}.txt`, `hit ${i}`), `sp-${i}`),
+				)
+			}
+			const messages = [firstUser(), ...pairs]
+
+			const once = microcompactToolResults(messages, { targetChars: Number.POSITIVE_INFINITY })
+			const twice = microcompactToolResults(once.messages, { targetChars: Number.POSITIVE_INFINITY })
+
+			expect(twice.clearedCount).toBe(0)
+			expect(twice.messages).toBe(once.messages)
+		})
+	})
 })
 
 // --- Integration with manageContext ---------------------------------------------------
