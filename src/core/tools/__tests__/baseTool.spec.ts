@@ -97,4 +97,52 @@ describe("BaseTool partial error handling (TL-4)", () => {
 		expect(callbacks.handleError).not.toHaveBeenCalled()
 		expect(task.diffViewProvider.reset).not.toHaveBeenCalled()
 	})
+
+	describe("malformed native arguments (WS-D)", () => {
+		function makeInvalidBlock(params: Record<string, string>): ToolUse<"write_to_file"> {
+			return {
+				type: "tool_use",
+				name: "write_to_file",
+				params: params as any,
+				// nativeArgs deliberately absent: this is the malformed-call path.
+				partial: false,
+			}
+		}
+
+		it("forwards the tool name to handleError instead of embedding an example in the message", async () => {
+			const tool = new TestTool(false)
+			const task = makeMockTask()
+			const callbacks = makeCallbacks()
+
+			await tool.handle(task, makeInvalidBlock({ path: "test/file.txt" }), callbacks)
+
+			expect(callbacks.handleError).toHaveBeenCalledWith(
+				"parsing write_to_file args",
+				expect.any(Error),
+				"write_to_file",
+			)
+
+			const error = (callbacks.handleError as any).mock.calls[0][1] as Error
+
+			expect(error.message).toContain("Failed to parse write_to_file parameters")
+			// The example must never live in Error.message: handleError serializes the Error
+			// into a string field, which would escape the example twice and repeat it in the
+			// stack property.
+			expect(error.message).not.toContain("minimal_valid_example")
+			expect(error.message).not.toContain("src/app.ts")
+		})
+
+		it("forwards the tool name on the legacy XML rejection too", async () => {
+			const tool = new TestTool(false)
+			const task = makeMockTask()
+			const callbacks = makeCallbacks()
+
+			await tool.handle(task, makeInvalidBlock({ path: "<path>a.txt</path>" }), callbacks)
+
+			const [, error, toolName] = (callbacks.handleError as any).mock.calls[0]
+
+			expect((error as Error).message).toContain("XML tool calls are no longer supported")
+			expect(toolName).toBe("write_to_file")
+		})
+	})
 })

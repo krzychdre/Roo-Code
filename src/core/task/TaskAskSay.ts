@@ -654,6 +654,6 @@ export class TaskAskSay {
 				relPath ? ` for '${relPath.toPosix()}'` : ""
 			} without value for required parameter '${paramName}'. Retrying...`,
 		)
-		return formatResponse.toolError(formatResponse.missingToolParameterError(paramName))
+		return formatResponse.toolError(formatResponse.missingToolParameterError(paramName), toolName)
 	}
 }

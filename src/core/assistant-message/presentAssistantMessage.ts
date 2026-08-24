@@ -248,7 +248,7 @@ export async function presentAssistantMessage(cline: Task) {
 				return true
 			}
 
-			const handleError = async (action: string, error: Error) => {
+			const handleError = async (action: string, error: Error, toolName?: string) => {
 				// Silently ignore AskIgnoredError - this is an internal control flow
 				// signal, not an actual error. It occurs when a newer ask supersedes an older one.
 				if (error instanceof AskIgnoredError) {
@@ -259,7 +259,9 @@ export async function presentAssistantMessage(cline: Task) {
 					"error",
 					`Error ${action}:\n${error.message ?? JSON.stringify(serializeError(error), null, 2)}`,
 				)
-				pushToolResult(formatResponse.toolError(errorString))
+				// `toolName` rides beside the serialized error, never inside it, so the minimal
+				// valid example lands as a nested object the model can copy verbatim.
+				pushToolResult(formatResponse.toolError(errorString, toolName))
 			}
 
 			if (!mcpBlock.partial) {
@@ -542,7 +544,10 @@ export async function presentAssistantMessage(cline: Task) {
 					cline.pushToolResultToUserContent({
 						type: "tool_result",
 						tool_use_id: sanitizeToolUseId(toolCallId),
-						content: formatResponse.toolError(errorMessage),
+						// This is the hot malformed-call path: the arguments never finalized, so
+						// no tool ran and the model has nothing to learn from except the schema.
+						// Send the minimal valid invocation with it.
+						content: formatResponse.toolError(errorMessage, block.name),
 						is_error: true,
 					})
 
@@ -647,7 +652,7 @@ export async function presentAssistantMessage(cline: Task) {
 				return await askApproval("tool", toolMessage)
 			}
 
-			const handleError = async (action: string, error: Error) => {
+			const handleError = async (action: string, error: Error, toolName?: string) => {
 				// Silently ignore AskIgnoredError - this is an internal control flow
 				// signal, not an actual error. It occurs when a newer ask supersedes an older one.
 				if (error instanceof AskIgnoredError) {
@@ -660,7 +665,9 @@ export async function presentAssistantMessage(cline: Task) {
 					`Error ${action}:\n${error.message ?? JSON.stringify(serializeError(error), null, 2)}`,
 				)
 
-				pushToolResult(formatResponse.toolError(errorString))
+				// `toolName` rides beside the serialized error, never inside it, so the minimal
+				// valid example lands as a nested object the model can copy verbatim.
+				pushToolResult(formatResponse.toolError(errorString, toolName))
 			}
 
 			if (!block.partial) {
@@ -780,6 +787,7 @@ export async function presentAssistantMessage(cline: Task) {
 					pushToolResult(
 						formatResponse.toolError(
 							`Tool call repetition limit reached for ${block.name}. Please try a different approach.`,
+							block.name,
 						),
 					)
 					break

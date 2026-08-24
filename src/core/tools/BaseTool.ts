@@ -159,8 +159,12 @@ export abstract class BaseTool<TName extends ToolName> {
 			}
 		} catch (error) {
 			console.error(`Error parsing parameters:`, error)
+			// Teach, do not just complain: the tool name travels as a separate argument so
+			// `formatResponse.toolError` can attach the minimal valid example as a structured
+			// field. Embedding it in the message would put it inside a serialized Error and
+			// the model would receive it escaped twice.
 			const errorMessage = `Failed to parse ${this.name} parameters: ${error instanceof Error ? error.message : String(error)}`
-			await callbacks.handleError(`parsing ${this.name} args`, new Error(errorMessage))
+			await callbacks.handleError(`parsing ${this.name} args`, new Error(errorMessage), this.name)
 			// Note: handleError already emits a tool_result via formatResponse.toolError in the caller.
 			// Do NOT call pushToolResult here to avoid duplicate tool_result payloads.
 			return

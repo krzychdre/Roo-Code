@@ -395,6 +395,11 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	consecutiveMistakeCountForEditFile: Map<string, number> = new Map()
 	consecutiveNoToolUseCount: number = 0
 	consecutiveNoAssistantMessagesCount: number = 0
+	/**
+	 * Name of the tool whose failure last grew `consecutiveMistakeCount`.
+	 * Set by `recordToolError`, cleared when a turn used no tool at all.
+	 */
+	lastToolErrorName?: string
 	// Auto-condense circuit breaker: consecutive futile (errored or non-reducing)
 	// condense attempts. Once it reaches MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES the
 	// condense step is skipped for the rest of the task; a genuine reduction resets it.
@@ -1694,6 +1699,12 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	}
 
 	public recordToolError(toolName: ToolName, error?: string): void {
+		// Every site that grows `consecutiveMistakeCount` because a tool call failed also
+		// records the error here, so this is the one place that knows which tool the model
+		// is currently getting wrong. The consecutive-mistake guidance reads it to attach
+		// that tool's minimal valid example. It is cleared on a no-tool-used turn, where a
+		// stale name would invite a pointless re-call of a tool that had succeeded.
+		this.lastToolErrorName = toolName
 		this.tokenTracking.recordToolError(toolName, error)
 	}
 

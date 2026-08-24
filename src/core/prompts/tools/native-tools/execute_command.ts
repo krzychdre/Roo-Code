@@ -2,6 +2,14 @@ import type OpenAI from "openai"
 
 const EXECUTE_COMMAND_DESCRIPTION = `Request to execute a CLI command on the system. Use this when you need to perform system operations or run specific commands to accomplish any step in the user's task. You must tailor your command to the user's system and provide a clear explanation of what the command does. For command chaining, use the appropriate chaining syntax for the user's shell. Prefer to execute complex CLI commands over creating executable scripts, as they are more flexible and easier to run. Prefer relative commands and paths that avoid location sensitivity for terminal consistency.
 
+Rules:
+- Check the exit code on every result; investigate failures before moving on.
+- Read the SYSTEM INFORMATION section first and only use commands that exist on that shell and operating system.
+- To run in another directory, set 'cwd'. You cannot change the agent's own working directory.
+- A command can change the terminal's directory, so respect the working directory reported in the result.
+- Check the "Actively Running Terminals" list in environment_details before you start anything; do not start a server that is already running.
+- If the Output section is empty or the exit code is missing, assume the terminal failed to stream output, not that the command failed; continue, and if you truly need the output, ask via ask_followup_question.
+
 Parameters:
 - command: (required) The CLI command to execute. This should be valid for the current operating system. Ensure the command is properly formatted and does not contain any harmful instructions.
 - cwd: (optional) The working directory to execute the command in

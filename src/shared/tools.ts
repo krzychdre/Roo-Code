@@ -11,7 +11,12 @@ export type AskApproval = (
 	forceApproval?: boolean,
 ) => Promise<boolean>
 
-export type HandleError = (action: string, error: Error) => Promise<void>
+/**
+ * @param toolName Tool the failed call was addressed to. Passed through to
+ * `formatResponse.toolError` so a malformed call comes back with that tool's minimal
+ * valid invocation as a structured field. Optional: generic failures omit it.
+ */
+export type HandleError = (action: string, error: Error, toolName?: string) => Promise<void>
 
 export type PushToolResult = (content: ToolResponse) => void
 
