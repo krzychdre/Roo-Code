@@ -74,7 +74,7 @@ export class AskFollowupQuestionTool extends BaseTool<"ask_followup_question"> {
 			await task.say("user_feedback", safeText, images)
 			pushToolResult(formatResponse.toolResult(`<user_message>\n${safeText}\n</user_message>`, images))
 		} catch (error) {
-			await handleError("asking question", error as Error)
+			await handleError("asking question", error as Error, this.name)
 		}
 	}
 

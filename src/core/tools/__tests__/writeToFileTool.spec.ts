@@ -528,7 +528,7 @@ describe("writeToFileTool", () => {
 
 			await executeWriteFileTool({})
 
-			expect(mockHandleError).toHaveBeenCalledWith("writing file", expect.any(Error))
+			expect(mockHandleError).toHaveBeenCalledWith("writing file", expect.any(Error), "write_to_file")
 			expect(mockCline.diffViewProvider.reset).toHaveBeenCalled()
 		})
 
@@ -541,7 +541,11 @@ describe("writeToFileTool", () => {
 
 			// Second call with same path - path is now stabilized, error occurs
 			await executeWriteFileTool({}, { isPartial: true })
-			expect(mockHandleError).toHaveBeenCalledWith("handling partial write_to_file", expect.any(Error))
+			expect(mockHandleError).toHaveBeenCalledWith(
+				"handling partial write_to_file",
+				expect.any(Error),
+				"write_to_file",
+			)
 		})
 	})
 

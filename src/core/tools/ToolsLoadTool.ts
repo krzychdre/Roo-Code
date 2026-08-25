@@ -117,7 +117,11 @@ export class ToolsLoadTool extends BaseTool<"tools_load"> {
 			task.consecutiveMistakeCount = 0
 			pushToolResult(formatToolsLoadResult(result))
 		} catch (error) {
-			await handleError("executing tools_load", error instanceof Error ? error : new Error(String(error)))
+			await handleError(
+				"executing tools_load",
+				error instanceof Error ? error : new Error(String(error)),
+				this.name,
+			)
 		}
 	}
 }

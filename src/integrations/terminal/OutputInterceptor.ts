@@ -3,6 +3,8 @@ import * as path from "path"
 
 import { TerminalOutputPreviewSize, TERMINAL_PREVIEW_BYTES, PersistedCommandOutput } from "@roo-code/types"
 
+import { ArtifactStore, artifactFileName } from "../../core/artifacts/ArtifactStore"
+
 /**
  * Configuration options for creating an OutputInterceptor instance.
  */
@@ -23,7 +25,7 @@ export interface OutputInterceptorOptions {
  * OutputInterceptor buffers terminal command output and spills to disk when threshold exceeded.
  *
  * This implements a "persisted output" pattern where large command outputs are saved to disk
- * files, with only a preview shown to the LLM. The LLM can then use the `read_command_output`
+ * files, with only a preview shown to the LLM. The LLM can then use the `read_artifact`
  * tool to retrieve full contents or search through the output.
  *
  * The interceptor uses a **head/tail buffer** strategy (inspired by Codex):
@@ -93,7 +95,9 @@ export class OutputInterceptor {
 		this.previewBytes = TERMINAL_PREVIEW_BYTES[options.previewSize]
 		this.headBudget = Math.floor(this.previewBytes / 2)
 		this.tailBudget = this.previewBytes - this.headBudget
-		this.artifactPath = path.join(options.storageDir, `cmd-${options.executionId}.txt`)
+		// Naming comes from the shared artifact store so command artifacts and
+		// spilled tool artifacts keep one id format (`<kind>-<ts>.txt`).
+		this.artifactPath = path.join(options.storageDir, artifactFileName("cmd", options.executionId))
 	}
 
 	/**
@@ -265,13 +269,9 @@ export class OutputInterceptor {
 	 * @private
 	 */
 	private spillToDisk(): void {
-		// Ensure directory exists
-		const dir = path.dirname(this.artifactPath)
-		if (!fs.existsSync(dir)) {
-			fs.mkdirSync(dir, { recursive: true })
-		}
-
-		this.writeStream = fs.createWriteStream(this.artifactPath)
+		// Persistence (directory creation + stream) is the ArtifactStore's job;
+		// the interceptor only owns the head/tail preview strategy.
+		this.writeStream = ArtifactStore.openWriteStream(this.artifactPath)
 
 		// Write ALL pending chunks to disk for lossless storage.
 		// This ensures no content is lost, even if the preview buffers have dropped middle content.
@@ -386,16 +386,7 @@ export class OutputInterceptor {
 	 * ```
 	 */
 	static async cleanup(storageDir: string): Promise<void> {
-		try {
-			const files = await fs.promises.readdir(storageDir)
-			for (const file of files) {
-				if (file.startsWith("cmd-")) {
-					await fs.promises.unlink(path.join(storageDir, file)).catch(() => {})
-				}
-			}
-		} catch {
-			// Directory doesn't exist, nothing to clean
-		}
+		await ArtifactStore.cleanup(storageDir, ["cmd"])
 	}
 
 	/**
@@ -415,16 +406,6 @@ export class OutputInterceptor {
 	 * ```
 	 */
 	static async cleanupByIds(storageDir: string, executionIds: Set<string>): Promise<void> {
-		try {
-			const files = await fs.promises.readdir(storageDir)
-			for (const file of files) {
-				const match = file.match(/^cmd-(\d+)\.txt$/)
-				if (match && !executionIds.has(match[1])) {
-					await fs.promises.unlink(path.join(storageDir, file)).catch(() => {})
-				}
-			}
-		} catch {
-			// Directory doesn't exist, nothing to clean
-		}
+		await ArtifactStore.cleanupByIds(storageDir, executionIds, "cmd")
 	}
 }

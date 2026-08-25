@@ -11,7 +11,12 @@ export type AskApproval = (
 	forceApproval?: boolean,
 ) => Promise<boolean>
 
-export type HandleError = (action: string, error: Error) => Promise<void>
+/**
+ * @param toolName Tool the failed call was addressed to. Passed through to
+ * `formatResponse.toolError` so a malformed call comes back with that tool's minimal
+ * valid invocation as a structured field. Optional: generic failures omit it.
+ */
+export type HandleError = (action: string, error: Error, toolName?: string) => Promise<void>
 
 export type PushToolResult = (content: ToolResponse) => void
 
@@ -67,10 +72,10 @@ export const toolParamNames = [
 	"replace_all", // edit tool parameter for replacing all occurrences
 	"expected_replacements", // edit_file parameter for multiple occurrences
 	"timeout", // execute_command parameter
-	"artifact_id", // read_command_output parameter
-	"search", // read_command_output parameter for grep-like search
-	"offset", // read_command_output and read_file parameter
-	"limit", // read_command_output and read_file parameter
+	"artifact_id", // read_artifact parameter
+	"search", // read_artifact parameter for grep-like search
+	"offset", // read_artifact and read_file parameter
+	"limit", // read_artifact and read_file parameter
 	// read_file indentation mode parameters
 	"indentation",
 	"anchor_line",
@@ -81,6 +86,11 @@ export const toolParamNames = [
 	// read_file legacy format parameter (backward compatibility)
 	"files",
 	"line_ranges",
+	// web_search parameter (array of 1-4 queries)
+	"queries",
+	// search_task_history parameter (`query` is already listed above, shared
+	// with codebase_search)
+	"max_results",
 ] as const
 
 export type ToolParamName = (typeof toolParamNames)[number]
@@ -92,6 +102,7 @@ export type ToolParamName = (typeof toolParamNames)[number]
 export type NativeToolArgs = {
 	access_mcp_resource: { server_name: string; uri: string }
 	read_file: import("@roo-code/types").ReadFileToolParams
+	read_artifact: { artifact_id: string; search?: string; offset?: number; limit?: number }
 	read_command_output: { artifact_id: string; search?: string; offset?: number; limit?: number }
 	attempt_completion: { result: string }
 	execute_command: { command: string; cwd?: string; timeout?: number | null }
@@ -116,11 +127,14 @@ export type NativeToolArgs = {
 	run_slash_command: { command: string; args?: string }
 	skill: { skill: string; args?: string }
 	search_files: { path: string; regex: string; file_pattern?: string | null }
+	search_task_history: { query: string; max_results?: number }
 	switch_mode: { mode_slug: string; reason: string }
 	update_todo_list: { todos: string }
 	use_mcp_tool: { server_name: string; tool_name: string; arguments?: Record<string, unknown> }
 	write_to_file: { path: string; content: string }
 	tools_load: { names: string[] }
+	web_search: { queries: string[] }
+	web_fetch: { url: string }
 	// Add more tools as they are migrated to native protocol
 }
 
@@ -273,7 +287,8 @@ export type ToolGroupConfig = {
 export const TOOL_DISPLAY_NAMES: Record<ToolName, string> = {
 	execute_command: "run commands",
 	read_file: "read files",
-	read_command_output: "read command output",
+	read_artifact: "read artifacts",
+	read_command_output: "read artifacts",
 	write_to_file: "write files",
 	apply_diff: "apply changes",
 	edit: "edit files",
@@ -282,6 +297,7 @@ export const TOOL_DISPLAY_NAMES: Record<ToolName, string> = {
 	edit_file: "edit files using search and replace",
 	apply_patch: "apply patches using codex format",
 	search_files: "search files",
+	search_task_history: "search this task's history",
 	list_files: "list files",
 	use_mcp_tool: "use mcp tools",
 	access_mcp_resource: "access mcp resources",
@@ -297,19 +313,26 @@ export const TOOL_DISPLAY_NAMES: Record<ToolName, string> = {
 	generate_image: "generate images",
 	custom_tool: "use custom tools",
 	tools_load: "load deferred tool schemas",
+	web_search: "search the web",
+	web_fetch: "fetch web pages",
 } as const
 
 // Define available tool groups.
 export const TOOL_GROUPS: Record<ToolGroup, ToolGroupConfig> = {
 	read: {
-		tools: ["read_file", "search_files", "list_files", "codebase_search"],
+		// `search_task_history` reads the task's OWN stored conversation, not
+		// the workspace, so it carries no file-access risk beyond what the user
+		// already saw. It lives in `read` (rather than `command`, next to
+		// read_artifact) so every read-capable mode, including the md-only
+		// ones, can recover a detail that condense or the pruner took away.
+		tools: ["read_file", "search_files", "list_files", "codebase_search", "search_task_history"],
 	},
 	edit: {
 		tools: ["apply_diff", "write_to_file", "generate_image"],
 		customTools: ["edit", "search_replace", "edit_file", "apply_patch"],
 	},
 	command: {
-		tools: ["execute_command", "read_command_output"],
+		tools: ["execute_command", "read_artifact"],
 	},
 	mcp: {
 		tools: ["use_mcp_tool", "access_mcp_resource"],
@@ -317,6 +340,12 @@ export const TOOL_GROUPS: Record<ToolGroup, ToolGroupConfig> = {
 	modes: {
 		tools: ["switch_mode", "new_task", "run_parallel_tasks"],
 		alwaysAvailable: true,
+	},
+	// Gated by the global `webToolsEnabled` setting: when it is off the group
+	// resolves to no tools at all, so builds with the feature disabled produce
+	// byte-identical prompts and tool arrays.
+	web: {
+		tools: ["web_search", "web_fetch"],
 	},
 }
 
@@ -334,6 +363,34 @@ export const ALWAYS_AVAILABLE_TOOLS: ToolName[] = [
 ] as const
 
 /**
+ * Tools whose result is protocol or instructions, not data.
+ *
+ * These results are consumed by the task machinery or steer the next turn
+ * (a skill body, a loaded schema, a slash-command expansion, a mode switch
+ * acknowledgement). Shrinking or clearing one changes behaviour rather than
+ * saving context, so every context-reduction pass has to leave them alone.
+ *
+ * Single source of truth for two policies that would otherwise drift:
+ * - `SPILL_BYPASS_TOOLS` (`src/core/artifacts/spillPolicy.ts`) never spills them,
+ * - `COMPACTABLE_TOOL_NAMES` (`src/core/context-management/microcompact.ts`)
+ *   never clears them (it is an allowlist, so they are simply absent from it).
+ *
+ * A unit test asserts both invariants against this list.
+ */
+export const PROTOCOL_TOOL_NAMES: readonly string[] = [
+	"attempt_completion",
+	"ask_followup_question",
+	"update_todo_list",
+	"switch_mode",
+	"new_task",
+	"run_parallel_tasks",
+	"skill",
+	"run_slash_command",
+	"tools_load",
+	"generate_image",
+] as const
+
+/**
  * Central registry of tool aliases.
  * Maps alias name -> canonical tool name.
  *
@@ -346,6 +403,10 @@ export const ALWAYS_AVAILABLE_TOOLS: ToolName[] = [
 export const TOOL_ALIASES: Record<string, ToolName> = {
 	write_file: "write_to_file",
 	search_and_replace: "edit",
+	// `read_artifact` generalizes the old command-output-only tool. The old
+	// name stays dispatchable so histories written before the rename, and
+	// models that learned the old habit, still reach the implementation.
+	read_command_output: "read_artifact",
 } as const
 
 export type DiffResult =

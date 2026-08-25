@@ -105,6 +105,19 @@ const baseProviderSettingsSchema = z.object({
 	rateLimitSeconds: z.number().optional(),
 	consecutiveMistakeLimit: z.number().min(0).optional(),
 
+	// Slim toolset: a profile-level switch that intersects the advertised tool
+	// set down to a small, unambiguous allowlist. Small models pick the wrong
+	// edit verb when six of them are offered; this is the per-profile answer.
+	// Profiles follow modes through `modeApiConfigs`, so the restriction
+	// recomputes on every mode switch without any persisted task state.
+	// Plain optional booleans (never nullish) so profiles serialized with
+	// exclude_none semantics simply omit them.
+	slimToolset: z.boolean().optional(),
+	// Whether the slim toolset also hides MCP tools. Only consulted while
+	// `slimToolset` is on, where an undefined value means true (MCP schemas are
+	// the single largest tool-prompt cost).
+	slimHidesMcp: z.boolean().optional(),
+
 	// Model reasoning.
 	enableReasoningEffort: z.boolean().optional(),
 	reasoningEffort: reasoningEffortSettingSchema.optional(),

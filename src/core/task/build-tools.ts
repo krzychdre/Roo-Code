@@ -11,8 +11,10 @@ import { getModeAllowedMcpServers, defaultModeSlug } from "../../shared/modes"
 
 import { getNativeTools, getMcpServerTools } from "../prompts/tools/native-tools"
 import {
+	applySlimToolset,
 	filterNativeToolsForMode,
 	filterMcpToolsForMode,
+	isSlimToolsetEnabled,
 	resolveToolAlias,
 } from "../prompts/tools/filter-tools-for-mode"
 import { applyDeferralStrategy, type DeferredCatalog } from "./deferred-tools"
@@ -32,6 +34,12 @@ interface BuildToolsOptions {
 	apiConfiguration: ProviderSettings | undefined
 	disabledTools?: string[]
 	modelInfo?: ModelInfo
+	/**
+	 * Global `webToolsEnabled` setting. The `web` group resolves to no tools
+	 * unless this is true, so an unset value keeps the tools array identical to
+	 * a build without the feature.
+	 */
+	webToolsEnabled?: boolean
 	/**
 	 * If true, returns all tools without mode filtering, but also includes
 	 * the list of allowed tool names for use with allowedFunctionNames.
@@ -113,6 +121,7 @@ export async function buildNativeToolsArrayWithRestrictions(options: BuildToolsO
 		apiConfiguration,
 		disabledTools,
 		modelInfo,
+		webToolsEnabled,
 		includeAllToolsWithRestrictions,
 		materializedDeferredTools,
 	} = options
@@ -124,10 +133,17 @@ export async function buildNativeToolsArrayWithRestrictions(options: BuildToolsO
 	const codeIndexManager = CodeIndexManager.getInstance(provider.context, cwd)
 
 	// Build settings object for tool filtering.
+	// NOTE: the slim-toolset flags are read off the ACTIVE profile
+	// (`apiConfiguration`), never off global settings. Profiles follow modes via
+	// `modeApiConfigs`, so a mid-task mode switch swaps the profile and the next
+	// request recomputes the advertised set with no cached decision anywhere.
 	const filterSettings = {
 		todoListEnabled: apiConfiguration?.todoListEnabled ?? true,
 		disabledTools,
 		modelInfo,
+		webToolsEnabled,
+		slimToolset: apiConfiguration?.slimToolset,
+		slimHidesMcp: apiConfiguration?.slimHidesMcp,
 	}
 
 	// Check if the model supports images for read_file tool description.
@@ -158,7 +174,7 @@ export async function buildNativeToolsArrayWithRestrictions(options: BuildToolsO
 
 	// Filter MCP tools based on mode restrictions.
 	const mcpTools = getMcpServerTools(mcpHub, allowedMcpServers)
-	const filteredMcpTools = filterMcpToolsForMode(mcpTools, mode, customModes, experiments)
+	const filteredMcpTools = filterMcpToolsForMode(mcpTools, mode, customModes, experiments, filterSettings)
 
 	// Add custom tools if they are available and the experiment is enabled.
 	let nativeCustomTools: OpenAI.Chat.ChatCompletionFunctionTool[] = []
@@ -173,6 +189,19 @@ export async function buildNativeToolsArrayWithRestrictions(options: BuildToolsO
 		}
 	}
 
+	// Filesystem custom tools (.roo/tools) are assembled after the mode filter,
+	// so they have to be sent through the same intersection explicitly or a slim
+	// profile would still advertise them. Slim means slim: a user-authored tool
+	// is by definition one more choice, which is exactly what the small-model
+	// profile is trying to remove. A user who needs it runs a non-slim profile.
+	// Routed through applySlimToolset rather than a length check so the
+	// allowlist stays the single source of truth (a custom tool that happens to
+	// be named like an allowlisted one is kept).
+	if (nativeCustomTools.length > 0 && isSlimToolsetEnabled(filterSettings)) {
+		const keptCustomToolNames = applySlimToolset(new Set(nativeCustomTools.map(getToolName)), filterSettings)
+		nativeCustomTools = nativeCustomTools.filter((tool) => keptCustomToolNames.has(getToolName(tool)))
+	}
+
 	// Combine filtered tools (for backward compatibility and for allowedFunctionNames)
 	const filteredTools = [...filteredNativeTools, ...filteredMcpTools, ...nativeCustomTools]
 
@@ -181,14 +210,35 @@ export async function buildNativeToolsArrayWithRestrictions(options: BuildToolsO
 	// If includeAllToolsWithRestrictions is true, return ALL tools but provide
 	// allowed names based on mode filtering
 	if (includeAllToolsWithRestrictions) {
-		// Combine ALL tools (unfiltered native + all MCP + custom)
-		const allTools = [...nativeTools, ...mcpTools, ...nativeCustomTools]
+		// This branch is taken for Gemini only. Normally it declares EVERY schema
+		// and restricts what may actually be called through allowedFunctionNames,
+		// so the model can still refer to historical tool calls.
+		//
+		// A slim profile cannot work that way: hiding the choice from the model is
+		// the entire point, and declaring 26 schemas while blocking most of them
+		// gives the worst of both (full prompt cost, no freedom). So under slim the
+		// declared array is narrowed to the same set every other provider sees.
+		//
+		// LIMITATION, Gemini only: allowed_function_names may only name declared
+		// functions, so once a schema is gone the provider itself rejects a call to
+		// that name. The dispatch tolerance the slim toolset keeps everywhere else
+		// (a hidden but real tool still executes, aliases still resolve) is simply
+		// not reachable here. Weak models, which is who slim is for, do not run on
+		// Gemini, so this is an accepted trade rather than a behaviour we want.
+		const slimActive = isSlimToolsetEnabled(filterSettings)
+
+		// Combine ALL tools (unfiltered native + all MCP + custom), or the slim set.
+		const allTools = slimActive ? filteredTools : [...nativeTools, ...mcpTools, ...nativeCustomTools]
 
 		// Extract names of tools that are allowed based on mode filtering.
 		// Resolve any alias names to canonical names to ensure consistency with allTools
 		// (which uses canonical names). This prevents Gemini errors when tools are renamed
 		// to aliases in filteredTools but allTools contains the original canonical names.
-		const allowedFunctionNames = filteredTools.map((tool) => resolveToolAlias(getToolName(tool)))
+		// Under slim, allTools IS the filtered array, so the declared names are used
+		// verbatim: resolving aliases there would name a function that is not declared.
+		const allowedFunctionNames = slimActive
+			? filteredTools.map((tool) => getToolName(tool))
+			: filteredTools.map((tool) => resolveToolAlias(getToolName(tool)))
 
 		if (!deferralEnabled) {
 			return {
@@ -198,8 +248,8 @@ export async function buildNativeToolsArrayWithRestrictions(options: BuildToolsO
 		}
 
 		const deferral = applyDeferralStrategy({
-			nativeTools,
-			mcpTools,
+			nativeTools: slimActive ? filteredNativeTools : nativeTools,
+			mcpTools: slimActive ? filteredMcpTools : mcpTools,
 			customTools: nativeCustomTools,
 			materializedDeferredTools: materializedDeferredTools ?? new Set<string>(),
 		})

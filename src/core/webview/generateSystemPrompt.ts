@@ -60,6 +60,9 @@ export const generateSystemPrompt = async (provider: ClineProvider, message: Web
 				.getConfiguration(Package.name)
 				.get<boolean>("newTaskRequireTodos", false),
 			isStealthModel: modelInfo?.isStealthModel,
+			// The preview must show exactly what the active profile would send.
+			slimToolset: apiConfiguration?.slimToolset,
+			slimHidesMcp: apiConfiguration?.slimHidesMcp,
 		},
 		undefined, // todoList
 		undefined, // modelId

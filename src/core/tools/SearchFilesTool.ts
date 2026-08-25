@@ -70,7 +70,7 @@ export class SearchFilesTool extends BaseTool<"search_files"> {
 
 			pushToolResult(results)
 		} catch (error) {
-			await handleError("searching files", error as Error)
+			await handleError("searching files", error as Error, this.name)
 		}
 	}
 

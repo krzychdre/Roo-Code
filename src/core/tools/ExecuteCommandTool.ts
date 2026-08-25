@@ -191,7 +191,7 @@ export class ExecuteCommandTool extends BaseTool<"execute_command"> {
 
 			return
 		} catch (error) {
-			await handleError("executing command", error as Error)
+			await handleError("executing command", error as Error, this.name)
 			return
 		}
 	}
@@ -628,7 +628,7 @@ function formatPersistedOutput(
 		"Preview:",
 		result.preview,
 		"",
-		"Use read_command_output tool to view full output if needed.",
+		"Use read_artifact tool to view full output if needed.",
 	].join("\n")
 }
 

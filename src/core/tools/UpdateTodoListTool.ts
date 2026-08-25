@@ -85,7 +85,7 @@ export class UpdateTodoListTool extends BaseTool<"update_todo_list"> {
 				pushToolResult(formatResponse.toolResult("Todo list updated successfully."))
 			}
 		} catch (error) {
-			await handleError("update todo list", error as Error)
+			await handleError("update todo list", error as Error, this.name)
 		}
 	}
 

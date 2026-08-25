@@ -385,7 +385,7 @@ Deploy application to production`,
 
 		await runSlashCommandTool.handle(mockTask as Task, block, mockCallbacks)
 
-		expect(mockCallbacks.handleError).toHaveBeenCalledWith("running slash command", error)
+		expect(mockCallbacks.handleError).toHaveBeenCalledWith("running slash command", error, "run_slash_command")
 	})
 
 	it("should handle empty available commands list", async () => {

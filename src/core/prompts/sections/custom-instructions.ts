@@ -177,12 +177,24 @@ async function readTextFilesFromDirectory(dirPath: string): Promise<Array<{ file
 		)
 
 		// Sort files alphabetically by the original filename (case-insensitive) to ensure consistent order
-		// For symlinks, this will use the symlink name, not the target name
+		// For symlinks, this will use the symlink name, not the target name.
+		//
+		// Byte stability (WS-F): two details matter for the prompt's bytes.
+		// 1. `localeCompare` without an explicit locale sorts by the runtime's
+		//    locale, so the same rule files could be ordered differently on two
+		//    machines. The locale is pinned to "en" instead.
+		// 2. Files that share a basename across subdirectories used to compare
+		//    equal, which left their relative order equal to `fs.readdir` order
+		//    (filesystem-dependent, and not stable across a rescan). The full
+		//    path is the tie-breaker so the comparator is a total order.
 		return filteredFiles
 			.sort((a, b) => {
 				const filenameA = path.basename(a.sortKey).toLowerCase()
 				const filenameB = path.basename(b.sortKey).toLowerCase()
-				return filenameA.localeCompare(filenameB)
+				const byName = filenameA.localeCompare(filenameB, "en")
+				if (byName !== 0) return byName
+				if (a.sortKey === b.sortKey) return 0
+				return a.sortKey < b.sortKey ? -1 : 1
 			})
 			.map(({ filename, content }) => ({ filename, content }))
 	} catch (err) {

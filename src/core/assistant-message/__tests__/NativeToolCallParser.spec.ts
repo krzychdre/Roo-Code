@@ -15,6 +15,7 @@ import type { ToolName } from "@roo-code/types"
  */
 const MINIMAL_VALID_ARGS: Record<Exclude<ToolName, "custom_tool">, Record<string, unknown>> = {
 	read_file: { path: "src/x.ts" },
+	read_artifact: { artifact_id: "cmd-1.txt" },
 	read_command_output: { artifact_id: "cmd-1.txt" },
 	write_to_file: { path: "src/x.ts", content: "x" },
 	apply_diff: { path: "src/x.ts", diff: "<<<<<<< SEARCH\n=======\n>>>>>>> REPLACE" },
@@ -24,6 +25,7 @@ const MINIMAL_VALID_ARGS: Record<Exclude<ToolName, "custom_tool">, Record<string
 	edit_file: { file_path: "src/x.ts", old_string: "a", new_string: "b" },
 	apply_patch: { patch: "*** Begin Patch\n*** End Patch" },
 	search_files: { path: ".", regex: "x" },
+	search_task_history: { query: "retry wrapper" },
 	list_files: { path: "." },
 	use_mcp_tool: { server_name: "s", tool_name: "t" },
 	access_mcp_resource: { server_name: "s", uri: "x://y" },
@@ -39,6 +41,8 @@ const MINIMAL_VALID_ARGS: Record<Exclude<ToolName, "custom_tool">, Record<string
 	skill: { skill: "init" },
 	generate_image: { prompt: "p", path: "out.png" },
 	tools_load: { names: ["mcp--example--tool"] },
+	web_search: { queries: ["zod 4 migration"] },
+	web_fetch: { url: "https://example.com" },
 }
 
 describe("NativeToolCallParser", () => {
@@ -50,6 +54,43 @@ describe("NativeToolCallParser", () => {
 	})
 
 	describe("parseToolCall", () => {
+		describe("read_artifact tool", () => {
+			it("should parse read_artifact args", () => {
+				const result = NativeToolCallParser.parseToolCall({
+					id: "toolu_artifact",
+					name: "read_artifact" as const,
+					arguments: JSON.stringify({ artifact_id: "tool-1706119234567.txt", search: "TODO" }),
+				})
+
+				expect(result?.type).toBe("tool_use")
+				if (result?.type === "tool_use") {
+					expect(result.name).toBe("read_artifact")
+					expect(result.nativeArgs).toEqual({
+						artifact_id: "tool-1706119234567.txt",
+						search: "TODO",
+						offset: undefined,
+						limit: undefined,
+					})
+				}
+			})
+
+			it("resolves the read_command_output alias to read_artifact", () => {
+				const result = NativeToolCallParser.parseToolCall({
+					id: "toolu_alias",
+					name: "read_command_output" as const,
+					arguments: JSON.stringify({ artifact_id: "cmd-1706119234567.txt" }),
+				})
+
+				expect(result?.type).toBe("tool_use")
+				if (result?.type === "tool_use") {
+					// The alias dispatches to the same implementation: the block
+					// the executor sees carries the canonical name.
+					expect(result.name).toBe("read_artifact")
+					expect((result.nativeArgs as { artifact_id: string }).artifact_id).toBe("cmd-1706119234567.txt")
+				}
+			})
+		})
+
 		describe("read_file tool", () => {
 			it("should parse minimal single-file read_file args", () => {
 				const toolCall = {
@@ -353,6 +394,39 @@ describe("NativeToolCallParser", () => {
 				expect(result?.nativeArgs).toBeDefined()
 				const nativeArgs = result?.nativeArgs as { path: string }
 				expect(nativeArgs.path).toBe("src/test.ts")
+			})
+		})
+
+		// The streaming switch is separate from the complete-call switch. A tool
+		// registered only in the latter renders an EMPTY card while it streams,
+		// because handlePartial sees nativeArgs === undefined.
+		describe("web tools", () => {
+			it("emits partial nativeArgs.queries for web_search", () => {
+				const parser = new NativeToolCallParser()
+				parser.startStreamingToolCall("toolu_ws", "web_search")
+
+				const result = parser.processStreamingChunk("toolu_ws", '{"queries":["zod 4 migration"')
+
+				expect(result?.nativeArgs).toBeDefined()
+				expect((result?.nativeArgs as { queries: string[] }).queries).toEqual(["zod 4 migration"])
+			})
+
+			it("accepts a bare string for web_search queries while streaming", () => {
+				const parser = new NativeToolCallParser()
+				parser.startStreamingToolCall("toolu_ws2", "web_search")
+
+				const result = parser.processStreamingChunk("toolu_ws2", '{"queries":"single query"}')
+
+				expect((result?.nativeArgs as { queries: string[] }).queries).toEqual(["single query"])
+			})
+
+			it("emits partial nativeArgs.url for web_fetch", () => {
+				const parser = new NativeToolCallParser()
+				parser.startStreamingToolCall("toolu_wf", "web_fetch")
+
+				const result = parser.processStreamingChunk("toolu_wf", '{"url":"https://example.com/docs')
+
+				expect((result?.nativeArgs as { url: string }).url).toBe("https://example.com/docs")
 			})
 		})
 	})

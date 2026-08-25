@@ -76,6 +76,7 @@ import { ApiErrorMessage } from "./ApiErrorMessage"
 import { ThinkingBudget } from "./ThinkingBudget"
 import { Verbosity } from "./Verbosity"
 import { TodoListSettingsControl } from "./TodoListSettingsControl"
+import { SlimToolsetControl } from "./SlimToolsetControl"
 import { TemperatureControl } from "./TemperatureControl"
 import { RateLimitSecondsControl } from "./RateLimitSecondsControl"
 import { ConsecutiveMistakeLimitControl } from "./ConsecutiveMistakeLimitControl"
@@ -521,6 +522,11 @@ const ApiOptions = ({
 							<CollapsibleContent className="space-y-3">
 								<TodoListSettingsControl
 									todoListEnabled={apiConfiguration.todoListEnabled}
+									onChange={(field, value) => setApiConfigurationField(field, value)}
+								/>
+								<SlimToolsetControl
+									slimToolset={apiConfiguration.slimToolset}
+									slimHidesMcp={apiConfiguration.slimHidesMcp}
 									onChange={(field, value) => setApiConfigurationField(field, value)}
 								/>
 								{selectedModelInfo?.supportsTemperature !== false && (

@@ -1,5 +1,6 @@
 import { Anthropic } from "@anthropic-ai/sdk"
 
+import { extractArtifactNotice } from "../artifacts/spillPolicy"
 import { ApiMessage } from "../task-persistence/apiMessages"
 import { getEffectiveApiHistory } from "../condense"
 
@@ -118,6 +119,12 @@ export function microcompactTargetChars(tokensOverBudget: number): number {
  * Tool names whose results are bulky and cheaply re-derivable (re-read / re-run),
  * making them safe to clear. Mirrors Claude Code's `COMPACTABLE_TOOLS` set.
  *
+ * This is an ALLOWLIST, so every other tool is preserved by construction. In
+ * particular none of `PROTOCOL_TOOL_NAMES` (`src/shared/tools.ts`) appears here,
+ * and the same list drives `SPILL_BYPASS_TOOLS`
+ * (`src/core/artifacts/spillPolicy.ts`); a unit test asserts both policies still
+ * agree with it.
+ *
  * Results from tools NOT in this set (e.g. attempt_completion,
  * ask_followup_question, update_todo_list, switch_mode, new_task, skill,
  * run_slash_command, generate_image, tools_load) are ALWAYS preserved — they
@@ -125,6 +132,7 @@ export function microcompactTargetChars(tokensOverBudget: number): number {
  */
 export const COMPACTABLE_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
 	"read_file",
+	"read_artifact",
 	"read_command_output",
 	"execute_command",
 	"search_files",
@@ -139,6 +147,12 @@ export const COMPACTABLE_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
 	"edit_file",
 	"search_replace",
 	"search_and_replace",
+	"web_search",
+	"web_fetch",
+	// A history search is the cheapest result in this set to re-derive: the
+	// corpus it reads is on disk and does not move, so the identical call
+	// reproduces it exactly.
+	"search_task_history",
 ])
 
 /** One compactable tool result, as selection sees it. Encounter order, oldest first. */
@@ -238,9 +252,57 @@ function toolResultContentToText(content: Anthropic.Messages.ToolResultBlockPara
 	return ""
 }
 
-/** A tool_result whose content has already been cleared by a prior pass. */
+/**
+ * Splits a tool_result block's content into its separate text payloads.
+ *
+ * Separate, not joined: a notice line is only recognisable at the START of the
+ * payload that carries it, so flattening an array to one string would hide a
+ * notice that sits in any block but the first.
+ */
+function toolResultTextParts(content: Anthropic.Messages.ToolResultBlockParam["content"]): string[] {
+	if (typeof content === "string") {
+		return [content]
+	}
+	if (Array.isArray(content)) {
+		return content.filter((block) => block.type === "text").map((block) => block.text)
+	}
+	return []
+}
+
+/**
+ * The content a cleared result is replaced by.
+ *
+ * A result the spill policy (at push time) or the pruner (under context
+ * pressure) already reduced to "notice + preview" keeps its notice line: that
+ * line names the artifact holding the full output and tells the model to reach
+ * it with `read_artifact`. Dropping it would delete the only recovery path at
+ * exactly the moment context pressure is highest, and the generic placeholder
+ * ("re-run the command") would send the model to redo work whose result is
+ * already sitting on disk.
+ *
+ * @param parts - The result's text payloads, in order (see `toolResultTextParts`).
+ */
+function clearedContentFor(parts: readonly string[]): string {
+	for (const part of parts) {
+		const notice = extractArtifactNotice(part)
+		if (notice) {
+			return `${notice}\n${MICROCOMPACT_CLEARED_PLACEHOLDER}`
+		}
+	}
+	return MICROCOMPACT_CLEARED_PLACEHOLDER
+}
+
+/**
+ * A tool_result whose content has already been cleared by a prior pass.
+ *
+ * Matches both shapes: the bare placeholder, and a kept spill notice followed by
+ * the placeholder.
+ */
 function isAlreadyCleared(block: Anthropic.Messages.ToolResultBlockParam): boolean {
-	return block.content === MICROCOMPACT_CLEARED_PLACEHOLDER
+	return (
+		block.content === MICROCOMPACT_CLEARED_PLACEHOLDER ||
+		(typeof block.content === "string" && block.content.endsWith(`\n${MICROCOMPACT_CLEARED_PLACEHOLDER}`))
+	)
 }
 
 /**
@@ -431,7 +493,7 @@ export function microcompactToolResults(messages: ApiMessage[], options: Microco
 					}
 					clearedToolUseIds.push(tr.tool_use_id)
 					touched = true
-					return { ...tr, content: MICROCOMPACT_CLEARED_PLACEHOLDER }
+					return { ...tr, content: clearedContentFor(toolResultTextParts(tr.content)) }
 				}
 			}
 			return block
@@ -488,7 +550,7 @@ export function applyMicrocompactCleared(messages: ApiMessage[], clearedToolUseI
 				const tr = block as Anthropic.Messages.ToolResultBlockParam
 				if (clearedToolUseIds.has(tr.tool_use_id) && !isAlreadyCleared(tr)) {
 					touched = true
-					return { ...tr, content: MICROCOMPACT_CLEARED_PLACEHOLDER }
+					return { ...tr, content: clearedContentFor(toolResultTextParts(tr.content)) }
 				}
 			}
 			return block

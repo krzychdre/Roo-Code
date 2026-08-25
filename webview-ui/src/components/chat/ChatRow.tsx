@@ -47,7 +47,13 @@ import { Markdown } from "./Markdown"
 import { CommandExecution } from "./CommandExecution"
 import { CommandExecutionError } from "./CommandExecutionError"
 import { AutoApprovedRequestLimitWarning } from "./AutoApprovedRequestLimitWarning"
-import { InProgressRow, CondensationResultRow, CondensationErrorRow, TruncationResultRow } from "./context-management"
+import {
+	InProgressRow,
+	CondensationResultRow,
+	CondensationErrorRow,
+	TruncationResultRow,
+	PruneResultRow,
+} from "./context-management"
 import CodebaseSearchResultsDisplay from "./CodebaseSearchResultsDisplay"
 import { appendImages } from "@src/utils/imageUtils"
 import { McpExecution } from "./McpExecution"
@@ -74,6 +80,7 @@ import {
 	Check,
 	MessageSquarePlus,
 	ClipboardCheck,
+	History,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { PathTooltip } from "../ui/PathTooltip"
@@ -577,6 +584,39 @@ export const ChatRowContent = ({
 									values={{ query: tool.query }}
 								/>
 							)}
+						</span>
+					</div>
+				)
+			}
+			case "webSearch": {
+				const queries = Array.isArray(tool.queries) ? tool.queries.join(", ") : ""
+				return (
+					<div style={headerStyle}>
+						{toolIcon("search")}
+						<span style={{ fontWeight: "bold" }}>
+							<Trans
+								i18nKey={
+									message.type === "ask" ? "chat:webSearch.wantsToSearch" : "chat:webSearch.didSearch"
+								}
+								components={{ code: <code></code> }}
+								values={{ queries }}
+							/>
+						</span>
+					</div>
+				)
+			}
+			case "webFetch": {
+				return (
+					<div style={headerStyle}>
+						{toolIcon("globe")}
+						<span style={{ fontWeight: "bold" }}>
+							<Trans
+								i18nKey={
+									message.type === "ask" ? "chat:webFetch.wantsToFetch" : "chat:webFetch.didFetch"
+								}
+								components={{ code: <code></code> }}
+								values={{ url: tool.fetchedUrl }}
+							/>
 						</span>
 					</div>
 				)
@@ -1426,6 +1466,14 @@ export const ChatRowContent = ({
 						return <TruncationResultRow data={message.contextTruncation} />
 					}
 					return null
+				case "context_pruned":
+					// Deterministic prune: old oversized tool results moved to task
+					// artifacts. There is no in-progress state, the pass is local
+					// and finishes in milliseconds.
+					if (message.contextPrune) {
+						return <PruneResultRow data={message.contextPrune} />
+					}
+					return null
 				case "codebase_search_result":
 					let parsed: {
 						content: {
@@ -1541,6 +1589,22 @@ export const ChatRowContent = ({
 								</>
 							)
 						}
+						case "searchTaskHistory": {
+							return (
+								<div style={headerStyle}>
+									<History className="w-4 shrink-0" aria-label="Search task history icon" />
+									<span style={{ fontWeight: "bold" }}>{t("chat:searchTaskHistory.title")}</span>
+									{sayTool.query && (
+										<span
+											className="text-xs ml-1"
+											style={{ color: "var(--vscode-descriptionForeground)" }}>
+											({sayTool.query})
+										</span>
+									)}
+								</div>
+							)
+						}
+						case "readArtifact":
 						case "readCommandOutput": {
 							const formatBytes = (bytes: number) => {
 								if (bytes < 1024) return `${bytes} B`
@@ -1574,8 +1638,12 @@ export const ChatRowContent = ({
 
 							return (
 								<div style={headerStyle}>
-									<FileCode2 className="w-4 shrink-0" aria-label="Read command output icon" />
-									<span style={{ fontWeight: "bold" }}>{t("chat:readCommandOutput.title")}</span>
+									<FileCode2 className="w-4 shrink-0" aria-label="Read artifact icon" />
+									<span style={{ fontWeight: "bold" }}>
+										{sayTool.tool === "readArtifact"
+											? t("chat:readArtifact.title")
+											: t("chat:readCommandOutput.title")}
+									</span>
 									{infoText && (
 										<span
 											className="text-xs ml-1"

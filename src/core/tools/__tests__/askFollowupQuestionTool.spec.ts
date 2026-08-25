@@ -223,7 +223,7 @@ describe("AskFollowupQuestionTool", () => {
 
 		await tool.execute(params, mockTask, mockCallbacks)
 
-		expect(mockCallbacks.handleError).toHaveBeenCalledWith("asking question", error)
+		expect(mockCallbacks.handleError).toHaveBeenCalledWith("asking question", error, "ask_followup_question")
 	})
 
 	it("should not call pushToolResult when task.ask throws", async () => {
@@ -242,7 +242,7 @@ describe("AskFollowupQuestionTool", () => {
 
 		await tool.execute(params, mockTask, mockCallbacks)
 
-		expect(mockCallbacks.handleError).toHaveBeenCalledWith("asking question", error)
+		expect(mockCallbacks.handleError).toHaveBeenCalledWith("asking question", error, "ask_followup_question")
 	})
 
 	// ===== handlePartial tests =====

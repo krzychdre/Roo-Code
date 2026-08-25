@@ -39,6 +39,13 @@ export enum TelemetryEventName {
 
 	CONTEXT_CONDENSED = "Context Condensed",
 	CONTEXT_MICROCOMPACTED = "Context Microcompacted",
+	/**
+	 * The deterministic tool-result pruner alone relieved the context pressure,
+	 * so NO summary was requested. Deliberately a separate event from
+	 * `CONTEXT_CONDENSED`: firing that one for a round where nothing was
+	 * condensed would inflate every existing condense count and cost chart.
+	 */
+	CONTEXT_PRUNED = "Context Pruned",
 	SLIDING_WINDOW_TRUNCATION = "Sliding Window Truncation",
 
 	CODE_ACTION_USED = "Code Action Used",
@@ -217,6 +224,7 @@ export const rooCodeTelemetryEventSchema = z.discriminatedUnion("type", [
 			TelemetryEventName.MODEL_CACHE_EMPTY_RESPONSE,
 			TelemetryEventName.CONTEXT_CONDENSED,
 			TelemetryEventName.CONTEXT_MICROCOMPACTED,
+			TelemetryEventName.CONTEXT_PRUNED,
 			TelemetryEventName.SLIDING_WINDOW_TRUNCATION,
 			TelemetryEventName.TAB_SHOWN,
 			TelemetryEventName.MODE_SETTINGS_CHANGED,

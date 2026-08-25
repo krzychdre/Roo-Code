@@ -7,13 +7,16 @@ import {
 	providerSettingsEntrySchema,
 	providerSettingsSchema,
 } from "./provider-settings.js"
+import { artifactSpillSettingsSchema } from "./artifact-spill.js"
 import { codebaseIndexModelsSchema, codebaseIndexConfigSchema } from "./codebase-index.js"
 import { experimentsSchema } from "./experiment.js"
 import { telemetrySettingsSchema } from "./telemetry.js"
 import { modeConfigSchema } from "./mode.js"
 import { customModePromptsSchema, customSupportPromptsSchema } from "./mode.js"
+import { pruneCondenseSettingsSchema } from "./prune-condense.js"
 import { toolNamesSchema } from "./tool.js"
 import { languagesSchema } from "./vscode.js"
+import { webToolsSettingsSchema } from "./web-tools.js"
 
 /**
  * Default delay in milliseconds after writes to allow diagnostics to detect potential problems.
@@ -64,7 +67,7 @@ export type AutoApprovalMode = (typeof autoApprovalModes)[number]
  * Terminal output preview size options for persisted command output.
  *
  * Controls how much command output is kept in memory as a "preview" before
- * the LLM decides to retrieve more via `read_command_output`. Larger previews
+ * the LLM decides to retrieve more via `read_artifact`. Larger previews
  * mean more immediate context but consume more of the context window.
  *
  * - `small`: 5KB preview - Best for long-running commands with verbose output
@@ -81,7 +84,7 @@ export type TerminalOutputPreviewSize = "small" | "medium" | "large"
  *
  * Maps preview size names to their corresponding byte thresholds.
  * When command output exceeds these thresholds, the excess is persisted
- * to disk and made available via the `read_command_output` tool.
+ * to disk and made available via the `read_artifact` tool.
  */
 export const TERMINAL_PREVIEW_BYTES: Record<TerminalOutputPreviewSize, number> = {
 	small: 5 * 1024, // 5KB
@@ -356,6 +359,23 @@ export const globalSettingsSchema = z.object({
 	 * Tools in this list will be excluded from prompt generation and rejected at execution time.
 	 */
 	disabledTools: z.array(toolNamesSchema).optional(),
+
+	// Native `web_search` / `web_fetch` settings. Spread flat (not nested like
+	// `codebaseIndexConfig`) so they travel through the generic global-state
+	// plumbing without a bespoke message channel; `web-tools.ts` stays the
+	// single source of truth for their shape and bounds.
+	...webToolsSettingsSchema.shape,
+
+	// Generic tool-result spill policy (`maxInlineToolResultBytes`). Spread flat
+	// for the same reason as the web-tool settings above; `artifact-spill.ts`
+	// stays the single source of truth for its bounds and default.
+	...artifactSpillSettingsSchema.shape,
+
+	// Deterministic prune pass that runs before the LLM condense
+	// (`pruneBeforeCondense`, `pruneToolResultBudget`). Spread flat for the same
+	// reason as the two groups above; `prune-condense.ts` stays the single
+	// source of truth for their bounds and defaults.
+	...pruneCondenseSettingsSchema.shape,
 })
 
 export type GlobalSettings = z.infer<typeof globalSettingsSchema>

@@ -1,5 +1,6 @@
 // npx vitest core/task/__tests__/Task.spec.ts
 
+import * as fs from "fs"
 import * as os from "os"
 import * as path from "path"
 
@@ -2076,6 +2077,81 @@ describe("pushToolResultToUserContent", () => {
 		expect(task.userMessageContent[0].type).toBe("text")
 		expect(task.userMessageContent[1].type).toBe("image")
 		expect(task.userMessageContent[2]).toEqual(toolResult)
+	})
+
+	describe("tool-result spill policy", () => {
+		/** 400 padded lines: comfortably over any inline budget used here. */
+		const hugeResult = Array.from({ length: 400 }, (_, index) => `line-${index + 1}`.padEnd(80, "x")).join("\n")
+
+		const artifactsDirFor = (taskId: string) => path.join(os.tmpdir(), "test-storage", "tasks", taskId, "artifacts")
+
+		it("spills an oversized tool result and leaves a preview that cites the artifact", async () => {
+			const task = new Task({
+				provider: mockProvider,
+				apiConfiguration: mockApiConfig,
+				task: "test task",
+				startTask: false,
+			})
+
+			await task.ensureToolResultSpill(1024)
+
+			task.pushToolResultToUserContent(
+				{ type: "tool_result", tool_use_id: "spill-id", content: hugeResult },
+				{ toolName: "search_files" },
+			)
+
+			const pushed = task.userMessageContent[0] as Anthropic.ToolResultBlockParam
+			const content = pushed.content as string
+
+			expect(content).toMatch(/^\[Tool result: \d+ KB, showing first \d+ and last \d+ lines\./)
+			expect(content).toContain("Use read_artifact (search/offset/limit) to inspect the rest.]")
+			expect(content.length).toBeLessThan(hugeResult.length)
+
+			const artifactId = content.match(/artifact "([^"]+)"/)?.[1]
+			expect(artifactId).toMatch(/^tool-\d+\.txt$/)
+
+			const artifactPath = path.join(artifactsDirFor(task.taskId), artifactId!)
+			expect(fs.readFileSync(artifactPath, "utf8")).toBe(hugeResult)
+
+			fs.rmSync(artifactsDirFor(task.taskId), { recursive: true, force: true })
+		})
+
+		it("never spills a protocol tool's result", async () => {
+			const task = new Task({
+				provider: mockProvider,
+				apiConfiguration: mockApiConfig,
+				task: "test task",
+				startTask: false,
+			})
+
+			await task.ensureToolResultSpill(1024)
+
+			task.pushToolResultToUserContent(
+				{ type: "tool_result", tool_use_id: "bypass-id", content: hugeResult },
+				{ toolName: "attempt_completion" },
+			)
+
+			const pushed = task.userMessageContent[0] as Anthropic.ToolResultBlockParam
+			expect(pushed.content).toBe(hugeResult)
+			expect(fs.existsSync(artifactsDirFor(task.taskId))).toBe(false)
+		})
+
+		it("keeps everything inline until the policy is prepared", () => {
+			const task = new Task({
+				provider: mockProvider,
+				apiConfiguration: mockApiConfig,
+				task: "test task",
+				startTask: false,
+			})
+
+			task.pushToolResultToUserContent(
+				{ type: "tool_result", tool_use_id: "unprepared-id", content: hugeResult },
+				{ toolName: "search_files" },
+			)
+
+			const pushed = task.userMessageContent[0] as Anthropic.ToolResultBlockParam
+			expect(pushed.content).toBe(hugeResult)
+		})
 	})
 })
 

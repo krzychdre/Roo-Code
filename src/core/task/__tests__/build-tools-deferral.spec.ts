@@ -20,6 +20,10 @@ vi.mock("../../prompts/tools/filter-tools-for-mode", () => ({
 	filterNativeToolsForMode: (tools: OpenAI.Chat.ChatCompletionTool[]) => tools,
 	filterMcpToolsForMode: (tools: OpenAI.Chat.ChatCompletionTool[]) => tools,
 	resolveToolAlias: (name: string) => name,
+	// The slim toolset is off in every case here, so these stand in as no-ops.
+	// Slim behaviour has its own suite in build-tools-slim-toolset.spec.ts.
+	isSlimToolsetEnabled: () => false,
+	applySlimToolset: (tools: Set<string>) => tools,
 }))
 
 // Stub the native-tool catalog with a tiny known list.

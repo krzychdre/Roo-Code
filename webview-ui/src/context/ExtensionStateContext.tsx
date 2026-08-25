@@ -19,6 +19,8 @@ import {
 	type McpServer,
 	ORGANIZATION_ALLOW_ALL,
 	DEFAULT_CHECKPOINT_TIMEOUT_SECONDS,
+	WEB_TOOLS_DEFAULTS,
+	PRUNE_CONDENSE_DEFAULTS,
 } from "@roo-code/types"
 
 import { findLastIndex } from "@roo/array"
@@ -217,6 +219,13 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 		autoDreamEnabled: true,
 		autoDreamMinHours: 24,
 		autoDreamMinSessions: 5,
+		webToolsEnabled: false,
+		webSearchBackend: "searxng",
+		searxngBaseUrl: "",
+		webSearchMaxResults: WEB_TOOLS_DEFAULTS.DEFAULT_SEARCH_RESULTS,
+		webFetchMaxBytes: WEB_TOOLS_DEFAULTS.DEFAULT_FETCH_BYTES,
+		pruneBeforeCondense: true,
+		pruneToolResultBudget: PRUNE_CONDENSE_DEFAULTS.DEFAULT_TOOL_RESULT_BUDGET,
 		language: "en", // Default language code
 		writeDelayMs: 1000,
 		terminalShellIntegrationTimeout: 4000,

@@ -77,7 +77,7 @@ All contributions start with a GitHub Issue.
 
 - Check for existing reports first.
 - Create a new bug report with: - Clear, numbered reproduction steps - Expected vs actual result - Tumble Code version (required); API provider/model if relevant
-    <!-- - **Security issues**: Report privately via [security advisories](https://github.com/krzychdre/tumble-code/security/advisories/new). -->
+      <!-- - **Security issues**: Report privately via [security advisories](https://github.com/krzychdre/tumble-code/security/advisories/new). -->
 
 ## Development & Submission Process
 
@@ -104,6 +104,42 @@ pnpm install
 - Write clear, descriptive commits referencing issues (e.g., `Fixes #123`).
 - Provide thorough testing (`pnpm test`).
 - Rebase onto the latest `main` branch before submission.
+
+### KV-cache contract (any change the model can see)
+
+Every request re-sends the whole system prompt. Providers avoid paying for it twice by caching
+the request's key/value tensors ("KV cache") and reusing them up to the first byte that differs
+from the cached request. llama.cpp does this locally, Z.ai/GLM and DeepSeek-style endpoints do it
+remotely. One changed byte near the top throws away the cache for everything below it, so the
+byte layout of the prompt is a performance feature, not cosmetics.
+
+The prompt is assembled in [`src/core/prompts/system.ts`](src/core/prompts/system.ts) as two
+lists:
+
+- **Stable prefix** (`stableHead`): identity opener, markdown rules, tool-use protocol, output
+  efficiency, objective, capabilities, system information, memory. These bytes are identical for
+  every mode and every profile on one workspace and machine.
+- **Variable tail** (`variableTail`): MCP availability, modes list, skills, rules, the mode's MODE
+  section, user custom instructions, and last of all the deferred-tool catalog. These bytes may
+  differ per mode, profile or user.
+
+Four rules:
+
+1. **A new section defaults to the TAIL.** It may only go into the stable head if it is proven to
+   be independent of the mode, the model, the profile and the request, and it must never embed a
+   timestamp, a random value, a set/map iteration order or a locale-dependent sort.
+2. **A section that can change WITHIN one conversation goes at the very end of the tail.** Today
+   that is the deferred-tool catalog, which shrinks on every `tools_load` call. Whatever is printed
+   after such a section is re-prefilled every time it changes, so nothing should be.
+3. **Do not reorder the head casually.** `src/core/prompts/__tests__/prefix-stability.spec.ts`
+   asserts byte stability, section order and the measured cross-mode shared prefix; update its
+   snapshot and its `MIN_SHARED_PREFIX_BYTES` floor only with a reason in the commit message.
+4. **State the KV-cache effect in the commit message** of any PR that changes model-visible text
+   (prompt sections, tool descriptions, tool schemas, tool ordering). Use one of:
+    - `KV-cache: prefix-stable` - existing request prefixes are unchanged;
+    - `KV-cache: append-only` - content is only added after everything already cached;
+    - `KV-cache: one-time prefix invalidation` - existing conversations re-prefill once, with the
+      reason why that is worth it.
 
 ### Submitting a Pull Request
 

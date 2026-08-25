@@ -1,8 +1,8 @@
 import { serializeError } from "serialize-error"
 import { Anthropic } from "@anthropic-ai/sdk"
 
-import type { ToolName, ClineAsk, ToolProgressStatus } from "@roo-code/types"
-import { ConsecutiveMistakeError, TelemetryEventName } from "@roo-code/types"
+import type { ToolName, ClineAsk, ToolProgressStatus, ArtifactSpillSettings } from "@roo-code/types"
+import { ConsecutiveMistakeError, TelemetryEventName, resolveMaxInlineToolResultBytes } from "@roo-code/types"
 import { TelemetryService } from "@roo-code/telemetry"
 import { customToolRegistry } from "@roo-code/core"
 
@@ -16,7 +16,8 @@ import { Task } from "../task/Task"
 
 import { listFilesTool } from "../tools/ListFilesTool"
 import { readFileTool } from "../tools/ReadFileTool"
-import { readCommandOutputTool } from "../tools/ReadCommandOutputTool"
+import { readArtifactTool } from "../tools/ReadArtifactTool"
+import { searchTaskHistoryTool } from "../tools/SearchTaskHistoryTool"
 import { writeToFileTool } from "../tools/WriteToFileTool"
 import { editTool } from "../tools/EditTool"
 import { searchReplaceTool } from "../tools/SearchReplaceTool"
@@ -39,10 +40,57 @@ import { generateImageTool } from "../tools/GenerateImageTool"
 import { applyDiffTool as applyDiffToolClass } from "../tools/ApplyDiffTool"
 import { isValidToolName, validateToolUse } from "../tools/validateToolUse"
 import { codebaseSearchTool } from "../tools/CodebaseSearchTool"
+import { webSearchTool } from "../tools/WebSearchTool"
+import { webFetchTool } from "../tools/WebFetchTool"
 
 import { formatResponse } from "../prompts/responses"
 import { sanitizeToolUseId } from "../../utils/tool-id"
 import { tryAutoMaterializeDirectCall } from "../task/deferred-tools-resolver"
+
+/**
+ * Mistake accounting for a tool failure reported through `handleError`.
+ *
+ * Before this existed, only the malformed-call paths grew `consecutiveMistakeCount`: a tool
+ * that failed at RUNTIME on every single turn (unreadable file, failing command, diff that
+ * cannot be applied) was invisible to the circuit breaker and to `lastToolErrorName`, so the
+ * mistake-limit guidance could not even name the tool that kept failing. Doing it here, in
+ * the one callback every tool routes its failures through, means one rule for all call sites
+ * and no per-tool bookkeeping to forget in the next tool.
+ *
+ * Four guards:
+ *
+ * - No `toolName`: the caller opted out on purpose. The custom-tool catch does its own
+ *   accounting under the static `custom_tool` bucket, and counting it here as well would
+ *   charge the model twice for one failure.
+ * - `AskIgnoredError`: internal control flow (a newer ask superseded an older one), not a
+ *   model mistake. The closures already return early on it; this guard keeps the helper
+ *   correct on its own.
+ * - `abort` / `abandoned`: a user cancel tears tools down mid-flight, and those failures
+ *   belong to the cancel, not to the model.
+ * - `resultAlreadyDelivered`: the tool ALREADY pushed its result for this block, so the
+ *   failure now being reported happened after the call succeeded. Several tools push the
+ *   success result and only then run their trailing cleanup (`diffViewProvider.reset()`,
+ *   `processQueuedMessages()`) inside the same `try`, and the safety net in
+ *   `BaseTool.handle` forwards anything that escapes there to this same closure. Counting
+ *   it would charge the model a mistake for a tool that worked and would leave
+ *   `lastToolErrorName` pointing at it, while `pushToolResult` drops the error envelope as
+ *   a duplicate anyway, so the model never even learns why it was charged.
+ */
+function recordToolFailureAsMistake(
+	cline: Task,
+	error: Error,
+	toolName: string | undefined,
+	resultAlreadyDelivered: boolean,
+): void {
+	if (!toolName || resultAlreadyDelivered || error instanceof AskIgnoredError || cline.abort || cline.abandoned) {
+		return
+	}
+
+	cline.consecutiveMistakeCount++
+	// The cast is safe for every caller: `toolName` originates either from a tool class's
+	// own `name` (typed `ToolName`) or from a static literal in this file.
+	cline.recordToolError(toolName as ToolName, error.message)
+}
 
 /**
  * Processes and presents assistant message content to the user interface.
@@ -60,6 +108,27 @@ import { tryAutoMaterializeDirectCall } from "../task/deferred-tools-resolver"
  * API response pattern, where content arrives incrementally and needs to be processed
  * as it becomes available.
  */
+
+/**
+ * Makes sure the task can spill an oversized tool result to an artifact.
+ *
+ * The spill decision happens inside `Task#pushToolResultToUserContent`, which is
+ * synchronous, so the artifact store (whose directory resolves asynchronously)
+ * has to be primed here, on the dispatch path. Best-effort: a failure leaves the
+ * policy off and every result stays inline, exactly as before the policy existed.
+ */
+async function prepareToolResultSpill(cline: Task, state?: ArtifactSpillSettings): Promise<void> {
+	try {
+		if (typeof cline.ensureToolResultSpill !== "function") {
+			return
+		}
+
+		const resolvedState = state ?? (await cline.providerRef.deref()?.getState())
+		await cline.ensureToolResultSpill(resolveMaxInlineToolResultBytes(resolvedState))
+	} catch (error) {
+		console.warn("[presentAssistantMessage] Could not prepare the tool-result spill policy:", error)
+	}
+}
 
 export async function presentAssistantMessage(cline: Task) {
 	if (cline.abort) {
@@ -170,11 +239,14 @@ export async function presentAssistantMessage(cline: Task) {
 				}
 
 				if (toolCallId) {
-					cline.pushToolResultToUserContent({
-						type: "tool_result",
-						tool_use_id: sanitizeToolUseId(toolCallId),
-						content: resultContent,
-					})
+					cline.pushToolResultToUserContent(
+						{
+							type: "tool_result",
+							tool_use_id: sanitizeToolUseId(toolCallId),
+							content: resultContent,
+						},
+						{ toolName: "use_mcp_tool" },
+					)
 
 					if (imageBlocks.length > 0) {
 						cline.userMessageContent.push(...imageBlocks)
@@ -222,23 +294,39 @@ export async function presentAssistantMessage(cline: Task) {
 				return true
 			}
 
-			const handleError = async (action: string, error: Error) => {
+			const handleError = async (action: string, error: Error, toolName?: string) => {
 				// Silently ignore AskIgnoredError - this is an internal control flow
 				// signal, not an actual error. It occurs when a newer ask supersedes an older one.
 				if (error instanceof AskIgnoredError) {
 					return
 				}
+				// Count the failure before anything that can itself fail, so a broken UI
+				// channel cannot silently drop the accounting. `hasToolResult` reports whether
+				// this block already delivered its result: if it did, the tool SUCCEEDED and
+				// this error comes from its trailing cleanup, which is not a model mistake
+				// (and whose envelope `pushToolResult` drops as a duplicate anyway).
+				recordToolFailureAsMistake(cline, error, toolName, hasToolResult)
+
 				const errorString = `Error ${action}: ${JSON.stringify(serializeError(error))}`
+
 				await cline.askSay.say(
 					"error",
 					`Error ${action}:\n${error.message ?? JSON.stringify(serializeError(error), null, 2)}`,
 				)
-				pushToolResult(formatResponse.toolError(errorString))
+
+				// `toolName` rides beside the serialized error, never inside it, so the minimal
+				// valid example lands as a nested object the model can copy verbatim.
+				pushToolResult(formatResponse.toolError(errorString, toolName))
 			}
 
 			if (!mcpBlock.partial) {
 				cline.recordToolUsage("use_mcp_tool") // Record as use_mcp_tool for analytics
 				TelemetryService.instance.captureToolUsage(cline.taskId, "use_mcp_tool")
+
+				// Prepare the tool-result spill policy before the tool runs: MCP
+				// servers are a classic source of multi-hundred-KB payloads.
+				// Only on the final block, so streaming stays allocation-free.
+				await prepareToolResultSpill(cline)
 
 				// Auto-materialize: if the model called a deferred MCP tool directly
 				// (without using `tools_load` first), promote it to the active set so
@@ -345,6 +433,10 @@ export async function presentAssistantMessage(cline: Task) {
 			const state = await cline.providerRef.deref()?.getState()
 			const { mode, customModes, experiments: stateExperiments, disabledTools } = state ?? {}
 
+			// Prepare the tool-result spill policy before the tool runs, so the
+			// (synchronous) push below can move an oversized result to disk.
+			await prepareToolResultSpill(cline, state)
+
 			const toolDescription = (): string => {
 				switch (block.name) {
 					case "execute_command":
@@ -388,8 +480,20 @@ export async function presentAssistantMessage(cline: Task) {
 						return `[${block.name} to '${block.params.mode_slug}'${block.params.reason ? ` because: ${block.params.reason}` : ""}]`
 					case "codebase_search":
 						return `[${block.name} for '${block.params.query}']`
+					case "read_artifact":
 					case "read_command_output":
 						return `[${block.name} for '${block.params.artifact_id}']`
+					case "search_task_history":
+						return `[${block.name} for '${block.params.query}']`
+					case "web_search": {
+						const nativeArgs = (block as ToolUse<"web_search">).nativeArgs
+						const queries = Array.isArray(nativeArgs?.queries) ? nativeArgs.queries : []
+						return queries.length > 0 ? `[${block.name} for '${queries.join("', '")}']` : `[${block.name}]`
+					}
+					case "web_fetch": {
+						const nativeArgs = (block as ToolUse<"web_fetch">).nativeArgs
+						return nativeArgs?.url ? `[${block.name} for '${nativeArgs.url}']` : `[${block.name}]`
+					}
 					case "update_todo_list":
 						return `[${block.name}]`
 					case "new_task": {
@@ -497,7 +601,10 @@ export async function presentAssistantMessage(cline: Task) {
 					cline.pushToolResultToUserContent({
 						type: "tool_result",
 						tool_use_id: sanitizeToolUseId(toolCallId),
-						content: formatResponse.toolError(errorMessage),
+						// This is the hot malformed-call path: the arguments never finalized, so
+						// no tool ran and the model has nothing to learn from except the schema.
+						// Send the minimal valid invocation with it.
+						content: formatResponse.toolError(errorMessage, block.name),
 						is_error: true,
 					})
 
@@ -540,11 +647,14 @@ export async function presentAssistantMessage(cline: Task) {
 					}
 				}
 
-				cline.pushToolResultToUserContent({
-					type: "tool_result",
-					tool_use_id: sanitizeToolUseId(toolCallId),
-					content: resultContent,
-				})
+				cline.pushToolResultToUserContent(
+					{
+						type: "tool_result",
+						tool_use_id: sanitizeToolUseId(toolCallId),
+						content: resultContent,
+					},
+					{ toolName: String(block.name) },
+				)
 
 				if (imageBlocks.length > 0) {
 					cline.userMessageContent.push(...imageBlocks)
@@ -599,12 +709,19 @@ export async function presentAssistantMessage(cline: Task) {
 				return await askApproval("tool", toolMessage)
 			}
 
-			const handleError = async (action: string, error: Error) => {
+			const handleError = async (action: string, error: Error, toolName?: string) => {
 				// Silently ignore AskIgnoredError - this is an internal control flow
 				// signal, not an actual error. It occurs when a newer ask supersedes an older one.
 				if (error instanceof AskIgnoredError) {
 					return
 				}
+				// Count the failure before anything that can itself fail, so a broken UI
+				// channel cannot silently drop the accounting. `hasToolResult` reports whether
+				// this block already delivered its result: if it did, the tool SUCCEEDED and
+				// this error comes from its trailing cleanup, which is not a model mistake
+				// (and whose envelope `pushToolResult` drops as a duplicate anyway).
+				recordToolFailureAsMistake(cline, error, toolName, hasToolResult)
+
 				const errorString = `Error ${action}: ${JSON.stringify(serializeError(error))}`
 
 				await cline.askSay.say(
@@ -612,7 +729,9 @@ export async function presentAssistantMessage(cline: Task) {
 					`Error ${action}:\n${error.message ?? JSON.stringify(serializeError(error), null, 2)}`,
 				)
 
-				pushToolResult(formatResponse.toolError(errorString))
+				// `toolName` rides beside the serialized error, never inside it, so the minimal
+				// valid example lands as a nested object the model can copy verbatim.
+				pushToolResult(formatResponse.toolError(errorString, toolName))
 			}
 
 			if (!block.partial) {
@@ -668,12 +787,25 @@ export async function presentAssistantMessage(cline: Task) {
 					)
 				} catch (error) {
 					cline.consecutiveMistakeCount++
+					// The counter already grew on the line above, so record only the name here:
+					// without this, `lastToolErrorName` stays stale and the mistake-limit guidance
+					// names the wrong tool (or none) after a run of rejected calls.
+					//
+					// `validateToolUse` throws for a hallucinated tool name too, and `block.name`
+					// is an arbitrary model-supplied string at this point. Recording it would let
+					// that string into `Task.toolUsage` and into the `TaskToolFailed` telemetry
+					// event, where every consumer expects a real `ToolName`. So record only names
+					// that pass the same validity check the dispatcher uses; for an invalid name
+					// the counter bump and the error envelope below are the whole response.
+					if (isValidToolName(String(block.name), stateExperiments)) {
+						cline.recordToolError(block.name as ToolName, error.message)
+					}
 					// For validation errors (unknown tool, tool not allowed for mode), we need to:
 					// 1. Send a tool_result with the error (required for native tool calling)
 					// 2. NOT set didAlreadyUseTool = true (the tool was never executed, just failed validation)
 					// This prevents the stream from being interrupted with "Response interrupted by tool use result"
 					// which would cause the extension to appear to hang
-					const errorContent = formatResponse.toolError(error.message)
+					const errorContent = formatResponse.toolError(error.message, block.name)
 					// Push tool_result directly without setting didAlreadyUseTool
 					cline.pushToolResultToUserContent({
 						type: "tool_result",
@@ -732,6 +864,7 @@ export async function presentAssistantMessage(cline: Task) {
 					pushToolResult(
 						formatResponse.toolError(
 							`Tool call repetition limit reached for ${block.name}. Please try a different approach.`,
+							block.name,
 						),
 					)
 					break
@@ -842,11 +975,39 @@ export async function presentAssistantMessage(cline: Task) {
 						pushToolResult,
 					})
 					break
+				// `read_command_output` is resolved to `read_artifact` by the
+				// alias table before dispatch; it is listed here only so a
+				// replayed legacy block still finds a handler.
+				case "read_artifact":
 				case "read_command_output":
-					await readCommandOutputTool.handle(cline, block as ToolUse<"read_command_output">, {
+					await readArtifactTool.handle(cline, block as ToolUse<"read_artifact">, {
 						askApproval,
 						handleError,
 						pushToolResult,
+					})
+					break
+				case "search_task_history":
+					await searchTaskHistoryTool.handle(cline, block as ToolUse<"search_task_history">, {
+						askApproval,
+						handleError,
+						pushToolResult,
+						toolCallId,
+					})
+					break
+				case "web_search":
+					await webSearchTool.handle(cline, block as ToolUse<"web_search">, {
+						askApproval,
+						handleError,
+						pushToolResult,
+						toolCallId,
+					})
+					break
+				case "web_fetch":
+					await webFetchTool.handle(cline, block as ToolUse<"web_fetch">, {
+						askApproval,
+						handleError,
+						pushToolResult,
+						toolCallId,
 					})
 					break
 				case "use_mcp_tool":
@@ -987,6 +1148,12 @@ export async function presentAssistantMessage(cline: Task) {
 							cline.consecutiveMistakeCount++
 							// Record custom tool error with static name
 							cline.recordToolError("custom_tool", executionError.message)
+							// Deliberately 2-argument: the two lines above already did the mistake
+							// accounting under the static `custom_tool` bucket, and passing a name
+							// here would make `handleError` count the same failure a second time.
+							// No example is lost either: a custom tool is called by its own
+							// registered name and carries its own schema, so
+							// `getToolMinimalExample` has nothing to attach for it by design.
 							await handleError(`executing custom tool "${block.name}"`, executionError)
 						}
 
@@ -1035,7 +1202,10 @@ export async function presentAssistantMessage(cline: Task) {
 					cline.pushToolResultToUserContent({
 						type: "tool_result",
 						tool_use_id: sanitizeToolUseId(toolCallId),
-						content: formatResponse.toolError(errorMessage),
+						// The name is passed for consistency with every other error envelope.
+						// An unknown name yields no example, but a hallucinated variant of a real
+						// name (`list_file`) yields nothing either, so nothing misleading is added.
+						content: formatResponse.toolError(errorMessage, block.name),
 						is_error: true,
 					})
 					break

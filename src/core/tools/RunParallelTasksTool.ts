@@ -56,7 +56,7 @@ const DEFAULT_MAX_CONCURRENCY = DEFAULT_PARALLEL_TASKS_MAX_CONCURRENCY
  * long-horizon work that belongs in the parent task itself.
  */
 export const DISALLOWED_SUBTASK_MODES = ["architect", "orchestrator"] as const
-/** Turn cap per subagent — a runaway backstop, generous enough for real work. */
+/** Turn cap per subagent: a runaway backstop, generous enough for real work. */
 export const SUBAGENT_MAX_TURNS = 50
 
 /**
@@ -79,7 +79,7 @@ export function validateParallelParams(
 		return {
 			ok: false,
 			error:
-				"run_parallel_tasks requires AT LEAST 2 subtasks — its whole value is running several independent " +
+				"run_parallel_tasks requires AT LEAST 2 subtasks: its whole value is running several independent " +
 				"jobs at the same time. For a single job, do the work directly in this task (or delegate it via " +
 				"new_task if it needs a different specialist mode).",
 		}
@@ -97,7 +97,7 @@ export function validateParallelParams(
 				error:
 					`Subtask #${i + 1} uses mode "${mode}", which is not allowed for parallel subtasks. ` +
 					`Parallel subtasks are small one-shot jobs (answering a question in ask mode, web research, ` +
-					`a small scoped code edit, running tests) — do the ${mode} work yourself in this task and ` +
+					`a small scoped code edit, running tests), so do the ${mode} work yourself in this task and ` +
 					`fan out only the small independent pieces.`,
 			}
 		}
@@ -154,7 +154,7 @@ export function formatParallelResults(results: ReadonlyArray<ParallelSubtaskResu
 		"",
 	]
 	for (const r of results) {
-		lines.push(`### Subtask ${r.index + 1} — ${r.status.toUpperCase()} (${r.mode} mode)`)
+		lines.push(`### Subtask ${r.index + 1}: ${r.status.toUpperCase()} (${r.mode} mode)`)
 		if (r.cleaned) {
 			lines.push("- worktree: cleaned up (no changes)")
 		} else if (r.worktreePath) {
@@ -337,7 +337,7 @@ async function runOneSubtask({
 		// Persist the parent→child relation on the parent's HistoryItem so
 		// rehydration from history can discover this fan-out's children.
 		// Mirror of `delegateParentAndOpenChild`'s `atomicReadAndUpdate`, but
-		// WITHOUT setting `status: "delegated"` / `awaitingChildId` — the
+		// WITHOUT setting `status: "delegated"` / `awaitingChildId`: the
 		// parent is NOT delegated to a parallel subagent, it waits inline on
 		// the tool result. Best-effort: a failure to persist the relation
 		// must not break the fan-out (the sidecar write below and the live
@@ -394,7 +394,7 @@ async function finalize(cwd: string, result: ParallelSubtaskResult): Promise<Par
  * Best-effort persistence of the parent→child relation for a parallel
  * fan-out: appends `childTaskId` to the parent HistoryItem's
  * `parallelChildIds` (deduped, order-preserving) via the provider's atomic
- * read-modify-write. Never throws — a failure is logged and the fan-out
+ * read-modify-write. Never throws: a failure is logged and the fan-out
  * continues (only historical rehydration of this run would be affected; the
  * live panel and tool result are independent).
  */
@@ -423,7 +423,7 @@ async function persistParallelChildId(
  * Best-effort persistence of the terminal subagent summaries to the parent
  * task's sidecar (`tasks/<parentTaskId>/subagents.json`). Called once after
  * the whole fan-out settles so rehydration can repopulate the panel without
- * re-reading each child's messages. Never throws — a missing/corrupt sidecar
+ * re-reading each child's messages. Never throws: a missing/corrupt sidecar
  * only means the historical panel stays empty for this run.
  */
 async function persistSubagentSummariesSidecar(provider: SubtaskProvider, parentTaskId: string): Promise<void> {
@@ -584,19 +584,19 @@ export class RunParallelTasksTool extends BaseTool<"run_parallel_tasks"> {
 				// panel. Best-effort: never throws (see helper). Done after
 				// the report is pushed so a sidecar write failure cannot
 				// block the tool result. Runs in both the normal and the
-				// abandoned-parent paths — the rehydrated parent needs the
+				// abandoned-parent paths, because the rehydrated parent needs the
 				// summaries either way.
 				await persistSubagentSummariesSidecar(provider, task.taskId)
 			} finally {
 				task.off(RooCodeEventName.TaskAborted, onParentAborted)
 			}
 		} catch (error) {
-			await handleError("running parallel tasks", error)
+			await handleError("running parallel tasks", error, this.name)
 		}
 	}
 
 	override async handlePartial(_task: Task, _block: ToolUse<"run_parallel_tasks">): Promise<void> {
-		// No streaming card — the fan-out only acts once args are complete.
+		// No streaming card: the fan-out only acts once args are complete.
 	}
 }
 

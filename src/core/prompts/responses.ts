@@ -3,6 +3,7 @@ import * as path from "path"
 import * as diff from "diff"
 import { RooIgnoreController, LOCK_TEXT_SYMBOL } from "../ignore/RooIgnoreController"
 import { RooProtectedController } from "../protect/RooProtectedController"
+import { getToolMinimalExample } from "./tools/native-tools/examples"
 
 export const formatResponse = {
 	toolDenied: () =>
@@ -23,12 +24,25 @@ export const formatResponse = {
 			feedback,
 		}),
 
-	toolError: (error?: string) =>
-		JSON.stringify({
+	/**
+	 * @param toolName Tool the failed call was addressed to. When it is a statically
+	 * advertised tool, its minimal valid invocation rides along as a nested JSON object
+	 * under `minimal_valid_example`, so a weak model can copy it verbatim and retry.
+	 *
+	 * The example must never be embedded in `error` (or in an `Error.message` that ends
+	 * up there): `error` is a string field inside this envelope, so anything placed in it
+	 * is escaped a second time and stops being copyable.
+	 */
+	toolError: (error?: string, toolName?: string) => {
+		const example = getToolMinimalExample(toolName)
+
+		return JSON.stringify({
 			status: "error",
 			message: "The tool execution failed",
 			error,
-		}),
+			...(example ? { failed_tool: toolName, minimal_valid_example: example } : {}),
+		})
+	},
 
 	rooIgnoreError: (path: string) =>
 		JSON.stringify({
@@ -54,12 +68,27 @@ Otherwise, if you have not completed the task and do not need additional informa
 (This is an automated message, so do not respond to it conversationally.)`
 	},
 
-	tooManyMistakes: (feedback?: string) =>
-		JSON.stringify({
+	/**
+	 * @param toolName Tool whose failure grew the mistake counter, or `undefined` when the
+	 * counter grew because no tool was called at all. Only pass a name in the first case:
+	 * on a no-tool-used turn an example would invite a pointless re-call of a tool that
+	 * had actually succeeded.
+	 */
+	tooManyMistakes: (feedback?: string, toolName?: string) => {
+		const example = getToolMinimalExample(toolName)
+
+		return JSON.stringify({
 			status: "guidance",
 			feedback,
-		}),
+			...(example ? { failed_tool: toolName, minimal_valid_example: example } : {}),
+		})
+	},
 
+	/**
+	 * Plain text, wrapped by the caller in `toolError`, which is where the minimal example
+	 * is attached as a structured field. Keeping it out of this string is what prevents the
+	 * example from being escaped twice.
+	 */
 	missingToolParameterError: (paramName: string) => {
 		const instructions = getToolInstructionsReminder()
 

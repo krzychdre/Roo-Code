@@ -4,7 +4,7 @@ import { z } from "zod"
  * ToolGroup
  */
 
-export const toolGroups = ["read", "edit", "command", "mcp", "modes"] as const
+export const toolGroups = ["read", "edit", "command", "mcp", "modes", "web"] as const
 
 export const toolGroupsSchema = z.enum(toolGroups)
 
@@ -24,6 +24,9 @@ export type ToolGroup = z.infer<typeof toolGroupsSchema>
 export const toolNames = [
 	"execute_command",
 	"read_file",
+	"read_artifact",
+	// Deprecated alias of `read_artifact`, kept in the enum so histories and
+	// settings written before the rename still validate. See TOOL_ALIASES.
 	"read_command_output",
 	"write_to_file",
 	"apply_diff",
@@ -33,6 +36,7 @@ export const toolNames = [
 	"edit_file",
 	"apply_patch",
 	"search_files",
+	"search_task_history",
 	"list_files",
 	"use_mcp_tool",
 	"access_mcp_resource",
@@ -48,6 +52,8 @@ export const toolNames = [
 	"custom_tool",
 	"tools_load",
 	"run_parallel_tasks",
+	"web_search",
+	"web_fetch",
 ] as const
 
 export const toolNamesSchema = z.enum(toolNames)

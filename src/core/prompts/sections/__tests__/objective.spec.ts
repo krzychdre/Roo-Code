@@ -1,3 +1,4 @@
+import askFollowupQuestion from "../../tools/native-tools/ask_followup_question"
 import { getObjectiveSection } from "../objective"
 
 describe("getObjectiveSection", () => {
@@ -9,7 +10,7 @@ describe("getObjectiveSection", () => {
 		expect(objective).toContain("2. Work through these goals sequentially")
 		expect(objective).toContain("3. Remember, you have extensive capabilities")
 		expect(objective).toContain("4. Once you've completed the user's task")
-		expect(objective).toContain("5. The user may provide feedback")
+		expect(objective).toContain("5. DO NOT continue in pointless back and forth conversations")
 	})
 
 	it("should include analysis guidance", () => {
@@ -43,5 +44,23 @@ describe("getObjectiveSection", () => {
 
 		expect(objective).toContain("OBJECTIVE")
 		expect(objective).toContain("You accomplish a given task iteratively")
+	})
+
+	describe("single-tool guidance lives next to the tool", () => {
+		const description = askFollowupQuestion.function.description ?? ""
+
+		it("no longer repeats the optional-parameter rule that ask_followup_question owns", () => {
+			const objective = getObjectiveSection()
+
+			expect(objective).not.toContain("DO NOT ask for more information on optional parameters")
+			expect(description).toContain("never ask about a tool's optional parameters")
+		})
+
+		it("no longer repeats the attempt_completion feedback loop", () => {
+			const objective = getObjectiveSection()
+
+			// Covered verbatim by the attempt_completion tool description.
+			expect(objective).not.toContain("The user may provide feedback, which you can use to make improvements")
+		})
 	})
 })

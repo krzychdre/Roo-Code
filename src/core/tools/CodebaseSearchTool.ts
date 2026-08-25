@@ -25,7 +25,7 @@ export class CodebaseSearchTool extends BaseTool<"codebase_search"> {
 		const workspacePath = task.cwd && task.cwd.trim() !== "" ? task.cwd : getWorkspacePath()
 
 		if (!workspacePath) {
-			await handleError("codebase_search", new Error("Could not determine workspace path."))
+			await handleError("codebase_search", new Error("Could not determine workspace path."), this.name)
 			return
 		}
 
@@ -127,7 +127,7 @@ Code Chunk: ${result.codeChunk}
 
 			pushToolResult(output)
 		} catch (error: any) {
-			await handleError("codebase_search", error)
+			await handleError("codebase_search", error, this.name)
 		}
 	}
 

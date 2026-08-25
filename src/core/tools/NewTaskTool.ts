@@ -141,7 +141,7 @@ export class NewTaskTool extends BaseTool<"new_task"> {
 			pushToolResult(`Delegated to child task ${child.taskId}`)
 			return
 		} catch (error) {
-			await handleError("creating new task", error)
+			await handleError("creating new task", error, this.name)
 			return
 		}
 	}

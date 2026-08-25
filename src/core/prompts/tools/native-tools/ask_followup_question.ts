@@ -2,6 +2,13 @@ import type OpenAI from "openai"
 
 const ASK_FOLLOWUP_QUESTION_DESCRIPTION = `Ask the user a question to gather additional information needed to complete the task. Use when you need clarification or more details to proceed effectively.
 
+Rules:
+- This is the ONLY way to ask the user anything; never put a question to the user in plain prose.
+- Do not ask for more information than you need, and never ask about a tool's optional parameters.
+- Answer it yourself first: if a tool can find the answer (for example list_files on a directory the user mentioned), use that tool instead of asking.
+- Ask only when a required parameter of another tool is missing and cannot be inferred; never invoke that tool with a filler value.
+- Order the suggested answers by priority or logical sequence.
+
 Parameters:
 - question: (required) A clear, specific question addressing the information needed
 - follow_up: (required) A list of 2-4 suggested answers. Suggestions must be complete, actionable answers without placeholders. Optionally include mode to switch modes (code/architect/etc.)

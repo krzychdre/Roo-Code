@@ -10,7 +10,7 @@ import executeCommand from "./execute_command"
 import generateImage from "./generate_image"
 import listFiles from "./list_files"
 import newTask from "./new_task"
-import readCommandOutput from "./read_command_output"
+import readArtifact from "./read_artifact"
 import { createReadFileTool, type ReadFileToolOptions } from "./read_file"
 import runParallelTasks from "./run_parallel_tasks"
 import runSlashCommand from "./run_slash_command"
@@ -18,9 +18,12 @@ import skill from "./skill"
 import searchReplace from "./search_replace"
 import edit_file from "./edit_file"
 import searchFiles from "./search_files"
+import searchTaskHistory from "./search_task_history"
 import switchMode from "./switch_mode"
 import toolsLoad from "./tools_load"
 import updateTodoList from "./update_todo_list"
+import webFetch from "./web_fetch"
+import webSearch from "./web_search"
 import writeToFile from "./write_to_file"
 
 export { getMcpServerTools } from "./mcp_server"
@@ -59,7 +62,7 @@ export function getNativeTools(options: NativeToolsOptions = {}): OpenAI.Chat.Ch
 		generateImage,
 		listFiles,
 		newTask,
-		readCommandOutput,
+		readArtifact,
 		createReadFileTool(readFileOptions),
 		runParallelTasks,
 		runSlashCommand,
@@ -71,7 +74,14 @@ export function getNativeTools(options: NativeToolsOptions = {}): OpenAI.Chat.Ch
 		switchMode,
 		toolsLoad,
 		updateTodoList,
+		webFetch,
+		webSearch,
 		writeToFile,
+		// Appended at the tail on purpose (WS-F prefix-stability contract): the
+		// tools array is part of the cached request prefix, so a new schema
+		// inserted in the middle would move every schema after it and cost
+		// existing users their tool-array cache hit. New tools go last.
+		searchTaskHistory,
 	] satisfies OpenAI.Chat.ChatCompletionTool[]
 }
 

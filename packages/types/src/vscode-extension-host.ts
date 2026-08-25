@@ -340,6 +340,14 @@ export type ExtensionState = Pick<
 	| "autoDreamMinSessions"
 	| "memoryWriterApiConfigId"
 	| "autoCondenseContextApiConfigId"
+	| "webToolsEnabled"
+	| "webSearchBackend"
+	| "searxngBaseUrl"
+	| "webSearchMaxResults"
+	| "webFetchMaxBytes"
+	| "maxInlineToolResultBytes"
+	| "pruneBeforeCondense"
+	| "pruneToolResultBudget"
 > & {
 	lockApiConfigAcrossModes?: boolean
 	version: string
@@ -822,10 +830,14 @@ export interface ClineSayTool {
 		| "newFileCreated"
 		| "codebaseSearch"
 		| "readFile"
+		| "readArtifact"
+		// Emitted by builds before `read_artifact` existed; kept so old task
+		// histories still render.
 		| "readCommandOutput"
 		| "listFilesTopLevel"
 		| "listFilesRecursive"
 		| "searchFiles"
+		| "searchTaskHistory"
 		| "switchMode"
 		| "newTask"
 		| "finishTask"
@@ -835,8 +847,10 @@ export interface ClineSayTool {
 		| "runSlashCommand"
 		| "updateTodoList"
 		| "skill"
+		| "webSearch"
+		| "webFetch"
 	path?: string
-	// For readCommandOutput
+	// For readArtifact (and the legacy readCommandOutput)
 	readStart?: number
 	readEnd?: number
 	totalBytes?: number
@@ -892,6 +906,10 @@ export interface ClineSayTool {
 	description?: string
 	// Properties for skill tool
 	skill?: string
+	// Properties for the web tools: the queries web_search ran, and the URL
+	// web_fetch read (after redirects).
+	queries?: string[]
+	fetchedUrl?: string
 	// Native tool-call id, stamped by tools whose handlePartial placeholder and
 	// complete payload diverge in text (read_file, search_files). Lets the
 	// finalized-duplicate dedup recognise the placeholder and the complete card

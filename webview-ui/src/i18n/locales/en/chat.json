@@ -251,6 +251,12 @@
 			"messagesRemoved": "{{count}} message removed",
 			"messagesRemoved_other": "{{count}} messages removed",
 			"description": "Older messages were removed from the conversation to stay within the context window limit. This is a fast but less context-preserving approach compared to condensation."
+		},
+		"prune": {
+			"title": "Old Tool Output Moved to Disk",
+			"summary": "{{count}} tool result, about {{kb}} KB freed",
+			"summary_other": "{{count}} tool results, about {{kb}} KB freed",
+			"description": "Old, oversized tool results were saved as task artifacts and replaced with a short preview. Nothing was lost: each preview names its artifact, and the model can read the full text back with read_artifact. This ran instead of an AI summary, so no conversation text was rewritten."
 		}
 	},
 	"skill": {
@@ -507,6 +513,14 @@
 		"wantsToRun": "Tumble wants to run a slash command",
 		"didRun": "Tumble ran a slash command"
 	},
+	"webSearch": {
+		"wantsToSearch": "Tumble wants to search the web for <code>{{queries}}</code>",
+		"didSearch": "Tumble searched the web for <code>{{queries}}</code>"
+	},
+	"webFetch": {
+		"wantsToFetch": "Tumble wants to read <code>{{url}}</code>",
+		"didFetch": "Tumble read <code>{{url}}</code>"
+	},
 	"queuedMessages": {
 		"title": "Queued Messages",
 		"clickToEdit": "Click to edit message"
@@ -532,6 +546,12 @@
 		"serversPart_other": "{{count}} MCP servers",
 		"messageTemplate": "You have {{tools}} enabled via {{servers}}. Such a high number can confuse the model and lead to errors. Try to keep it below {{threshold}}.",
 		"openMcpSettings": "Open MCP Settings"
+	},
+	"readArtifact": {
+		"title": "Tumble read artifact"
+	},
+	"searchTaskHistory": {
+		"title": "Tumble searched this task's history"
 	},
 	"readCommandOutput": {
 		"title": "Tumble read command output"

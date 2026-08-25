@@ -1,21 +1,37 @@
 import * as fs from "fs/promises"
 import * as path from "path"
 
+import { resolveMaxInlineToolResultBytes } from "@roo-code/types"
+
 import { Task } from "../task/Task"
+import { formatResponse } from "../prompts/responses"
 import { getTaskDirectoryPath } from "../../utils/storage"
+import { artifactCandidatePaths, isValidArtifactId } from "../artifacts/ArtifactStore"
 
 import { BaseTool, ToolCallbacks } from "./BaseTool"
 
-/** Default byte limit for read operations (40KB) */
-const DEFAULT_LIMIT = 40 * 1024 // 40KB default limit
+/**
+ * Corrective guidance appended to every artifact-id error.
+ *
+ * Weak models guess ids when a lookup fails, which burns turns. Spelling out
+ * the shape of a valid id and the recovery move (re-run the producer) is
+ * cheaper than another round of guessing.
+ */
+const ARTIFACT_ID_GUIDANCE =
+	'Valid ids look like "cmd-1706119234567.txt" (full output of an execute_command run), ' +
+	'"tool-1706119234567.txt" (a tool result that was too large to keep inline) or ' +
+	'"prune-1706119234567.txt" (an older tool result moved to disk to free context). ' +
+	"Copy the id verbatim from the message that announced it instead of constructing one. " +
+	"If no message announced an artifact, re-run the command or the tool that produced the output."
 
 /**
- * Parameters accepted by the read_command_output tool.
+ * Parameters accepted by the read_artifact tool.
  */
-interface ReadCommandOutputParams {
+interface ReadArtifactParams {
 	/**
-	 * The artifact file identifier (e.g., "cmd-1706119234567.txt").
-	 * This is provided in the execute_command output when truncation occurs.
+	 * The artifact file identifier (e.g., "cmd-1706119234567.txt" or
+	 * "tool-1706119234567.txt"). Announced by the message that created the
+	 * artifact: a truncated execute_command result, or a spilled tool result.
 	 */
 	artifact_id: string
 	/**
@@ -29,92 +45,103 @@ interface ReadCommandOutputParams {
 	 */
 	offset?: number
 	/**
-	 * Maximum bytes to return (default: 32KB).
-	 * Limits the amount of data returned in a single request.
+	 * Maximum bytes to return. Defaults to (and is capped by) the same inline
+	 * budget the spill policy enforces, so one read cannot re-inject more than
+	 * the budget the spill was meant to protect.
 	 */
 	limit?: number
 }
 
 /**
- * ReadCommandOutputTool allows the LLM to retrieve full command output that was truncated.
+ * ReadArtifactTool lets the LLM retrieve text that was too large to keep inline.
  *
- * When `execute_command` produces output exceeding the preview threshold, the full output
- * is persisted to disk by the `OutputInterceptor`. This tool enables the LLM to:
+ * Three producers write artifacts:
  *
- * 1. **Read full output**: Retrieve the complete command output beyond the preview
- * 2. **Search output**: Filter lines matching a pattern (like grep)
- * 3. **Paginate**: Read large outputs in chunks using offset/limit
+ * - `execute_command`, whose full output the `OutputInterceptor` streams to a
+ *   `cmd-*.txt` artifact once it passes the terminal preview threshold.
+ * - the tool-result spill policy, which moves any oversized tool result to a
+ *   `tool-*.txt` artifact and leaves a head/tail preview in the conversation.
+ * - the deterministic pruner, which under context pressure moves an OLD tool
+ *   result to a `prune-*.txt` artifact and leaves a head/tail preview behind.
+ *
+ * In every case this tool provides:
+ *
+ * 1. **Read full text**: retrieve content beyond the preview
+ * 2. **Search**: filter lines matching a pattern (like grep)
+ * 3. **Paginate**: read in chunks using offset/limit
  *
  * ## Storage Location
  *
  * Artifacts are stored outside the workspace in the task directory:
- * `globalStoragePath/tasks/{taskId}/command-output/cmd-{executionId}.txt`
+ * `globalStoragePath/tasks/{taskId}/command-output/cmd-{ts}.txt` and
+ * `globalStoragePath/tasks/{taskId}/artifacts/{kind}-{ts}.txt`.
  *
  * ## Security
  *
  * The tool validates artifact_id format to prevent path traversal attacks.
- * Only files matching `cmd-{digits}.txt` pattern are accessible.
+ * Only files matching `{kind}-{digits}.txt` are accessible, and only inside
+ * the current task's own artifact directories.
  *
  * ## Usage Flow
  *
- * 1. LLM calls `execute_command` which runs a command
- * 2. If output is large, response includes `artifact_id` and truncation notice
- * 3. LLM calls `read_command_output` with the artifact_id to get more content
+ * 1. A tool call produces more output than fits inline
+ * 2. The result message quotes an `artifact_id`
+ * 3. LLM calls `read_artifact` with that id to get the rest
  *
  * @example
  * ```typescript
  * // Basic usage - read from beginning
- * await readCommandOutputTool.execute({
+ * await readArtifactTool.execute({
  *   artifact_id: "cmd-1706119234567.txt"
  * }, task, callbacks);
  *
- * // Search for specific content
- * await readCommandOutputTool.execute({
- *   artifact_id: "cmd-1706119234567.txt",
+ * // Search for specific content in a spilled tool result
+ * await readArtifactTool.execute({
+ *   artifact_id: "tool-1706119234567.txt",
  *   search: "error|failed"
  * }, task, callbacks);
  *
  * // Paginate through large output
- * await readCommandOutputTool.execute({
+ * await readArtifactTool.execute({
  *   artifact_id: "cmd-1706119234567.txt",
  *   offset: 32768,  // Start after first 32KB
  *   limit: 32768    // Read next 32KB
  * }, task, callbacks);
  * ```
  */
-export class ReadCommandOutputTool extends BaseTool<"read_command_output"> {
-	readonly name = "read_command_output" as const
+export class ReadArtifactTool extends BaseTool<"read_artifact"> {
+	readonly name = "read_artifact" as const
 
 	/**
-	 * Execute the read_command_output tool.
+	 * Execute the read_artifact tool.
 	 *
-	 * Reads persisted command output from disk, supporting both full reads and
+	 * Reads a persisted artifact from disk, supporting both full reads and
 	 * search-based filtering. Results include line numbers for easy reference.
 	 *
 	 * @param params - The tool parameters including artifact_id and optional search/pagination
 	 * @param task - The current task instance for error reporting and state management
 	 * @param callbacks - Callbacks for pushing tool results
 	 */
-	async execute(params: ReadCommandOutputParams, task: Task, callbacks: ToolCallbacks): Promise<void> {
+	async execute(params: ReadArtifactParams, task: Task, callbacks: ToolCallbacks): Promise<void> {
 		const { pushToolResult } = callbacks
-		const { artifact_id, search, offset = 0, limit = DEFAULT_LIMIT } = params
+		const { artifact_id, search, offset = 0 } = params
 
 		// Validate required parameters
 		if (!artifact_id) {
 			task.consecutiveMistakeCount++
-			task.recordToolError("read_command_output")
+			task.recordToolError("read_artifact")
 			task.didToolFailInCurrentTurn = true
-			const errorMsg = await task.sayAndCreateMissingParamError("read_command_output", "artifact_id")
+			const errorMsg = await task.sayAndCreateMissingParamError("read_artifact", "artifact_id")
 			pushToolResult(`Error: ${errorMsg}`)
 			return
 		}
 
 		// Validate artifact_id format to prevent path traversal
-		if (!this.isValidArtifactId(artifact_id)) {
+		if (!isValidArtifactId(artifact_id)) {
 			task.consecutiveMistakeCount++
-			task.recordToolError("read_command_output")
+			task.recordToolError("read_artifact")
 			task.didToolFailInCurrentTurn = true
-			const errorMsg = `Invalid artifact_id format: "${artifact_id}". Expected format: cmd-{timestamp}.txt (e.g., "cmd-1706119234567.txt")`
+			const errorMsg = `Invalid artifact_id format: "${artifact_id}". ${ARTIFACT_ID_GUIDANCE}`
 			await task.say("error", errorMsg)
 			pushToolResult(`Error: ${errorMsg}`)
 			return
@@ -125,21 +152,39 @@ export class ReadCommandOutputTool extends BaseTool<"read_command_output"> {
 			const provider = await task.providerRef.deref()
 			const globalStoragePath = provider?.context?.globalStorageUri?.fsPath
 
+			// The read window is bounded by the SAME budget the spill policy
+			// enforces (`maxInlineToolResultBytes`, default 24 KB). Reading back
+			// more than that would defeat the policy in a single call, so the
+			// requested limit is clamped rather than trusted.
+			const state = await provider?.getState?.()
+			const maxInlineBytes = resolveMaxInlineToolResultBytes(state)
+			const limit = Math.max(1, Math.min(params.limit ?? maxInlineBytes, maxInlineBytes))
+
 			if (!globalStoragePath) {
-				const errorMsg = "Unable to access command output storage. Global storage path is not available."
+				const errorMsg = "Unable to access artifact storage. Global storage path is not available."
 				await task.say("error", errorMsg)
 				pushToolResult(`Error: ${errorMsg}`)
 				return
 			}
 
 			const taskDir = await getTaskDirectoryPath(globalStoragePath, task.taskId)
-			const artifactPath = path.join(taskDir, "command-output", artifact_id)
 
-			// Check if artifact exists
-			try {
-				await fs.access(artifactPath)
-			} catch {
-				const errorMsg = `Artifact not found: "${artifact_id}". Please verify the artifact_id from the command output message. Available artifacts are created when command output exceeds the preview size.`
+			// Probe every directory an artifact of this kind may live in: `cmd`
+			// artifacts kept their historical `command-output` directory, newer
+			// kinds live under `artifacts`.
+			let artifactPath: string | undefined
+			for (const candidate of artifactCandidatePaths(taskDir, artifact_id)) {
+				try {
+					await fs.access(candidate)
+					artifactPath = candidate
+					break
+				} catch {
+					// Try the next directory.
+				}
+			}
+
+			if (!artifactPath) {
+				const errorMsg = `Artifact not found: "${artifact_id}". ${ARTIFACT_ID_GUIDANCE}`
 				await task.say("error", errorMsg)
 				task.didToolFailInCurrentTurn = true
 				pushToolResult(`Error: ${errorMsg}`)
@@ -179,11 +224,11 @@ export class ReadCommandOutputTool extends BaseTool<"read_command_output"> {
 				readEnd = Math.min(offset + limit, totalSize)
 			}
 
-			// Report to UI that we read command output
+			// Report to UI that we read an artifact
 			await task.say(
 				"tool",
 				JSON.stringify({
-					tool: "readCommandOutput",
+					tool: "readArtifact",
 					readStart,
 					readEnd,
 					totalBytes: totalSize,
@@ -195,28 +240,12 @@ export class ReadCommandOutputTool extends BaseTool<"read_command_output"> {
 			pushToolResult(result)
 		} catch (error) {
 			const errorMsg = error instanceof Error ? error.message : String(error)
-			await task.say("error", `Error reading command output: ${errorMsg}`)
+			await task.say("error", `Error reading artifact: ${errorMsg}`)
 			task.didToolFailInCurrentTurn = true
-			pushToolResult(`Error reading command output: ${errorMsg}`)
+			// The envelope, not a bare string: the model gets `failed_tool` plus this tool's
+			// minimal valid call, which is what a weak model needs when it guessed the id.
+			pushToolResult(formatResponse.toolError(`Error reading artifact: ${errorMsg}`, this.name))
 		}
-	}
-
-	/**
-	 * Validate artifact_id format to prevent path traversal attacks.
-	 *
-	 * Only accepts IDs matching the pattern `cmd-{digits}.txt` which are
-	 * generated by the OutputInterceptor. This prevents malicious paths
-	 * like `../../../etc/passwd` from being used.
-	 *
-	 * @param artifactId - The artifact ID to validate
-	 * @returns `true` if the format is valid, `false` otherwise
-	 * @private
-	 */
-	private isValidArtifactId(artifactId: string): boolean {
-		// Only allow alphanumeric, hyphens, underscores, and dots
-		// Must match pattern cmd-{digits}.txt
-		const validPattern = /^cmd-\d+\.txt$/
-		return validPattern.test(artifactId)
 	}
 
 	/**
@@ -260,7 +289,7 @@ export class ReadCommandOutputTool extends BaseTool<"read_command_output"> {
 			const numberedContent = this.addLineNumbers(content, startLineNumber)
 
 			const header = [
-				`[Command Output: ${artifactId}]`,
+				`[Artifact: ${artifactId}]`,
 				`Total size: ${this.formatBytes(totalSize)} | Showing bytes ${offset}-${endOffset} | ${truncated ? "TRUNCATED" : "COMPLETE"}`,
 				"",
 			].join("\n")
@@ -373,7 +402,7 @@ export class ReadCommandOutputTool extends BaseTool<"read_command_output"> {
 
 		if (matches.length === 0) {
 			const content = [
-				`[Command Output: ${artifactId}] (search: "${pattern}")`,
+				`[Artifact: ${artifactId}] (search: "${pattern}")`,
 				`Total size: ${this.formatBytes(totalSize)}`,
 				"",
 				"No matches found for the search pattern.",
@@ -385,7 +414,7 @@ export class ReadCommandOutputTool extends BaseTool<"read_command_output"> {
 		const matchedLines = matches.map((m) => `${String(m.lineNumber).padStart(5)} | ${m.content}`).join("\n")
 
 		const content = [
-			`[Command Output: ${artifactId}] (search: "${pattern}")`,
+			`[Artifact: ${artifactId}] (search: "${pattern}")`,
 			`Total matches: ${matches.length} | Showing first ${matches.length}`,
 			"",
 			matchedLines,
@@ -480,5 +509,5 @@ export class ReadCommandOutputTool extends BaseTool<"read_command_output"> {
 	}
 }
 
-/** Singleton instance of the ReadCommandOutputTool */
-export const readCommandOutputTool = new ReadCommandOutputTool()
+/** Singleton instance of the ReadArtifactTool */
+export const readArtifactTool = new ReadArtifactTool()

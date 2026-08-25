@@ -30,6 +30,7 @@ import {
 	Users2,
 	ArrowLeft,
 	GitCommitVertical,
+	GlobeLock,
 	GraduationCap,
 } from "lucide-react"
 
@@ -38,6 +39,8 @@ import {
 	type ExperimentId,
 	type TelemetrySetting,
 	DEFAULT_CHECKPOINT_TIMEOUT_SECONDS,
+	PRUNE_CONDENSE_DEFAULTS,
+	WEB_TOOLS_DEFAULTS,
 	ImageGenerationProvider,
 } from "@roo-code/types"
 
@@ -70,6 +73,7 @@ import ApiOptions from "./ApiOptions"
 import { AutoApproveSettings } from "./AutoApproveSettings"
 import { CheckpointSettings } from "./CheckpointSettings"
 import { MemorySettings } from "./MemorySettings"
+import { WebToolsSettings } from "./WebToolsSettings"
 import { NotificationSettings } from "./NotificationSettings"
 import { ContextManagementSettings } from "./ContextManagementSettings"
 import { SubagentSettings } from "./SubagentSettings"
@@ -106,6 +110,7 @@ export const sectionNames = [
 	"skills",
 	"checkpoints",
 	"memory",
+	"web",
 	"notifications",
 	"contextManagement",
 	"terminal",
@@ -171,6 +176,8 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 		autoCondenseContext,
 		autoCondenseContextPercent,
 		autoCondenseContextApiConfigId,
+		pruneBeforeCondense,
+		pruneToolResultBudget,
 		enableCheckpoints,
 		checkpointTimeout,
 		autoMemoryEnabled,
@@ -181,6 +188,11 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 		autoDreamMinHours,
 		autoDreamMinSessions,
 		memoryWriterApiConfigId,
+		webToolsEnabled,
+		webSearchBackend,
+		searxngBaseUrl,
+		webSearchMaxResults,
+		webFetchMaxBytes,
 		experiments,
 		maxOpenTabsContext,
 		maxWorkspaceFiles,
@@ -411,6 +423,15 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 					autoDreamMinSessions: autoDreamMinSessions ?? 5,
 					memoryWriterApiConfigId: memoryWriterApiConfigId || undefined,
 					autoCondenseContextApiConfigId: autoCondenseContextApiConfigId || undefined,
+					webToolsEnabled: webToolsEnabled ?? false,
+					webSearchBackend: webSearchBackend ?? "searxng",
+					// Sent as "" rather than undefined so clearing the field
+					// actually clears it: JSON.stringify drops undefined.
+					searxngBaseUrl: searxngBaseUrl ?? "",
+					webSearchMaxResults: webSearchMaxResults ?? WEB_TOOLS_DEFAULTS.DEFAULT_SEARCH_RESULTS,
+					webFetchMaxBytes: webFetchMaxBytes ?? WEB_TOOLS_DEFAULTS.DEFAULT_FETCH_BYTES,
+					pruneBeforeCondense: pruneBeforeCondense ?? true,
+					pruneToolResultBudget: pruneToolResultBudget ?? PRUNE_CONDENSE_DEFAULTS.DEFAULT_TOOL_RESULT_BUDGET,
 					writeDelayMs,
 					terminalShellIntegrationTimeout: terminalShellIntegrationTimeout ?? 30_000,
 					terminalShellIntegrationDisabled,
@@ -544,6 +565,7 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 			{ id: "mcp", icon: Server },
 			{ id: "checkpoints", icon: GitCommitVertical },
 			{ id: "memory", icon: Brain },
+			{ id: "web", icon: GlobeLock },
 			{ id: "notifications", icon: Bell },
 			{ id: "contextManagement", icon: Database },
 			{ id: "terminal", icon: SquareTerminal },
@@ -861,6 +883,16 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 							/>
 						)}
 
+						{/* Web Tools Section */}
+						{renderTab === "web" && (
+							<WebToolsSettings
+								webToolsEnabled={webToolsEnabled}
+								searxngBaseUrl={searxngBaseUrl}
+								webSearchMaxResults={webSearchMaxResults}
+								setCachedStateField={setCachedStateField}
+							/>
+						)}
+
 						{/* Notifications Section */}
 						{renderTab === "notifications" && (
 							<NotificationSettings
@@ -876,6 +908,8 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 								autoCondenseContext={autoCondenseContext}
 								autoCondenseContextPercent={autoCondenseContextPercent}
 								autoCondenseContextApiConfigId={autoCondenseContextApiConfigId}
+								pruneBeforeCondense={pruneBeforeCondense}
+								pruneToolResultBudget={pruneToolResultBudget}
 								listApiConfigMeta={listApiConfigMeta ?? []}
 								maxOpenTabsContext={maxOpenTabsContext}
 								maxWorkspaceFiles={maxWorkspaceFiles ?? 200}

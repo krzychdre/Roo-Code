@@ -96,6 +96,8 @@ import { SYSTEM_PROMPT } from "../prompts/system"
 import { buildNativeToolsArrayWithRestrictions } from "./build-tools"
 
 // core modules
+import { ArtifactStore } from "../artifacts/ArtifactStore"
+import { applyToolResultSpill, type ToolResultSpillContext } from "../artifacts/spillPolicy"
 import { ToolRepetitionDetector } from "../tools/ToolRepetitionDetector"
 import { restoreTodoListForTask } from "../tools/UpdateTodoListTool"
 import { FileContextTracker } from "../context-tracking/FileContextTracker"
@@ -393,6 +395,11 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	consecutiveMistakeCountForEditFile: Map<string, number> = new Map()
 	consecutiveNoToolUseCount: number = 0
 	consecutiveNoAssistantMessagesCount: number = 0
+	/**
+	 * Name of the tool whose failure last grew `consecutiveMistakeCount`.
+	 * Set by `recordToolError`, cleared when a turn used no tool at all.
+	 */
+	lastToolErrorName?: string
 	// Auto-condense circuit breaker: consecutive futile (errored or non-reducing)
 	// condense attempts. Once it reaches MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES the
 	// condense step is skipped for the rest of the task; a genuine reduction resets it.
@@ -632,13 +639,88 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	assistantMessageSavedToHistory = false
 
 	/**
+	 * Context for the tool-result spill policy: the artifact store plus the
+	 * inline byte budget. Built lazily by `ensureToolResultSpill` because the
+	 * task directory is resolved asynchronously, while the push below (the
+	 * point where a tool result becomes conversation content) is synchronous.
+	 */
+	private toolResultSpill?: ToolResultSpillContext
+
+	/** The task's artifact store; see `getArtifactStore`. */
+	private artifactStore?: ArtifactStore
+
+	/** In-flight store construction, so concurrent callers share one resolve. */
+	private artifactStoreInit?: Promise<void>
+
+	/**
+	 * Resolves (once) the artifact store for this task.
+	 *
+	 * Shared by every feature that persists oversized text: the push-time spill
+	 * policy and the deterministic pruner that runs under context pressure.
+	 * Failure is not fatal and is not retried per call: the callers degrade to
+	 * "keep everything inline", which is exactly the pre-artifact behavior.
+	 */
+	public async getArtifactStore(): Promise<ArtifactStore | undefined> {
+		if (this.artifactStore) {
+			return this.artifactStore
+		}
+
+		if (!this.artifactStoreInit) {
+			this.artifactStoreInit = (async () => {
+				try {
+					this.artifactStore = await ArtifactStore.forTask(this.globalStoragePath, this.taskId)
+				} catch (error) {
+					console.warn("[Task#getArtifactStore] Artifact store unavailable:", error)
+				} finally {
+					this.artifactStoreInit = undefined
+				}
+			})()
+		}
+
+		await this.artifactStoreInit
+		return this.artifactStore
+	}
+
+	/**
+	 * Prepares (or refreshes) the tool-result spill policy for this task.
+	 *
+	 * Called from the tool-dispatch path before any result is pushed. Failure is
+	 * not fatal: without a store the policy degrades to "keep everything
+	 * inline", which is exactly today's behavior.
+	 *
+	 * @param maxInlineBytes - Byte budget a single tool result may occupy inline.
+	 */
+	public async ensureToolResultSpill(maxInlineBytes: number): Promise<void> {
+		if (this.toolResultSpill) {
+			// The setting can change mid-task; the store never does.
+			this.toolResultSpill.maxInlineBytes = maxInlineBytes
+			return
+		}
+
+		const store = await this.getArtifactStore()
+
+		if (store) {
+			this.toolResultSpill = { store, maxInlineBytes }
+		}
+	}
+
+	/**
 	 * Push a tool_result block to userMessageContent, preventing duplicates.
 	 * Duplicate tool_use_ids cause API errors.
 	 *
+	 * This is the single choke point where a tool result becomes conversation
+	 * content, so it is also where the spill policy runs: an oversized result is
+	 * persisted as an artifact and replaced by a head/tail preview that cites
+	 * the artifact id.
+	 *
 	 * @param toolResult - The tool_result block to add
+	 * @param options.toolName - Canonical tool name, used for the spill bypass list
 	 * @returns true if added, false if duplicate was skipped
 	 */
-	public pushToolResultToUserContent(toolResult: Anthropic.ToolResultBlockParam): boolean {
+	public pushToolResultToUserContent(
+		toolResult: Anthropic.ToolResultBlockParam,
+		options?: { toolName?: string },
+	): boolean {
 		const existingResult = this.userMessageContent.find(
 			(block): block is Anthropic.ToolResultBlockParam =>
 				block.type === "tool_result" && block.tool_use_id === toolResult.tool_use_id,
@@ -649,7 +731,17 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			)
 			return false
 		}
-		this.userMessageContent.push(toolResult)
+
+		let blockToPush = toolResult
+
+		if (typeof toolResult.content === "string") {
+			const spilled = applyToolResultSpill(toolResult.content, options?.toolName, this.toolResultSpill)
+			if (spilled.artifactId) {
+				blockToPush = { ...toolResult, content: spilled.text }
+			}
+		}
+
+		this.userMessageContent.push(blockToPush)
 		return true
 	}
 	didRejectTool = false
@@ -1607,6 +1699,12 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	}
 
 	public recordToolError(toolName: ToolName, error?: string): void {
+		// Every site that grows `consecutiveMistakeCount` because a tool call failed also
+		// records the error here, so this is the one place that knows which tool the model
+		// is currently getting wrong. The consecutive-mistake guidance reads it to attach
+		// that tool's minimal valid example. It is cleared on a no-tool-used turn, where a
+		// stale name would invite a pointless re-call of a tool that had succeeded.
+		this.lastToolErrorName = toolName
 		this.tokenTracking.recordToolError(toolName, error)
 	}
 

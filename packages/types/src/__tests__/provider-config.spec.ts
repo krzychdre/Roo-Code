@@ -23,6 +23,8 @@ const SHARED_FIELD_NAMES = [
 	"modelTemperature",
 	"rateLimitSeconds",
 	"consecutiveMistakeLimit",
+	"slimToolset",
+	"slimHidesMcp",
 	"reasoningEffort",
 	"modelMaxTokens",
 	"modelMaxThinkingTokens",

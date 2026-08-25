@@ -245,7 +245,7 @@ Step 1: Create the server...`,
 
 		await skillTool.handle(mockTask as Task, block, mockCallbacks)
 
-		expect(mockCallbacks.handleError).toHaveBeenCalledWith("executing skill", error)
+		expect(mockCallbacks.handleError).toHaveBeenCalledWith("executing skill", error, "skill")
 	})
 
 	it("should reset consecutive mistake count on valid skill", async () => {

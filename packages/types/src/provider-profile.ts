@@ -104,6 +104,8 @@ const sharedFieldNames = [
 	"modelTemperature",
 	"rateLimitSeconds",
 	"consecutiveMistakeLimit",
+	"slimToolset",
+	"slimHidesMcp",
 	"reasoningEffort",
 	"modelMaxTokens",
 	"modelMaxThinkingTokens",

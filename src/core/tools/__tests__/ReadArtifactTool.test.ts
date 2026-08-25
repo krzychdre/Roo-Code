@@ -2,7 +2,7 @@ import * as fs from "fs/promises"
 import * as path from "path"
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest"
 
-import { ReadCommandOutputTool } from "../ReadCommandOutputTool"
+import { ReadArtifactTool } from "../ReadArtifactTool"
 import { Task } from "../../task/Task"
 
 // Mock filesystem operations
@@ -26,8 +26,8 @@ vi.mock("../../../utils/storage", () => ({
 	}),
 }))
 
-describe("ReadCommandOutputTool", () => {
-	let tool: ReadCommandOutputTool
+describe("ReadArtifactTool", () => {
+	let tool: ReadArtifactTool
 	let mockTask: any
 	let mockCallbacks: any
 	let mockFileHandle: any
@@ -37,7 +37,7 @@ describe("ReadCommandOutputTool", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 
-		tool = new ReadCommandOutputTool()
+		tool = new ReadArtifactTool()
 		globalStoragePath = "/mock/global/storage"
 		taskId = "task-123"
 
@@ -137,7 +137,7 @@ describe("ReadCommandOutputTool", () => {
 			await tool.execute({ artifact_id: artifactId }, mockTask, mockCallbacks)
 
 			const result = mockCallbacks.pushToolResult.mock.calls[0][0]
-			expect(result).toContain(`[Command Output: ${artifactId}]`)
+			expect(result).toContain(`[Artifact: ${artifactId}]`)
 			expect(result).toContain("Total size:")
 			expect(result).toMatch(/\d+(\.\d+)?(bytes|KB|MB)/)
 		})
@@ -467,9 +467,9 @@ describe("ReadCommandOutputTool", () => {
 			await tool.execute({ artifact_id: "" }, mockTask, mockCallbacks)
 
 			expect(mockTask.consecutiveMistakeCount).toBeGreaterThan(0)
-			expect(mockTask.recordToolError).toHaveBeenCalledWith("read_command_output")
+			expect(mockTask.recordToolError).toHaveBeenCalledWith("read_artifact")
 			expect(mockTask.didToolFailInCurrentTurn).toBe(true)
-			expect(mockTask.sayAndCreateMissingParamError).toHaveBeenCalledWith("read_command_output", "artifact_id")
+			expect(mockTask.sayAndCreateMissingParamError).toHaveBeenCalledWith("read_artifact", "artifact_id")
 		})
 
 		it("should handle missing global storage path", async () => {
@@ -498,7 +498,7 @@ describe("ReadCommandOutputTool", () => {
 			await tool.execute({ artifact_id: artifactId }, mockTask, mockCallbacks)
 
 			expect(mockTask.didToolFailInCurrentTurn).toBe(true)
-			expect(mockTask.say).toHaveBeenCalledWith("error", expect.stringContaining("Error reading command output"))
+			expect(mockTask.say).toHaveBeenCalledWith("error", expect.stringContaining("Error reading artifact"))
 		})
 
 		it("should ensure file handle is closed even on error", async () => {
@@ -574,6 +574,110 @@ describe("ReadCommandOutputTool", () => {
 			const result = mockCallbacks.pushToolResult.mock.calls[0][0]
 			// Should start at line 3 since we skipped 2 newlines
 			expect(result).toMatch(/3 \|/)
+		})
+	})
+
+	describe("Artifact kinds", () => {
+		const readWholeFile = (content: string) => {
+			const buffer = Buffer.from(content)
+			vi.mocked(fs.stat).mockResolvedValue({ size: buffer.length } as any)
+			mockFileHandle.read.mockImplementation((buf: Buffer) => {
+				buffer.copy(buf)
+				return Promise.resolve({ bytesRead: buffer.length })
+			})
+		}
+
+		it("reads a spilled tool result from the artifacts directory", async () => {
+			const artifactId = "tool-1706119234567.txt"
+			readWholeFile("spilled line one\nspilled line two\n")
+
+			await tool.execute({ artifact_id: artifactId }, mockTask, mockCallbacks)
+
+			expect(fs.access).toHaveBeenCalledWith(
+				path.join(globalStoragePath, "tasks", taskId, "artifacts", artifactId),
+			)
+			const result = mockCallbacks.pushToolResult.mock.calls[0][0]
+			expect(result).toContain(`[Artifact: ${artifactId}]`)
+			expect(result).toContain("spilled line one")
+		})
+
+		it("reads command output from the command-output directory", async () => {
+			const artifactId = "cmd-1706119234567.txt"
+			readWholeFile("command line one\n")
+
+			await tool.execute({ artifact_id: artifactId }, mockTask, mockCallbacks)
+
+			expect(fs.access).toHaveBeenCalledWith(
+				path.join(globalStoragePath, "tasks", taskId, "command-output", artifactId),
+			)
+			expect(mockCallbacks.pushToolResult.mock.calls[0][0]).toContain("command line one")
+		})
+
+		it("falls back to the other artifact directory when the first probe misses", async () => {
+			const artifactId = "tool-1706119234567.txt"
+			const artifactsPath = path.join(globalStoragePath, "tasks", taskId, "artifacts", artifactId)
+			const legacyPath = path.join(globalStoragePath, "tasks", taskId, "command-output", artifactId)
+
+			vi.mocked(fs.access).mockImplementation(async (probed: any) => {
+				if (probed === artifactsPath) {
+					throw new Error("ENOENT")
+				}
+				return undefined as any
+			})
+			readWholeFile("legacy location\n")
+
+			await tool.execute({ artifact_id: artifactId }, mockTask, mockCallbacks)
+
+			expect(fs.access).toHaveBeenCalledWith(legacyPath)
+			expect(mockCallbacks.pushToolResult.mock.calls[0][0]).toContain("legacy location")
+		})
+
+		it("searches inside a spilled tool result", async () => {
+			const artifactId = "tool-1706119234567.txt"
+			const content = "alpha\nbeta TODO here\ngamma\n"
+			const buffer = Buffer.from(content)
+			vi.mocked(fs.stat).mockResolvedValue({ size: buffer.length } as any)
+			mockFileHandle.read.mockImplementation((buf: Buffer, _o: number, length: number, position: number) => {
+				const pos = position ?? 0
+				if (pos >= buffer.length) {
+					return Promise.resolve({ bytesRead: 0 })
+				}
+				const bytesToRead = Math.min(length, buffer.length - pos)
+				buffer.copy(buf, 0, pos, pos + bytesToRead)
+				return Promise.resolve({ bytesRead: bytesToRead })
+			})
+
+			await tool.execute({ artifact_id: artifactId, search: "TODO" }, mockTask, mockCallbacks)
+
+			const result = mockCallbacks.pushToolResult.mock.calls[0][0]
+			expect(result).toContain("Total matches: 1")
+			expect(result).toContain("beta TODO here")
+		})
+	})
+
+	describe("Corrective error guidance", () => {
+		const expectGuidance = (text: string) => {
+			expect(text).toContain('"cmd-1706119234567.txt"')
+			expect(text).toContain('"tool-1706119234567.txt"')
+			expect(text).toContain("Copy the id verbatim")
+			expect(text).toContain("re-run the command or the tool")
+		}
+
+		it("tells the model what a valid id looks like when the artifact is missing", async () => {
+			vi.mocked(fs.access).mockRejectedValue(new Error("ENOENT"))
+
+			await tool.execute({ artifact_id: "tool-9999999999.txt" }, mockTask, mockCallbacks)
+
+			expectGuidance(mockCallbacks.pushToolResult.mock.calls[0][0])
+			expectGuidance(mockTask.say.mock.calls[0][1])
+		})
+
+		it("tells the model what a valid id looks like when the id is malformed", async () => {
+			await tool.execute({ artifact_id: "output.log" }, mockTask, mockCallbacks)
+
+			const pushed = mockCallbacks.pushToolResult.mock.calls[0][0]
+			expect(pushed).toContain("Invalid artifact_id format")
+			expectGuidance(pushed)
 		})
 	})
 })

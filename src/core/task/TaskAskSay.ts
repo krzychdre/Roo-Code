@@ -8,6 +8,7 @@ import {
 	type ToolProgressStatus,
 	type ContextCondense,
 	type ContextTruncation,
+	type ContextPrune,
 	RooCodeEventName,
 	isIdleAsk,
 	isInteractiveAsk,
@@ -540,6 +541,7 @@ export class TaskAskSay {
 		} = {},
 		contextCondense?: ContextCondense,
 		contextTruncation?: ContextTruncation,
+		contextPrune?: ContextPrune,
 	): Promise<undefined> {
 		if (this.access.abort) {
 			throw new Error(`[RooCode#say] task ${this.access.taskId}.${this.access.instanceId} aborted`)
@@ -576,6 +578,7 @@ export class TaskAskSay {
 						partial,
 						contextCondense,
 						contextTruncation,
+						contextPrune,
 					})
 				}
 			} else {
@@ -614,6 +617,7 @@ export class TaskAskSay {
 						images,
 						contextCondense,
 						contextTruncation,
+						contextPrune,
 					})
 				}
 			}
@@ -638,6 +642,7 @@ export class TaskAskSay {
 				checkpoint,
 				contextCondense,
 				contextTruncation,
+				contextPrune,
 			})
 		}
 	}
@@ -649,6 +654,6 @@ export class TaskAskSay {
 				relPath ? ` for '${relPath.toPosix()}'` : ""
 			} without value for required parameter '${paramName}'. Retrying...`,
 		)
-		return formatResponse.toolError(formatResponse.missingToolParameterError(paramName))
+		return formatResponse.toolError(formatResponse.missingToolParameterError(paramName), toolName)
 	}
 }

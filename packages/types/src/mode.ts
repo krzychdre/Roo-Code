@@ -192,7 +192,7 @@ export const DEFAULT_MODES: readonly ModeConfig[] = [
 		whenToUse:
 			"Use this mode when you need to plan, design, or strategize before implementation. Perfect for breaking down complex problems, creating technical specifications, designing system architecture, or brainstorming solutions before coding.",
 		description: "Plan and design before implementation",
-		groups: ["read", ["edit", { fileRegex: "\\.md$", description: "Markdown files only" }], "mcp"],
+		groups: ["read", ["edit", { fileRegex: "\\.md$", description: "Markdown files only" }], "mcp", "web"],
 		planApprovalRequired: true,
 		customInstructions:
 			"1. Do some information gathering (using provided tools) to get more context about the task.\n\n2. You should also ask the user clarifying questions to get a better understanding of the task.\n\n3. Once you've gained more context about the user's request, break down the task into clear, actionable steps and create a todo list using the `update_todo_list` tool. Each todo item should be:\n   - Specific and actionable\n   - Listed in logical execution order\n   - Focused on a single, well-defined outcome\n   - Clear enough that another mode could execute it independently\n\n   **Note:** If the `update_todo_list` tool is not available, write the plan to a markdown file (e.g., `plan.md` or `todo.md`) instead.\n\n4. As you gather more information or discover new requirements, update the todo list to reflect the current understanding of what needs to be accomplished.\n\n5. Ask the user if they are pleased with this plan, or if they would like to make any changes. Think of this as a brainstorming session where you can discuss the task and refine the todo list.\n\n6. Include Mermaid diagrams if they help clarify complex workflows or system architecture. Please avoid using double quotes (\"\") and parentheses () inside square brackets ([]) in Mermaid diagrams, as this can cause parsing errors.\n\n7. Use the switch_mode tool to request that the user switch to another mode to implement the solution.\n\n**IMPORTANT: Focus on creating clear, actionable todo lists rather than lengthy markdown documents. Use the todo list as your primary planning tool to track and organize the work that needs to be done.**\n\n**CRITICAL: Never provide level of effort time estimates (e.g., hours, days, weeks) for tasks. Focus solely on breaking down the work into clear, actionable steps without estimating how long they will take.**\n\nUnless told otherwise, if you want to save a plan file, put it in the /plans directory",
@@ -205,7 +205,7 @@ export const DEFAULT_MODES: readonly ModeConfig[] = [
 		whenToUse:
 			"Use this mode when you need to write, modify, or refactor code. Ideal for implementing features, fixing bugs, creating new files, or making code improvements across any programming language or framework.",
 		description: "Write, modify, and refactor code",
-		groups: ["read", "edit", "command", "mcp"],
+		groups: ["read", "edit", "command", "mcp", "web"],
 	},
 	{
 		slug: "ask",
@@ -215,9 +215,9 @@ export const DEFAULT_MODES: readonly ModeConfig[] = [
 		whenToUse:
 			"Use this mode when you need explanations, documentation, or answers to technical questions. Best for understanding concepts, analyzing existing code, getting recommendations, or learning about technologies without making changes.",
 		description: "Get answers and explanations",
-		groups: ["read", "mcp"],
+		groups: ["read", "mcp", "web"],
 		customInstructions:
-			"You can analyze code, explain concepts, and access external resources. When an MCP server that provides web search or web page fetching/scraping is connected, prefer to use it eagerly rather than answering from memory alone: reach for it whenever a question touches current events, recent releases, library or API versions, third-party documentation, or anything that may have changed since your training cutoff or that you are not confident about. After searching, cite the sources you used. If no web-capable MCP server is available, answer from your existing knowledge and note when the information may be outdated. Always answer the user's questions thoroughly, and do not switch to implementing code unless explicitly requested by the user. Include Mermaid diagrams when they clarify your response.",
+			"You can analyze code, explain concepts, and access external resources. Prefer looking things up over answering from memory alone: reach for the web whenever a question touches current events, recent releases, library or API versions, third-party documentation, or anything that may have changed since your training cutoff or that you are not confident about. Use the `web_search` and `web_fetch` tools first when they are available. If they are not, and an MCP server that provides web search or web page fetching/scraping is connected, use that instead. After searching, cite the sources you used. Only when no web tool of either kind is available, answer from your existing knowledge and say that the information may be outdated. Always answer the user's questions thoroughly, and do not switch to implementing code unless explicitly requested by the user. Include Mermaid diagrams when they clarify your response.",
 	},
 	{
 		slug: "debug",
@@ -227,7 +227,7 @@ export const DEFAULT_MODES: readonly ModeConfig[] = [
 		whenToUse:
 			"Use this mode when you're troubleshooting issues, investigating errors, or diagnosing problems. Specialized in systematic debugging, adding logging, analyzing stack traces, and identifying root causes before applying fixes.",
 		description: "Diagnose and fix software issues",
-		groups: ["read", "edit", "command", "mcp"],
+		groups: ["read", "edit", "command", "mcp", "web"],
 		customInstructions:
 			"Reflect on 5-7 different possible sources of the problem, distill those down to 1-2 most likely sources, and then add logs to validate your assumptions. Explicitly ask the user to confirm the diagnosis before fixing the problem.",
 	},

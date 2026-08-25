@@ -91,7 +91,7 @@ export class UseMcpToolTool extends BaseTool<"use_mcp_tool"> {
 				pushToolResult,
 			)
 		} catch (error) {
-			await handleError("executing MCP tool", error as Error)
+			await handleError("executing MCP tool", error as Error, this.name)
 		}
 	}
 

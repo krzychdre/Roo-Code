@@ -687,6 +687,37 @@ export class NativeToolCallParser {
 				}
 				break
 
+			case "web_search":
+				// Mirrors the complete-call branch: a bare string is accepted
+				// because weak models routinely send one instead of an array.
+				if (typeof partialArgs.queries === "string") {
+					nativeArgs = { queries: [partialArgs.queries] }
+				} else if (partialArgs.queries !== undefined) {
+					nativeArgs = {
+						queries: Array.isArray(partialArgs.queries)
+							? partialArgs.queries.filter((q: unknown): q is string => typeof q === "string")
+							: [],
+					}
+				}
+				break
+
+			case "web_fetch":
+				if (partialArgs.url !== undefined) {
+					nativeArgs = {
+						url: partialArgs.url,
+					}
+				}
+				break
+
+			case "search_task_history":
+				if (partialArgs.query !== undefined) {
+					nativeArgs = {
+						query: partialArgs.query,
+						max_results: this.coerceOptionalNumber(partialArgs.max_results),
+					}
+				}
+				break
+
 			default:
 				break
 		}
@@ -947,6 +978,7 @@ export class NativeToolCallParser {
 					}
 					break
 
+				case "read_artifact":
 				case "read_command_output":
 					if (args.artifact_id !== undefined) {
 						nativeArgs = {
@@ -954,6 +986,37 @@ export class NativeToolCallParser {
 							search: args.search,
 							offset: args.offset,
 							limit: args.limit,
+						} as NativeArgsFor<TName>
+					}
+					break
+
+				case "web_search":
+					// Accept a bare string too: weak models routinely send
+					// `{ "queries": "foo" }` instead of an array.
+					if (typeof args.queries === "string" && args.queries.trim()) {
+						nativeArgs = { queries: [args.queries] } as NativeArgsFor<TName>
+					} else if (Array.isArray(args.queries)) {
+						nativeArgs = {
+							queries: args.queries.filter((query: unknown) => typeof query === "string"),
+						} as NativeArgsFor<TName>
+					}
+					break
+
+				case "web_fetch":
+					if (args.url !== undefined) {
+						nativeArgs = {
+							url: args.url,
+						} as NativeArgsFor<TName>
+					}
+					break
+
+				case "search_task_history":
+					if (args.query !== undefined) {
+						nativeArgs = {
+							query: args.query,
+							// Weak models send "20" as often as 20; coerce so a
+							// string does not silently fall back to the default.
+							max_results: this.coerceOptionalNumber(args.max_results),
 						} as NativeArgsFor<TName>
 					}
 					break

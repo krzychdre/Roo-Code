@@ -265,7 +265,7 @@ export class ApplyDiffTool extends BaseTool<"apply_diff"> {
 
 			return
 		} catch (error) {
-			await handleError("applying diff", error as Error)
+			await handleError("applying diff", error as Error, this.name)
 			await task.diffViewProvider.reset()
 			this.resetPartialState()
 			task.processQueuedMessages()

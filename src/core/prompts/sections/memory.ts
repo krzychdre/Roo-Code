@@ -2,11 +2,14 @@
  * Memory system-prompt sections.
  *
  * Two thin wrappers over [`memoryPrompt.ts`](../../memory/memoryPrompt):
- * - {@link getMemorySection} — the behavioral instructions (what/when/how to
- *   save, what NOT to save, the type taxonomy). Injected between
- *   `getRulesSection` and `getSystemInfoSection` in `system.ts`.
- * - {@link getMemoryIndexSection} — the truncated `MEMORY.md` index content.
- *   Appended after custom instructions so memory is orthogonal to mode rules.
+ * - {@link getMemorySection} - the behavioral instructions (what/when/how to
+ *   save, what NOT to save, the type taxonomy).
+ * - {@link getMemoryIndexSection} - the truncated `MEMORY.md` index content.
+ *
+ * Both close the STABLE HEAD in `system.ts` (WS-F): they are the last two
+ * entries of `stableHead`, after `getSystemInfoSection`, because they are
+ * mode-independent and a mode switch should keep them cached. Anything printed
+ * after them lives in the variable tail.
  *
  * Both are `async` because they read `MEMORY.md` from disk; both return "" when
  * memory is disabled so the caller can treat the result as an optional insert.

@@ -91,6 +91,8 @@ export interface TaskApiLoopAccess {
 	consecutiveMistakeLimit: number
 	consecutiveNoToolUseCount: number
 	consecutiveNoAssistantMessagesCount: number
+	/** Tool whose failure last grew `consecutiveMistakeCount`; see Task#lastToolErrorName. */
+	lastToolErrorName?: string
 
 	// State flags
 	skipPrevResponseIdOnce: boolean
@@ -400,9 +402,14 @@ export class TaskApiLoop {
 			)
 
 			if (response === "messageResponse") {
+				// Only when the counter grew from failing tool calls. On a no-tool-used turn
+				// `lastToolErrorName` was cleared, so no example is attached and the model reads
+				// the plain guidance instead of being nudged to re-call a tool that worked.
+				const failedToolName = this.access.lastToolErrorName
+
 				currentUserContent.push(
 					...[
-						{ type: "text" as const, text: formatResponse.tooManyMistakes(text) },
+						{ type: "text" as const, text: formatResponse.tooManyMistakes(text, failedToolName) },
 						...formatResponse.imageBlocks(images),
 					],
 				)
@@ -411,6 +418,7 @@ export class TaskApiLoop {
 			}
 
 			this.access.consecutiveMistakeCount = 0
+			this.access.lastToolErrorName = undefined
 		}
 	}
 
@@ -753,6 +761,11 @@ export class TaskApiLoop {
 				if (fallback === "skipped") {
 					// Increment consecutive no-tool-use counter
 					this.access.consecutiveNoToolUseCount++
+
+					// This turn's mistake is "no tool at all", not a failing tool call. Drop the
+					// remembered tool so the mistake-limit guidance does not hand back an example
+					// for a tool that had actually succeeded.
+					this.access.lastToolErrorName = undefined
 
 					if (this.access.consecutiveNoToolUseCount >= 2) {
 						await this.access.askSay.say("error", "MODEL_NO_TOOLS_USED")
