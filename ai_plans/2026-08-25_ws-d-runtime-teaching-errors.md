@@ -116,8 +116,11 @@ because the closure already early-returns on it.
 
 ## Change list
 
-1. `toolName` threaded through all 24 tool-side `handleError` calls (`this.name` inside a
-   `BaseTool` subclass, the literal name in the standalone-function tools).
+1. `toolName` threaded through all 24 tool-side `handleError` calls: 23 in the tools
+   themselves (22 files, `CodebaseSearchTool` has two) plus the partial-message catch in
+   `BaseTool.ts:120`. Every tool is a `BaseTool` subclass, so all 24 pass `this.name` and no
+   literal name had to be repeated. The 25th call site, the custom-tool catch in
+   `presentAssistantMessage.ts`, deliberately stays 2-argument (see the audit above).
 2. Central accounting in both closures (kept byte-identical, as they were).
 3. `BaseTool.handle` safety net around `execute`.
 4. Direct `toolError` sites given their name: `SearchTaskHistoryTool`, `WebFetchTool`,
@@ -147,17 +150,30 @@ because the closure already early-returns on it.
 
 ## Results
 
-- Branch `feat/34-runtime-teaching-errors`, two commits:
-  `4b962e02c` (main fix) and `95ba9a8c1` (plan doc results).
-- WS-D suite baseline before the change: 7 files, 99 tests, all passing.
-- After the change: 8 files, 122 tests, all passing
-  (`teaching-errors`, `examples`, `baseTool`, `presentAssistantMessage-minimal-example`,
-  `presentAssistantMessage-runtime-errors`, `TaskApiLoop.mistake-limit-example`, `rules`,
-  `objective`).
-- Regression sweep over the touched tools (`web-tools`, `search-task-history`,
-  `read-artifact`, `run-parallel-tasks`, `applyDiffTool`, `writeToFileTool`,
-  `executeCommandTool`, `presentAssistantMessage*`): 22 files, 356 tests passing.
-- `pnpm check-types` in `src/` (`tsc --noEmit`): clean.
+Branch `feat/34-runtime-teaching-errors`, commit `c93bf8cae` (plus this doc update).
+
+- WS-D suite before the change: 7 files, 99 tests, all passing.
+- WS-D suite plus the whole `core/assistant-message/__tests__` directory after the change:
+  14 files, 226 tests, all passing. The new
+  `presentAssistantMessage-runtime-errors.spec.ts` adds 6 tests, `examples.spec.ts` grows
+  from 86 to 94 tests (schema-type conformance per tool plus 6 negative self-tests of the
+  checker), `baseTool.spec.ts` from 4 to 8.
+- Regression sweep `core/tools/__tests__/ services/web/__tests__/ searchTaskHistory.spec.ts`:
+  34 files, 746 tests passing, 1 pre-existing suite failure.
+- Pre-existing failure NOT caused by this branch: `core/tools/__tests__/editTool.spec.ts`
+  fails at COLLECTION with `[vitest] No "rename" export is defined on the "fs/promises"
+mock`, thrown from `packages/agent-interchange/src/handoffs.ts:122` via
+  `core/memory/paths.ts` and `core/config/ContextProxy.ts`. Verified identical on
+  `feat/33-prune-row-forced-truncation` by checking the base branch out and running the same
+  file. Not touched here; it needs the spec's `fs/promises` mock extended, which belongs to
+  whoever owns that import chain.
+- 12 assertions in 8 pre-existing tool specs were updated from the 2-argument to the
+  3-argument `handleError` shape (`askFollowupQuestionTool`, `editFileTool`, `listFilesTool`,
+  `runSlashCommandTool`, `searchReplaceTool`, `skillTool`, `switchModeTool`,
+  `useMcpToolTool`, `writeToFileTool`), and three `RunParallelTasksTool.spec.ts` assertions
+  followed the em-dash removal in the subtask report heading.
+- `pnpm check-types` from the repo root: 14 tasks successful (includes `tsc --noEmit` in
+  `src/`). `pnpm lint` ran through the pre-commit hook: clean.
 
 ## Deliberately out of scope
 
