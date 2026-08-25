@@ -53,6 +53,19 @@ separator: exactly the contract, nothing more. The no-hub figure (11684) is larg
 RULES and the `====\n\nMODE\n\n` header happen to match too; that is a bonus, not a promise, and a
 mode with its own MCP allowlist or its own skills does not get it.
 
+> **Amended 2026-08-25** (see `ai_plans/2026-08-25_prefix-opener-review-fixes.md`). The stable
+> opener was reworded and is now 66 bytes shorter, so every "after" number above drops by exactly
+> 66: hub connected 8252 to **8186**, no hub 11684 to **11618**, stable head 8243 to **8177**,
+> whole prompt 12324 to **12258**. The `MIN_SHARED_PREFIX_BYTES` floor stays at 8000, because a
+> deliberate shortening of head text is not the regression that floor exists to catch.
+>
+> **Amended again 2026-08-25, hardening round 2** (same doc, "Hardening round 2" section). The
+> opener was reworded a second time to drop a universal quantifier and to give bindingness one
+> referent. It is 10 bytes LONGER than v1 (231 B against 221 B), so every number above moves back
+> up by exactly 10: hub connected 8186 to **8196**, no hub 11618 to **11628**, stable head 8177 to
+> **8187**, whole prompt 12258 to **12268**. The floor still stays at 8000: it does not follow head
+> text edits in either direction.
+
 With memory enabled the head grows by the memory behavioral section (9225 B measured) plus the
 `MEMORY.md` index (up to 25 KB), so on a real installation the shared prefix is roughly 17 to 42 KB
 instead of 17 bytes.
@@ -65,7 +78,7 @@ per-workspace or per-machine (fixed for a given install and workspace, identical
 
 | Section                    | Varies with                                        | Class | Bytes (approx) | Old position        | New position    |
 | -------------------------- | -------------------------------------------------- | ----- | -------------- | ------------------- | --------------- |
-| Stable opener (new)        | nothing                                            | a     | 287            | did not exist       | 1 (head)        |
+| Stable opener (new)        | nothing                                            | a     | 231            | did not exist       | 1 (head)        |
 | MARKDOWN RULES             | nothing                                            | a     | 325            | 2                   | 2 (head)        |
 | TOOL USE                   | nothing                                            | a     | 363            | 3                   | 3 (head)        |
 | Tool Use Guidelines        | nothing                                            | a     | 1430           | 4                   | 4 (head)        |
@@ -112,12 +125,38 @@ workstream is about ORDER, so any deviation has to be visible in review.
 
 1. **New stable opener** (`STABLE_PROMPT_OPENER` in `src/core/prompts/system.ts`). The pointer is
    load-bearing: a weak model that no longer reads its persona in the first sentence has to be
-   told where it lives. Shipped text:
+   told where it lives. Shipped text (as amended twice on 2026-08-25, see
+   `ai_plans/2026-08-25_prefix-opener-review-fixes.md`, sections "Fix" and "Hardening round 2"):
+
+    > You are Tumble Code, an AI coding agent. Your mode is defined later in this prompt and is
+    > binding on you: the MODE section states your role, and your mode's own instructions, if it
+    > has any, appear inside USER'S CUSTOM INSTRUCTIONS.
+
+    The intermediate v1 wording, replaced the same day, was:
+
+    > You are Tumble Code, an AI coding agent. Your mode is defined later in this prompt: the MODE
+    > section states your role, and any mode-specific rules for you appear inside USER'S CUSTOM
+    > INSTRUCTIONS. Both are binding on you.
+
+    It was replaced for two reasons. "ANY mode-specific rules for you appear inside USER'S CUSTOM
+    INSTRUCTIONS" is a universal claim with a counterexample in the same prompt, because AVAILABLE
+    SKILLS is filtered per mode and so also carries mode-scoped content; and "Both are binding on
+    you" points at two things, one of which (the mode's own instructions) is empty in `code` mode.
+
+    The text WS-F originally shipped was:
 
     > You are Tumble Code, an AI coding agent. Your mode is defined at the end of this prompt and
     > both parts of it are binding on you: the MODE section states your role, and the
     > "Mode-specific Instructions" block inside USER'S CUSTOM INSTRUCTIONS states the rules you
     > must follow in that mode.
+
+    A review found two false claims in it. First, "Mode-specific Instructions" renders only when
+    the mode has non-empty `customInstructions`, and the default `code` mode has none, so the most
+    used mode of all was pointed at a block that is not in its prompt; the replacement phrases that
+    destination conditionally ("if it has any"), which is true whether or not the block is there.
+    Second, "at the end of this prompt" is wrong: MODE is the fifth of seven tail sections, with
+    USER'S CUSTOM INSTRUCTIONS and the deferred-tools catalog after it; the replacement says "later
+    in this prompt".
 
     **The plan's verbatim wording was corrected here; treat this as a plan-level bug.** The plan
     specified "Your current mode, its role, and its rules are defined in the MODE section at the
@@ -128,8 +167,8 @@ workstream is about ORDER, so any deviation has to be visible in review.
     INSTRUCTIONS, under a heading that introduces the whole block as "instructions provided by the
     user". A weak model that followed the plan's pointer would read two sentences of persona,
     never find rules there, and then meet its own operating protocol framed as a user's wish. The
-    shipped opener names both destinations and states plainly that both bind the model. It is
-    still two sentences and still byte-identical across modes, so the KV-cache property is intact.
+    shipped opener names both destinations and states plainly that the mode binds the model. It is
+    two short sentences and still byte-identical across modes, so the KV-cache property is intact.
 
 2. **New MODE section header.** The role definition is now wrapped in `====\n\nMODE\n\n...` so the
    opener's pointer refers to something that exists. An empty role definition emits nothing.
@@ -218,7 +257,8 @@ Checked and found already deterministic:
    are left in the tail because the plan's order is the source of truth for this workstream, and
    because RULES depends on the profile (`isStealthModel`) while MODES depends on the user's mode
    inventory: both are stable-per-install rather than stable-per-anything. With no MCP hub they
-   land inside the shared region anyway (the 11684 vs 8243 gap); with a hub connected and an
+   land inside the shared region anyway (the 11684 vs 8243 gap, 11628 vs 8187 after both
+   2026-08-25 opener amendments); with a hub connected and an
    orchestrator switch they do not, which is what makes the follow-up worth doing.
 3. **The MEMORY.md index sits at the END of the head, per the plan, not in the tail.** This is a
    deliberate trade: the index is mode-independent, so keeping it in the head buys back up to
