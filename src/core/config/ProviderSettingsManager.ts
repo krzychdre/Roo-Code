@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { ExtensionContext } from "vscode"
 import { z, ZodError } from "zod"
 import deepEqual from "fast-deep-equal"
@@ -121,7 +122,10 @@ export class ProviderSettingsManager {
 	}
 
 	public generateId() {
-		return Math.random().toString(36).substring(2, 15)
+		// CSPRNG id so profileId (which indexes stored secrets via
+		// allSecrets[profileId]) is not predictable. Previously used
+		// Math.random() — a non-cryptographic PRNG (CodeQL #9/#10).
+		return randomUUID()
 	}
 
 	// Synchronize readConfig/writeConfig operations to avoid data loss.

@@ -1579,4 +1579,36 @@ describe("ProviderSettingsManager", () => {
 			expect(result.activeProfileId).toBe("local-id")
 		})
 	})
+
+	describe("generateId", () => {
+		// Regression test for CodeQL insecure-randomness alerts #9/#10:
+		// generateId previously returned Math.random().toString(36).substring(2,15).
+		// The id flows into profileId which indexes stored secrets
+		// (allSecrets[profileId]), so a non-cryptographic PRNG made
+		// secret-store keys predictable. generateId is public on the class,
+		// so we can call it directly for an isolated white-box check.
+
+		it("does not use Math.random (CSPRNG, not a non-cryptographic PRNG)", () => {
+			const randomSpy = vi.spyOn(Math, "random").mockImplementation(() => 0)
+			const id = providerSettingsManager.generateId()
+			expect(randomSpy).not.toHaveBeenCalled()
+			// Belt-and-suspenders: if Math.random (mocked to 0) had been used,
+			// the old implementation would have produced an empty string.
+			expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+			randomSpy.mockRestore()
+		})
+
+		it("returns a UUID v4 string (CSPRNG shape)", () => {
+			const id = providerSettingsManager.generateId()
+			expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+		})
+
+		it("produces unique ids across many calls (collision sanity)", () => {
+			const ids = new Set<string>()
+			for (let i = 0; i < 1000; i++) {
+				ids.add(providerSettingsManager.generateId())
+			}
+			expect(ids.size).toBe(1000)
+		})
+	})
 })
