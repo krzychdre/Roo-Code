@@ -45,10 +45,14 @@
 	}
 
 	function escapeHtml(s) {
+		// Also escape " and ' so output is safe inside quoted attributes
+		// (CodeQL #8/#11: values were interpolated into src/title attributes).
 		return String(s == null ? "" : s)
 			.replace(/&/g, "&amp;")
 			.replace(/</g, "&lt;")
 			.replace(/>/g, "&gt;")
+			.replace(/"/g, "&quot;")
+			.replace(/'/g, "&#39;")
 	}
 
 	function fmtTime(ts) {
