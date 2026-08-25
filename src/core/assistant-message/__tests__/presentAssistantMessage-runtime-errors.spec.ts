@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 
 import { TOOL_MINIMAL_EXAMPLES } from "../../prompts/tools/native-tools/examples"
 import { AskIgnoredError } from "../../task/AskIgnoredError"
+import { isValidToolName, validateToolUse } from "../../tools/validateToolUse"
 import { presentAssistantMessage } from "../presentAssistantMessage"
 
 vi.mock("../../task/Task")
@@ -41,6 +42,10 @@ describe("runtime tool failures are counted and taught", () => {
 
 	beforeEach(() => {
 		listFilesHandle.mockReset()
+		// The validation gate is shared state across the tests in this file: put it back to
+		// "known tool, validation passes" so every test starts from the normal path.
+		vi.mocked(isValidToolName).mockReturnValue(true)
+		vi.mocked(validateToolUse).mockImplementation(() => {})
 
 		mockTask = {
 			taskId: "test-task-id",
@@ -183,6 +188,25 @@ describe("runtime tool failures are counted and taught", () => {
 		expect(mockTask.recordToolError).not.toHaveBeenCalled()
 	})
 
+	it("does not charge a tool that already delivered its result", async () => {
+		// The shape of the bug this guards: `write_to_file`, `apply_diff` and `edit_file` push
+		// the SUCCESS result and only then run their trailing cleanup (diff view reset, queued
+		// messages) inside the same `try`. A throw in that cleanup used to be charged to a tool
+		// that had just worked, and the error envelope was dropped as a duplicate, so the model
+		// was never told why.
+		listFilesHandle.mockImplementation(async (_task: any, _block: any, callbacks: any) => {
+			callbacks.pushToolResult("Files listed successfully")
+			await callbacks.handleError("listing files", new Error("cleanup blew up"), "list_files")
+		})
+
+		await presentAssistantMessage(mockTask)
+
+		expect(mockTask.consecutiveMistakeCount).toBe(0)
+		expect(mockTask.recordToolError).not.toHaveBeenCalled()
+		// The success result is what the model receives; the late error is dropped as a duplicate.
+		expect(String(resultFor("tool_call_list_files").content)).toBe("Files listed successfully")
+	})
+
 	it("counts each failing turn once, so the circuit breaker can trip", async () => {
 		listFilesHandle.mockImplementation(async (_task: any, _block: any, callbacks: any) => {
 			await callbacks.handleError("listing files", new Error("EACCES"), "list_files")
@@ -197,5 +221,38 @@ describe("runtime tool failures are counted and taught", () => {
 
 		expect(mockTask.consecutiveMistakeCount).toBe(3)
 		expect(mockTask.recordToolError).toHaveBeenCalledTimes(3)
+	})
+
+	describe("the validation rejection only records real tool names", () => {
+		it("records the name when the tool exists but is rejected for the mode", async () => {
+			vi.mocked(validateToolUse).mockImplementation(() => {
+				throw new Error('Tool "list_files" is not allowed in architect mode.')
+			})
+
+			await presentAssistantMessage(mockTask)
+
+			expect(mockTask.consecutiveMistakeCount).toBe(1)
+			expect(mockTask.recordToolError).toHaveBeenCalledWith("list_files", expect.stringContaining("not allowed"))
+			expect(listFilesHandle).not.toHaveBeenCalled()
+		})
+
+		it("skips recording a hallucinated tool name so telemetry stays typed", async () => {
+			// `validateToolUse` throws for an unknown name too, and the name is an arbitrary
+			// model-supplied string at that point. Recording it would put it into
+			// `Task.toolUsage` and into the `TaskToolFailed` event, where every consumer
+			// expects a real `ToolName`.
+			mockTask.assistantMessageContent[0].name = "list_file"
+			vi.mocked(isValidToolName).mockReturnValue(false)
+			vi.mocked(validateToolUse).mockImplementation(() => {
+				throw new Error('Unknown tool "list_file". This tool does not exist.')
+			})
+
+			await presentAssistantMessage(mockTask)
+
+			// Still a mistake, still reported to the model: only the typed record is skipped.
+			expect(mockTask.consecutiveMistakeCount).toBe(1)
+			expect(mockTask.recordToolError).not.toHaveBeenCalled()
+			expect(String(resultFor("tool_call_list_files").content)).toContain("Unknown tool")
+		})
 	})
 })

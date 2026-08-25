@@ -57,7 +57,7 @@ import { tryAutoMaterializeDirectCall } from "../task/deferred-tools-resolver"
  * the one callback every tool routes its failures through, means one rule for all call sites
  * and no per-tool bookkeeping to forget in the next tool.
  *
- * Three guards:
+ * Four guards:
  *
  * - No `toolName`: the caller opted out on purpose. The custom-tool catch does its own
  *   accounting under the static `custom_tool` bucket, and counting it here as well would
@@ -67,9 +67,22 @@ import { tryAutoMaterializeDirectCall } from "../task/deferred-tools-resolver"
  *   correct on its own.
  * - `abort` / `abandoned`: a user cancel tears tools down mid-flight, and those failures
  *   belong to the cancel, not to the model.
+ * - `resultAlreadyDelivered`: the tool ALREADY pushed its result for this block, so the
+ *   failure now being reported happened after the call succeeded. Several tools push the
+ *   success result and only then run their trailing cleanup (`diffViewProvider.reset()`,
+ *   `processQueuedMessages()`) inside the same `try`, and the safety net in
+ *   `BaseTool.handle` forwards anything that escapes there to this same closure. Counting
+ *   it would charge the model a mistake for a tool that worked and would leave
+ *   `lastToolErrorName` pointing at it, while `pushToolResult` drops the error envelope as
+ *   a duplicate anyway, so the model never even learns why it was charged.
  */
-function recordToolFailureAsMistake(cline: Task, error: Error, toolName?: string): void {
-	if (!toolName || error instanceof AskIgnoredError || cline.abort || cline.abandoned) {
+function recordToolFailureAsMistake(
+	cline: Task,
+	error: Error,
+	toolName: string | undefined,
+	resultAlreadyDelivered: boolean,
+): void {
+	if (!toolName || resultAlreadyDelivered || error instanceof AskIgnoredError || cline.abort || cline.abandoned) {
 		return
 	}
 
@@ -288,8 +301,11 @@ export async function presentAssistantMessage(cline: Task) {
 					return
 				}
 				// Count the failure before anything that can itself fail, so a broken UI
-				// channel cannot silently drop the accounting.
-				recordToolFailureAsMistake(cline, error, toolName)
+				// channel cannot silently drop the accounting. `hasToolResult` reports whether
+				// this block already delivered its result: if it did, the tool SUCCEEDED and
+				// this error comes from its trailing cleanup, which is not a model mistake
+				// (and whose envelope `pushToolResult` drops as a duplicate anyway).
+				recordToolFailureAsMistake(cline, error, toolName, hasToolResult)
 
 				const errorString = `Error ${action}: ${JSON.stringify(serializeError(error))}`
 
@@ -700,8 +716,11 @@ export async function presentAssistantMessage(cline: Task) {
 					return
 				}
 				// Count the failure before anything that can itself fail, so a broken UI
-				// channel cannot silently drop the accounting.
-				recordToolFailureAsMistake(cline, error, toolName)
+				// channel cannot silently drop the accounting. `hasToolResult` reports whether
+				// this block already delivered its result: if it did, the tool SUCCEEDED and
+				// this error comes from its trailing cleanup, which is not a model mistake
+				// (and whose envelope `pushToolResult` drops as a duplicate anyway).
+				recordToolFailureAsMistake(cline, error, toolName, hasToolResult)
 
 				const errorString = `Error ${action}: ${JSON.stringify(serializeError(error))}`
 
@@ -771,7 +790,16 @@ export async function presentAssistantMessage(cline: Task) {
 					// The counter already grew on the line above, so record only the name here:
 					// without this, `lastToolErrorName` stays stale and the mistake-limit guidance
 					// names the wrong tool (or none) after a run of rejected calls.
-					cline.recordToolError(block.name as ToolName, error.message)
+					//
+					// `validateToolUse` throws for a hallucinated tool name too, and `block.name`
+					// is an arbitrary model-supplied string at this point. Recording it would let
+					// that string into `Task.toolUsage` and into the `TaskToolFailed` telemetry
+					// event, where every consumer expects a real `ToolName`. So record only names
+					// that pass the same validity check the dispatcher uses; for an invalid name
+					// the counter bump and the error envelope below are the whole response.
+					if (isValidToolName(String(block.name), stateExperiments)) {
+						cline.recordToolError(block.name as ToolName, error.message)
+					}
 					// For validation errors (unknown tool, tool not allowed for mode), we need to:
 					// 1. Send a tool_result with the error (required for native tool calling)
 					// 2. NOT set didAlreadyUseTool = true (the tool was never executed, just failed validation)

@@ -1,6 +1,7 @@
 import { toolNames } from "@roo-code/types"
 
 import { isValidArtifactId } from "../../../../artifacts/ArtifactStore"
+import { validateParallelParams } from "../../../../tools/RunParallelTasksTool"
 import { getNativeTools } from "../index"
 import { DYNAMIC_TOOL_NAMES, TOOL_MINIMAL_EXAMPLES, getToolMinimalExample } from "../examples"
 
@@ -32,6 +33,15 @@ describe("TOOL_MINIMAL_EXAMPLES", () => {
 	it("uses an artifact_id the read_artifact validator accepts", () => {
 		expect(isValidArtifactId(TOOL_MINIMAL_EXAMPLES.read_artifact.artifact_id)).toBe(true)
 		expect(isValidArtifactId(TOOL_MINIMAL_EXAMPLES.read_command_output.artifact_id)).toBe(true)
+	})
+
+	it("teaches a run_parallel_tasks call the real runtime validator accepts", () => {
+		// Schema conformance is not enough here: the runtime adds rules the JSON Schema cannot
+		// express (at least two subtasks, no orchestrator or architect mode). The example used
+		// to have a single subtask, which the validator rejected on every call, so the teaching
+		// example taught a call that always failed. This asserts against the production
+		// validator so the example cannot drift back.
+		expect(validateParallelParams(TOOL_MINIMAL_EXAMPLES.run_parallel_tasks)).toMatchObject({ ok: true })
 	})
 })
 

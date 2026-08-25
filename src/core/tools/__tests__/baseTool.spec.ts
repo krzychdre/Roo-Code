@@ -1,5 +1,6 @@
 import { Task } from "../../task/Task"
 import type { ToolUse } from "../../../shared/tools"
+import { AskIgnoredError } from "../../task/AskIgnoredError"
 import { BaseTool, ToolCallbacks } from "../BaseTool"
 
 vi.mock("vscode", () => ({
@@ -216,6 +217,27 @@ describe("BaseTool partial error handling (TL-4)", () => {
 			await tool.handle(task, makeCompleteBlock(), makeCallbacks())
 
 			expect(task.didToolFailInCurrentTurn).toBeUndefined()
+		})
+
+		it("forwards an AskIgnoredError unchanged instead of swallowing it", async () => {
+			// `AskIgnoredError` means a newer ask superseded an older one: control flow, not a
+			// tool failure. The closure in `presentAssistantMessage` is what ignores it, so the
+			// safety net must hand it over as-is, with the tool name, and must not transform it
+			// into a generic Error (the closure checks `instanceof`).
+			const askIgnored = new AskIgnoredError("ask superseded")
+			const tool = new ThrowingTool(askIgnored)
+			const callbacks = makeCallbacks()
+
+			await tool.handle(makeMockTask(), makeCompleteBlock(), callbacks)
+
+			expect(callbacks.handleError).toHaveBeenCalledTimes(1)
+
+			const [action, error, toolName] = (callbacks.handleError as any).mock.calls[0]
+
+			expect(action).toBe("executing write_to_file")
+			expect(error).toBe(askIgnored)
+			expect(error).toBeInstanceOf(AskIgnoredError)
+			expect(toolName).toBe("write_to_file")
 		})
 
 		it("leaves a successful execute untouched", async () => {
