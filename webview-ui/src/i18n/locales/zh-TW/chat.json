@@ -231,6 +231,12 @@
 			"messagesRemoved": "已移除 {{count}} 則訊息",
 			"messagesRemoved_other": "已移除 {{count}} 則訊息",
 			"description": "為保持在上下文視窗限制內，已從對話中移除較舊的訊息。與壓縮相比，這是一種快速但上下文保留較少的方法。"
+		},
+		"prune": {
+			"title": "舊的工具輸出已移至磁碟",
+			"summary": "{{count}} 個工具結果,釋放約 {{kb}} KB",
+			"summary_other": "{{count}} 個工具結果,釋放約 {{kb}} KB",
+			"description": "舊且過大的工具結果已儲存為任務 artifact 並替換為簡短預覽。沒有任何遺失:每個預覽都標明其 artifact 名稱,模型可用 read_artifact 讀回全文。這取代了 AI 摘要執行,因此沒有對話文字被改寫。"
 		}
 	},
 	"skill": {
@@ -368,7 +374,23 @@
 		"triggerLabel_zero": "0 個自動核准",
 		"triggerLabel_one": "1 個自動核准",
 		"triggerLabel_other": "{{count}} 個自動核准",
-		"triggerLabelAll": "BRRR"
+		"triggerLabelAll": "BRRR",
+		"mode": {
+			"label": "自動核准模式",
+			"forcedHint": "一律由目前模式核准",
+			"default": {
+				"label": "預設",
+				"description": "遵守各個開關、命令允許清單以及工作區外/受保護檔案的防護。"
+			},
+			"bypass": {
+				"label": "繞過",
+				"description": "半自動:無需詢問即核准每次讀取、寫入、MCP、子任務、模式切換和命令(即使是未知的)。後續問題仍會中斷你。"
+			},
+			"autonomous": {
+				"label": "自主",
+				"description": "全自動:包含繞過的全部功能,且後續問題自動作答,使代理一直執行直到完成。"
+			}
+		}
 	},
 	"announcement": {
 		"title": "Tumble Code {{version}} 已發布",
@@ -525,5 +547,44 @@
 		"reviewFile": "審閱計劃",
 		"loading": "正在載入計劃…",
 		"pauseTitle": "計劃已更新 — 請審查並批准"
+	},
+	"subagents": {
+		"headerActive": "子代理:{{active}}/{{total}} 個活動中",
+		"headerDone": "子代理:{{total}} 個已完成",
+		"noOutput": "尚無輸出。",
+		"tokens": "已用 token",
+		"cancel": "取消此子代理",
+		"send": "傳送",
+		"answerPlaceholder": "回答子代理的問題…",
+		"guidancePlaceholder": "傳送指導(在下一個停止點送達)…",
+		"status": {
+			"queued": "排隊中",
+			"running": "執行中",
+			"awaiting_input": "需要輸入",
+			"completed": "已完成",
+			"failed": "失敗",
+			"cancelled": "已取消"
+		},
+		"apiConfig": "API 設定檔:{{name}} (固定到子任務的模式;在 設定 → 模式 中修改)",
+		"permissionNeeded": "此子任務需要權限才能繼續"
+	},
+	"webSearch": {
+		"wantsToSearch": "Tumble 想在網頁中搜尋 <code>{{queries}}</code>",
+		"didSearch": "Tumble 已在網頁中搜尋 <code>{{queries}}</code>"
+	},
+	"webFetch": {
+		"wantsToFetch": "Tumble 想讀取 <code>{{url}}</code>",
+		"didFetch": "Tumble 已讀取 <code>{{url}}</code>"
+	},
+	"readArtifact": {
+		"title": "Tumble 讀取 artifact"
+	},
+	"searchTaskHistory": {
+		"title": "Tumble 搜尋了此任務的歷史"
+	},
+	"memoryActivity": {
+		"recalling": "正在回憶記憶…",
+		"writing": "正在寫入記憶…",
+		"both": "正在回憶並寫入記憶…"
 	}
 }

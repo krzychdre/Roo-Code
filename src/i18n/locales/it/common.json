@@ -162,7 +162,9 @@
 		"organization_share_link_copied": "Link di condivisione organizzazione copiato negli appunti!",
 		"public_share_link_copied": "Link di condivisione pubblica copiato negli appunti!",
 		"mode_exported": "Modalità '{{mode}}' esportata con successo",
-		"mode_imported": "Modalità importata con successo"
+		"mode_imported": "Modalità importata con successo",
+		"memory_saved": "Memoria: salvati {{count}} nuovi ricordi",
+		"memory_consolidated": "Memoria: {{count}} ricordi consolidati"
 	},
 	"answers": {
 		"yes": "Sì",
@@ -252,5 +254,21 @@
 	"docsLink": {
 		"label": "Docs",
 		"url": "https://docs.tumblecode.dev"
+	},
+	"agentInterchange": {
+		"pick_up_title": "Riprendi il lavoro di un altro agente",
+		"pick_up_placeholder": "Consegne in sospeso per te, poi le sessioni recenti di Claude Code in quest'area di lavoro",
+		"handoff_from": "consegna da {{agent}} · {{when}}",
+		"session_from": "{{agent}} · {{when}}",
+		"nothing_to_pick_up": "Nessuna consegna o sessione di Claude Code trovata per quest'area di lavoro.",
+		"reading": "Lettura della sessione dell'altro agente…",
+		"read_failed": "Quella sessione non può essere letta; i suoi file potrebbero essere stati rimossi.",
+		"no_provider": "Apri prima il pannello di Tumble Code, poi riprova.",
+		"no_current_task": "Non c'è alcuna attività in esecuzione da consegnare.",
+		"next_steps_title": "Consegna a Claude Code",
+		"next_steps_prompt": "Cosa deve fare Claude Code dopo? Separa i passaggi con ';'. Lascia vuoto per consegnare solo il briefing.",
+		"next_steps_placeholder": "Esegui la suite di integrazione; apri la PR",
+		"handoff_created": "Consegnato a {{agent}} come {{id}}.",
+		"open_handoff": "Apri documento"
 	}
 }

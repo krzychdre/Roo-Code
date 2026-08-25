@@ -162,7 +162,9 @@
 		"organization_share_link_copied": "Kuruluş paylaşım bağlantısı panoya kopyalandı!",
 		"public_share_link_copied": "Herkese açık paylaşım bağlantısı panoya kopyalandı!",
 		"mode_exported": "'{{mode}}' modu başarıyla dışa aktarıldı",
-		"mode_imported": "Mod başarıyla içe aktarıldı"
+		"mode_imported": "Mod başarıyla içe aktarıldı",
+		"memory_saved": "Bellek: {{count}} yeni anı kaydedildi",
+		"memory_consolidated": "Bellek: {{count}} anı birleştirildi"
 	},
 	"answers": {
 		"yes": "Evet",
@@ -252,5 +254,21 @@
 	"docsLink": {
 		"label": "Docs",
 		"url": "https://docs.tumblecode.dev"
+	},
+	"agentInterchange": {
+		"pick_up_title": "Başka bir aracın işini devral",
+		"pick_up_placeholder": "Sana bırakılan devirler, sonra bu çalışma alanındaki son Claude Code oturumları",
+		"handoff_from": "{{agent}} devri · {{when}}",
+		"session_from": "{{agent}} · {{when}}",
+		"nothing_to_pick_up": "Bu çalışma alanı için devir veya Claude Code oturumu bulunamadı.",
+		"reading": "Diğer aracın oturumu okunuyor…",
+		"read_failed": "Bu oturum okunamadı; dosyaları kaldırılmış olabilir.",
+		"no_provider": "Önce Tumble Code panelini açın, sonra tekrar deneyin.",
+		"no_current_task": "Devredilecek çalışan görev yok.",
+		"next_steps_title": "Claude Code'a devret",
+		"next_steps_prompt": "Claude Code bundan sonra ne yapsın? Adımları ';' ile ayırın. Yalnızca brifingi devretmek için boş bırakın.",
+		"next_steps_placeholder": "Entegrasyon paketini çalıştır; PR'ı aç",
+		"handoff_created": "{{agent}} adlı araca {{id}} olarak devredildi.",
+		"open_handoff": "Belgeyi aç"
 	}
 }

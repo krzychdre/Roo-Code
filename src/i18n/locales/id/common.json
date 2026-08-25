@@ -162,7 +162,9 @@
 		"organization_share_link_copied": "Tautan berbagi organisasi disalin ke clipboard!",
 		"public_share_link_copied": "Tautan berbagi publik disalin ke clipboard!",
 		"mode_exported": "Mode '{{mode}}' berhasil diekspor",
-		"mode_imported": "Mode berhasil diimpor"
+		"mode_imported": "Mode berhasil diimpor",
+		"memory_saved": "Memori: {{count}} ingatan baru disimpan",
+		"memory_consolidated": "Memori: {{count}} ingatan dikonsolidasikan"
 	},
 	"answers": {
 		"yes": "Ya",
@@ -252,5 +254,21 @@
 	"docsLink": {
 		"label": "Docs",
 		"url": "https://docs.tumblecode.dev"
+	},
+	"agentInterchange": {
+		"pick_up_title": "Lanjutkan pekerjaan dari agen lain",
+		"pick_up_placeholder": "Handoff yang ditinggalkan untuk Anda, lalu sesi Claude Code terbaru di ruang kerja ini",
+		"handoff_from": "handoff dari {{agent}} · {{when}}",
+		"session_from": "{{agent}} · {{when}}",
+		"nothing_to_pick_up": "Tidak ada handoff atau sesi Claude Code yang ditemukan untuk ruang kerja ini.",
+		"reading": "Membaca sesi agen lain…",
+		"read_failed": "Sesi itu tidak dapat dibaca; file mungkin telah dihapus.",
+		"no_provider": "Buka panel Tumble Code dulu, lalu coba lagi.",
+		"no_current_task": "Tidak ada tugas yang berjalan untuk diserahkan.",
+		"next_steps_title": "Serahkan ke Claude Code",
+		"next_steps_prompt": "Apa yang harus Claude Code lakukan selanjutnya? Pisahkan langkah dengan ';'. Kosongkan untuk menyerahkan hanya briefing.",
+		"next_steps_placeholder": "Jalankan suite integrasi; buka PR",
+		"handoff_created": "Diserahkan ke {{agent}} sebagai {{id}}.",
+		"open_handoff": "Buka dokumen"
 	}
 }

@@ -162,7 +162,9 @@
 		"organization_share_link_copied": "Liên kết chia sẻ tổ chức đã được sao chép vào clipboard!",
 		"public_share_link_copied": "Liên kết chia sẻ công khai đã được sao chép vào clipboard!",
 		"mode_exported": "Chế độ '{{mode}}' đã được xuất thành công",
-		"mode_imported": "Chế độ đã được nhập thành công"
+		"mode_imported": "Chế độ đã được nhập thành công",
+		"memory_saved": "Bộ nhớ: đã lưu {{count}} ký ức mới",
+		"memory_consolidated": "Bộ nhớ: đã gộp {{count}} ký ức"
 	},
 	"answers": {
 		"yes": "Có",
@@ -259,5 +261,21 @@
 	"docsLink": {
 		"label": "Docs",
 		"url": "https://docs.tumblecode.dev"
+	},
+	"agentInterchange": {
+		"pick_up_title": "Tiếp tục công việc từ tác nhân khác",
+		"pick_up_placeholder": "Bàn giao để lại cho bạn, rồi các phiên Claude Code gần đây trong không gian làm việc này",
+		"handoff_from": "bàn giao từ {{agent}} · {{when}}",
+		"session_from": "{{agent}} · {{when}}",
+		"nothing_to_pick_up": "Không tìm thấy bàn giao hay phiên Claude Code nào cho không gian làm việc này.",
+		"reading": "Đang đọc phiên của tác nhân khác…",
+		"read_failed": "Không thể đọc phiên đó; các tệp của nó có thể đã bị xoá.",
+		"no_provider": "Hãy mở bảng Tumble Code trước, rồi thử lại.",
+		"no_current_task": "Không có tác vụ đang chạy để bàn giao.",
+		"next_steps_title": "Bàn giao cho Claude Code",
+		"next_steps_prompt": "Claude Code nên làm gì tiếp theo? Phân tách các bước bằng ';'. Để trống nếu chỉ muốn bàn giao bản tóm tắt.",
+		"next_steps_placeholder": "Chạy bộ tích hợp; mở PR",
+		"handoff_created": "Đã bàn giao cho {{agent}} với mã {{id}}.",
+		"open_handoff": "Mở tài liệu"
 	}
 }

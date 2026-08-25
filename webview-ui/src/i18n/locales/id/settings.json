@@ -41,7 +41,10 @@
 		"experimental": "Eksperimental",
 		"language": "Bahasa",
 		"about": "Tentang Tumble Code",
-		"skills": "Skills"
+		"skills": "Skills",
+		"memory": "Memori",
+		"web": "Alat web",
+		"subagents": "Subagen"
 	},
 	"about": {
 		"bugReport": {
@@ -695,6 +698,15 @@
 		"enableSubfolderRules": {
 			"label": "Aktifkan aturan subfolder",
 			"description": "Temukan dan muat file .roo/rules dan AGENTS.md secara rekursif dari subdirektori. Berguna untuk monorepo dengan aturan per-paket."
+		},
+		"pruneBeforeCondense": {
+			"label": "Pangkas keluaran alat lama sebelum mengompakkan",
+			"description": "Ketika konteks menipis, pertama pindahkan hasil alat lama yang terlalu besar ke artefak tugas dan tinggalkan pratinjau singkat yang menyebut artefaknya. Ini tidak memakan biaya panggilan API dan tidak kehilangan apa pun: model membaca teks lengkapnya kembali dengan read_artifact. Ringkasan AI hanya berjalan jika pemangkasan tidak cukup. Matikan untuk langsung menuju ringkasan."
+		},
+		"pruneToolResultBudget": {
+			"label": "Ambang pemangkasan untuk satu hasil alat",
+			"bytes": "byte",
+			"description": "Hasil alat lama yang lebih besar dari ini dipindahkan ke artefak dan diganti dengan 20 baris pertama dan terakhirnya. Nilai lebih rendah membebaskan lebih banyak konteks per pass; nilai lebih tinggi menyimpan lebih banyak keluaran inline."
 		}
 	},
 	"terminal": {
@@ -792,6 +804,14 @@
 		"todoList": {
 			"label": "Aktifkan alat daftar tugas",
 			"description": "Saat diaktifkan, Tumble dapat membuat dan mengelola daftar tugas untuk melacak kemajuan tugas. Ini membantu mengatur tugas kompleks menjadi langkah-langkah yang dapat dikelola."
+		},
+		"slimToolset": {
+			"label": "Set alat ramping (model kecil)",
+			"description": "Tawarkan profil ini satu alat yang jelas untuk setiap pekerjaan: read_file, search_files, list_files, codebase_search, apply_diff, write_to_file, execute_command, read_artifact, alat web, dan alat tugas (ask, complete, switch mode, new task, todo list, skill, load tools). Kata kerja edit cadangan (edit, search_replace, edit_file, apply_patch), pembuatan gambar, tugas paralel, dan perintah slash disembunyikan. Model kecil berhenti memilih editor yang salah. Jika model tetap memanggil alat tersembunyi, alat itu tetap berjalan.",
+			"hideMcp": {
+				"label": "Sembunyikan juga alat MCP",
+				"description": "Skema alat MCP biasanya bagian terbesar dari prompt alat. Tetap aktifkan kecuali profil ini memerlukan server MCP."
+			}
 		}
 	},
 	"experimental": {
@@ -1046,5 +1066,71 @@
 			"descriptionTooLong": "Deskripsi harus 1024 karakter atau kurang"
 		},
 		"footer": "Buat skills Anda sendiri dengan mode Skill Writer, tersedia di <MarketplaceLink>Modes Marketplace</MarketplaceLink>."
+	},
+	"memory": {
+		"enable": {
+			"label": "Aktifkan memori persisten",
+			"description": "Saat aktif, agen memelihara memori berbasis berkas tentang siapa Anda, preferensi Anda, dan konteks proyek. Memori bertahan lintas sesi di penyimpanan pribadi ekstensi. Agen membacanya setiap tugas dan menulisnya saat Anda bekerja. <0>Pelajari lebih lanjut</0>"
+		},
+		"recall": {
+			"label": "Aktifkan penarikan memori relevan",
+			"description": "Saat aktif, agen menjalankan kueri latar belakang singkat untuk memunculkan ingatan paling relevan untuk permintaan Anda saat ini. Menonaktifkannya menghemat biaya kueri sampingan; indeks memori tetap dimuat. Memerlukan penyedia model yang dikonfigurasi."
+		},
+		"directory": {
+			"label": "Direktori memori kustom (opsional)",
+			"description": "Menimpa lokasi penyimpanan memori bawaan. Harus berupa path absolut. Pengaturan proyek diabaikan untuk bidang ini (hanya sumber tepercaya) agar repositori tidak dapat mengalihkan penulisan memori. Kosongkan untuk menggunakan lokasi penyimpanan ekstensi bawaan.",
+			"placeholder": "/absolute/path/to/memory/dir"
+		},
+		"shareWithClaudeCode": {
+			"label": "Bagikan memori dengan Claude Code",
+			"description": "Membaca dan menulis set MEMORY.md yang sama dengan Claude Code, di ~/.claude/projects/<workspace>/memory, alih-alih menyimpannya terpisah di penyimpanan ekstensi. Kedua agen lalu mengingat hal yang sama tentang ruang kerja ini.",
+			"overridden": "Dinonaktifkan karena direktori memori kustom disetel; path eksplisit diutamakan daripada berbagi."
+		},
+		"writerProfile": {
+			"label": "Profil API penulis memori",
+			"description": "Mengarahkan penulis memori latar belakang (ekstraksi dan konsolidasi dream) ke profil API yang lebih murah atau lokal, bukan model latar depan. Profil yang usang atau dihapus otomatis kembali ke profil saat ini.",
+			"useCurrent": "Gunakan profil saat ini"
+		},
+		"dream": {
+			"enable": {
+				"label": "Aktifkan konsolidasi memori (dream)",
+				"description": "Saat aktif, agen secara berkala meninjau dan menata ulang memori: menggabungkan duplikat, menghapus fakta yang bertentangan, dan memangkas entri usang. Berjalan otomatis ketika cukup waktu dan sesi telah berlalu."
+			},
+			"minHours": {
+				"label": "Jam minimum antar dream",
+				"description": "Jam sejak konsolidasi terakhir sebelum dream berikutnya dapat berjalan. Bawaan 24. Rentang: 1-168."
+			},
+			"minSessions": {
+				"label": "Sesi minimum antar dream",
+				"description": "Sesi tugas sejak konsolidasi terakhir yang diperlukan sebelum dream berikutnya berjalan. Bawaan 5. Rentang: 1-100. Ini gerbang lewati, jadi undercount hanya menunda dream."
+			}
+		}
+	},
+	"web": {
+		"enable": {
+			"label": "Aktifkan alat web",
+			"description": "Memberikan mode dengan grup Akses web alat native web_search dan web_fetch, didukung oleh instansi SearXNG yang di-host sendiri. Saat nonaktif, alat disembunyikan dari model dan tidak dapat dipanggil."
+		},
+		"searxngBaseUrl": {
+			"label": "URL dasar SearXNG",
+			"description": "URL dasar instansi SearXNG Anda. Format keluaran JSON-nya harus diaktifkan, jika tidak web_search tidak dapat membaca hasilnya.",
+			"placeholder": "https://searx.example.org"
+		},
+		"maxResults": {
+			"label": "Hasil per kueri",
+			"description": "Berapa banyak hasil pencarian yang web_search kembalikan untuk setiap kueri. Nilai lebih rendah menjaga jendela konteks tetap kecil. Bawaan 5."
+		}
+	},
+	"subagents": {
+		"maxConcurrency": {
+			"label": "Maksimum subagen paralel",
+			"description": "Batas keras berapa banyak sub-tugas paralel (run_parallel_tasks) yang boleh berjalan pada saat yang sama. Setel ke Mati (di bawah 2) untuk menonaktifkan sub-tugas paralel sepenuhnya; orkestrator lalu mendelegasikan melalui sub-tugas tunggal. Orkestrator dapat meminta lebih sedikit, tidak pernah lebih banyak; sub-tugas tambahan menunggu dalam antrean.",
+			"off": "Mati"
+		},
+		"followupTimeout": {
+			"label": "Waktu tunggu pertanyaan",
+			"description": "Berapa lama pertanyaan subagen menunggu jawaban Anda sebelum disetujui otomatis dan subagen melanjutkan sendiri. 0 menjawab segera (sepenuhnya otonom).",
+			"immediate": "mati"
+		}
 	}
 }

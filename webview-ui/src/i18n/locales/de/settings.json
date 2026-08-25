@@ -41,7 +41,10 @@
 		"experimental": "Experimentell",
 		"language": "Sprache",
 		"about": "Über Tumble Code",
-		"skills": "Skills"
+		"skills": "Skills",
+		"memory": "Gedächtnis",
+		"web": "Web-Werkzeuge",
+		"subagents": "Subagenten"
 	},
 	"about": {
 		"bugReport": {
@@ -695,6 +698,15 @@
 		"enableSubfolderRules": {
 			"label": "Unterordner-Regeln aktivieren",
 			"description": "Rekursiv .roo/rules und AGENTS.md-Dateien aus Unterverzeichnissen laden. Nützlich für Monorepos mit paketspezifischen Regeln."
+		},
+		"pruneBeforeCondense": {
+			"label": "Alte Werkzeugausgabe vor dem Kondensieren beschneiden",
+			"description": "Wenn der Kontext knapp wird, verschiebe zuerst alte, zu große Werkzeugergebnisse in Aufgaben-Artefakte und hinterlasse eine kurze Vorschau, die das Artefakt nennt. Das kostet keinen API-Aufruf und verliert nichts: das Modell liest den Volltext mit read_artifact zurück. Eine KI-Zusammenfassung läuft nur, wenn das Beschneiden nicht reicht. Schalte es aus, um direkt zur Zusammenfassung zu gehen."
+		},
+		"pruneToolResultBudget": {
+			"label": "Beschneidungsschwelle für ein einzelnes Werkzeugergebnis",
+			"bytes": "Bytes",
+			"description": "Alte Werkzeugergebnisse, die größer als dies sind, werden in ein Artefakt verschoben und durch ihre ersten und letzten 20 Zeilen ersetzt. Niedrigere Werte geben pro Durchgang mehr Kontext frei; höhere Werte behalten mehr Ausgabe inline."
 		}
 	},
 	"terminal": {
@@ -792,6 +804,14 @@
 		"todoList": {
 			"label": "Todo-Listen-Tool aktivieren",
 			"description": "Wenn aktiviert, kann Tumble Todo-Listen erstellen und verwalten, um den Aufgabenfortschritt zu verfolgen. Dies hilft, komplexe Aufgaben in überschaubare Schritte zu organisieren."
+		},
+		"slimToolset": {
+			"label": "Schmales Werkzeugset (kleine Modelle)",
+			"description": "Bietet diesem Profil ein offensichtliches Werkzeug pro Aufgabe: read_file, search_files, list_files, codebase_search, apply_diff, write_to_file, execute_command, read_artifact, die Web-Werkzeuge und die Aufgaben-Werkzeuge (ask, complete, switch mode, new task, todo list, skill, load tools). Die überzähligen Editierverben (edit, search_replace, edit_file, apply_patch), Bildgenerierung, parallele Aufgaben und Slash-Befehle werden verborgen. Kleine Modelle wählen nicht mehr den falschen Editor. Wenn das Modell trotzdem ein verborgenes Werkzeug aufruft, läuft es dennoch.",
+			"hideMcp": {
+				"label": "Auch MCP-Werkzeuge verbergen",
+				"description": "MCP-Werkzeugschemas sind meist der größte Teil des Werkzeug-Prompts. Lass dies an, sofern dieses Profil keinen MCP-Server benötigt."
+			}
 		}
 	},
 	"experimental": {
@@ -1046,5 +1066,71 @@
 			"descriptionTooLong": "Beschreibung muss 1024 Zeichen oder weniger sein"
 		},
 		"footer": "Erstelle deine eigenen Skills mit dem Skill Writer Modus, verfügbar im <MarketplaceLink>Modes Marketplace</MarketplaceLink>."
+	},
+	"memory": {
+		"enable": {
+			"label": "Persistentes Gedächtnis aktivieren",
+			"description": "Wenn aktiviert, pflegt der Agent ein dateibasiertes Gedächtnis darüber, wer du bist, deine Vorlieben und den Projektkontext. Das Gedächtnis bleibt über Sitzungen hinweg in einem erweiterungseigenen Speicher erhalten. Der Agent liest es bei jeder Aufgabe und schreibt während der Arbeit hinein. <0>Mehr erfahren</0>"
+		},
+		"recall": {
+			"label": "Abrufen relevanter Erinnerungen aktivieren",
+			"description": "Wenn aktiviert, führt der Agent eine schnelle Hintergrundabfrage aus, um die relevantesten Erinnerungen für deine aktuelle Anfrage zu ermitteln. Deaktivieren spart die Kosten der Nebenabfrage; der Gedächtnisindex wird dennoch geladen. Erfordert einen konfigurierten Modellanbieter."
+		},
+		"directory": {
+			"label": "Benutzerdefiniertes Gedächtnisverzeichnis (optional)",
+			"description": "Setzt den Standardspeicherort des Gedächtnisses außer Kraft. Muss ein absoluter Pfad sein. Projekteinstellungen werden für dieses Feld ignoriert (nur vertrauenswürdige Quellen), sodass ein Repository keine Gedächtnisschreibvorgänge umleiten kann. Leer lassen, um den Standard-Speicherort der Erweiterung zu verwenden.",
+			"placeholder": "/absolute/path/to/memory/dir"
+		},
+		"shareWithClaudeCode": {
+			"label": "Gedächtnis mit Claude Code teilen",
+			"description": "Liest und schreibt denselben MEMORY.md-Satz wie Claude Code, unter ~/.claude/projects/<workspace>/memory, anstatt einen separaten im Erweiterungsspeicher zu behalten. Beide Agenten erinnern sich dann an dasselbe für diesen Workspace.",
+			"overridden": "Deaktiviert, da ein benutzerdefiniertes Gedächtnisverzeichnis gesetzt ist; ein expliziter Pfad hat Vorrang vor dem Teilen."
+		},
+		"writerProfile": {
+			"label": "API-Profil des Gedächtnisschreibers",
+			"description": "Leitet Hintergrund-Gedächtnisschreiber (Extraktion und Traum-Konsolidierung) an ein billigeres oder lokales API-Profil statt an das Vordergrundmodell. Ein veraltetes oder gelöschtes Profil fällt automatisch auf das aktuelle Profil zurück.",
+			"useCurrent": "Aktuelles Profil verwenden"
+		},
+		"dream": {
+			"enable": {
+				"label": "Gedächtnis-Konsolidierung (Traum) aktivieren",
+				"description": "Wenn aktiviert, überprüft und reorganisiert der Agent das Gedächtnis regelmäßig: führt Duplikate zusammen, entfernt widersprüchliche Fakten und bereinigt veraltete Einträge. Läuft automatisch, wenn genug Zeit und Sitzungen vergangen sind."
+			},
+			"minHours": {
+				"label": "Mindeststunden zwischen Träumen",
+				"description": "Stunden seit der letzten Konsolidierung, bevor der nächste Traum laufen kann. Standard 24. Bereich: 1-168."
+			},
+			"minSessions": {
+				"label": "Mindestsitzungen zwischen Träumen",
+				"description": "Aufgabensitzungen seit der letzten Konsolidierung, die nötig sind, bevor der nächste Traum läuft. Standard 5. Bereich: 1-100. Es ist eine Überspring-Schwelle, daher zählt ein zu niedriger Wert nur als Aufschub."
+			}
+		}
+	},
+	"web": {
+		"enable": {
+			"label": "Web-Werkzeuge aktivieren",
+			"description": "Gibt Modi mit der Gruppe Webzugriff die nativen Werkzeuge web_search und web_fetch, unterstützt durch eine selbstgehostete SearXNG-Instanz. Wenn aus, werden die Werkzeuge dem Modell verborgen und können nicht aufgerufen werden."
+		},
+		"searxngBaseUrl": {
+			"label": "SearXNG-Basis-URL",
+			"description": "Basis-URL deiner SearXNG-Instanz. Das JSON-Ausgabeformat muss aktiviert sein, sonst kann web_search die Ergebnisse nicht lesen.",
+			"placeholder": "https://searx.example.org"
+		},
+		"maxResults": {
+			"label": "Ergebnisse pro Anfrage",
+			"description": "Wie viele Suchergebnisse web_search pro Anfrage zurückgibt. Niedrigere Werte halten das Kontextfenster klein. Standard 5."
+		}
+	},
+	"subagents": {
+		"maxConcurrency": {
+			"label": "Maximale parallele Subagenten",
+			"description": "Harte Obergrenze, wie viele parallele Teilaufgaben (run_parallel_tasks) gleichzeitig laufen dürfen. Auf Aus (unter 2) setzen, um parallele Teilaufgaben ganz zu deaktivieren; der Orchestrator delegiert dann über einzelne Teilaufgaben. Der Orchestrator kann weniger, nie mehr anfordern; zusätzliche Teilaufgaben warten in der Warteschlange.",
+			"off": "Aus"
+		},
+		"followupTimeout": {
+			"label": "Fragen-Timeout",
+			"description": "Wie lange die Frage eines Subagenten auf deine Antwort wartet, bevor sie automatisch genehmigt wird und der Subagent selbstständig fortfährt. 0 antwortet sofort (voll autonom).",
+			"immediate": "aus"
+		}
 	}
 }

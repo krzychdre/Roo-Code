@@ -41,7 +41,10 @@
 		"experimental": "Thử nghiệm",
 		"language": "Ngôn ngữ",
 		"about": "Giới thiệu",
-		"skills": "Skills"
+		"skills": "Skills",
+		"memory": "Bộ nhớ",
+		"web": "Công cụ web",
+		"subagents": "Tác nhân con"
 	},
 	"about": {
 		"bugReport": {
@@ -695,6 +698,15 @@
 		"enableSubfolderRules": {
 			"label": "Bật quy tắc thư mục con",
 			"description": "Khám phá và tải đệ quy các tệp .roo/rules và AGENTS.md từ các thư mục con. Hữu ích cho monorepo có quy tắc theo gói."
+		},
+		"pruneBeforeCondense": {
+			"label": "Tỉa kết xuất công cụ cũ trước khi nén",
+			"description": "Khi ngữ cảnh sắp hết, trước tiên hãy chuyển các kết quả công cụ cũ và quá lớn thành artifact tác vụ và để lại bản xem trước ngắn ghi tên artifact. Việc này không tốn lệnh gọi API và không mất gì: mô hình đọc lại toàn bộ văn bản bằng read_artifact. Tóm tắt AI chỉ chạy nếu việc tỉa chưa đủ. Tắt để đi thẳng sang tóm tắt."
+		},
+		"pruneToolResultBudget": {
+			"label": "Ngưỡng tỉa cho một kết quả công cụ",
+			"bytes": "byte",
+			"description": "Các kết quả công cụ cũ lớn hơn giá trị này được chuyển sang artifact và thay bằng 20 dòng đầu và cuối của chúng. Giá trị thấp hơn giải phóng nhiều ngữ cảnh hơn mỗi lần; giá trị cao hơn giữ lại nhiều kết xuất nội dòng hơn."
 		}
 	},
 	"terminal": {
@@ -792,6 +804,14 @@
 		"todoList": {
 			"label": "Bật công cụ danh sách việc cần làm",
 			"description": "Khi được bật, Tumble có thể tạo và quản lý danh sách việc cần làm để theo dõi tiến độ công việc. Điều này giúp tổ chức các tác vụ phức tạp thành các bước có thể quản lý được."
+		},
+		"slimToolset": {
+			"label": "Bộ công cụ tinh gọn (mô hình nhỏ)",
+			"description": "Cung cấp cho hồ sơ này một công cụ rõ ràng cho mỗi việc: read_file, search_files, list_files, codebase_search, apply_diff, write_to_file, execute_command, read_artifact, các công cụ web và công cụ tác vụ (ask, complete, switch mode, new task, todo list, skill, load tools). Các động từ chỉnh sửa thừa (edit, search_replace, edit_file, apply_patch), tạo ảnh, tác vụ song song và lệnh slash bị ẩn. Mô hình nhỏ ngừng chọn sai trình chỉnh sửa. Nếu mô hình vẫn gọi một công cụ ẩn, nó vẫn chạy.",
+			"hideMcp": {
+				"label": "Cũng ẩn công cụ MCP",
+				"description": "Lược đồ công cụ MCP thường là phần lớn nhất của prompt công cụ. Giữ bật trừ khi hồ sơ này cần một máy chủ MCP."
+			}
 		}
 	},
 	"experimental": {
@@ -1046,5 +1066,71 @@
 			"descriptionTooLong": "Mô tả phải có tối đa 1024 ký tự"
 		},
 		"footer": "Tạo các skill của riêng bạn với chế độ Skill Writer, có sẵn tại <MarketplaceLink>Modes Marketplace</MarketplaceLink>."
+	},
+	"memory": {
+		"enable": {
+			"label": "Bật bộ nhớ lâu dài",
+			"description": "Khi bật, tác nhân duy trì bộ nhớ dựa trên tệp về bạn, sở thích và bối cảnh dự án. Bộ nhớ tồn tại giữa các phiên trong bộ lưu trữ riêng của tiện ích. Tác nhân đọc nó mỗi tác vụ và ghi trong khi bạn làm việc. <0>Tìm hiểu thêm</0>"
+		},
+		"recall": {
+			"label": "Bật gọi lại bộ nhớ liên quan",
+			"description": "Khi bật, tác nhân chạy một truy vấn nền nhanh để đưa ra các ký ức liên quan nhất cho lời nhắc hiện tại. Tắt sẽ tiết kiệm chi phí truy vấn phụ; chỉ mục bộ nhớ vẫn tải. Cần một nhà cung cấp mô hình đã cấu hình."
+		},
+		"directory": {
+			"label": "Thư mục bộ nhớ tùy chỉnh (tùy chọn)",
+			"description": "Ghi đè vị trí lưu bộ nhớ mặc định. Phải là đường dẫn tuyệt đối. Cài đặt dự án bị bỏ qua cho trường này (chỉ nguồn đáng tin) để kho không thể chuyển hướng ghi bộ nhớ. Để trống để dùng vị trí lưu mặc định của tiện ích.",
+			"placeholder": "/absolute/path/to/memory/dir"
+		},
+		"shareWithClaudeCode": {
+			"label": "Chia sẻ bộ nhớ với Claude Code",
+			"description": "Đọc và ghi cùng bộ MEMORY.md như Claude Code, tại ~/.claude/projects/<workspace>/memory, thay vì giữ riêng trong bộ lưu trữ tiện ích. Cả hai tác nhân rồi sẽ nhớ cùng những điều về không gian làm việc này.",
+			"overridden": "Đã tắt vì đang đặt thư mục bộ nhớ tùy chỉnh; đường dẫn rõ ràng được ưu tiên hơn chia sẻ."
+		},
+		"writerProfile": {
+			"label": "Hồ sơ API của trình ghi bộ nhớ",
+			"description": "Chuyển trình ghi bộ nhớ nền (trích xuất và gộp dream) sang hồ sơ API rẻ hơn hoặc cục bộ thay cho mô hình tiền cảnh. Hồ sơ cũ hoặc đã xoá tự động trở về hồ sơ hiện tại.",
+			"useCurrent": "Dùng hồ sơ hiện tại"
+		},
+		"dream": {
+			"enable": {
+				"label": "Bật gộp bộ nhớ (dream)",
+				"description": "Khi bật, tác nhân định kỳ xem xét và tổ chức lại bộ nhớ: gộp bản trùng, xoá sự thật mâu thuẫn và tỉa bớt mục cũ. Chạy tự động khi đã trôi qua đủ thời gian và phiên."
+			},
+			"minHours": {
+				"label": "Số giờ tối thiểu giữa các dream",
+				"description": "Số giờ kể từ lần gộp cuối trước khi dream tiếp theo có thể chạy. Mặc định 24. Phạm vi: 1-168."
+			},
+			"minSessions": {
+				"label": "Số phiên tối thiểu giữa các dream",
+				"description": "Số phiên tác vụ kể từ lần gộp cuối cần thiết trước khi dream tiếp theo chạy. Mặc định 5. Phạm vi: 1-100. Đây là cổng bỏ qua, nên đếm thiếu chỉ làm dream trễ đi."
+			}
+		}
+	},
+	"web": {
+		"enable": {
+			"label": "Bật công cụ web",
+			"description": "Cấp cho các chế độ có nhóm Truy cập web các công cụ native web_search và web_fetch, dựa trên một thực thể SearXNG tự host. Khi tắt, công cụ bị ẩn khỏi mô hình và không thể được gọi."
+		},
+		"searxngBaseUrl": {
+			"label": "URL cơ sở của SearXNG",
+			"description": "URL cơ sở của thực thể SearXNG của bạn. Định dạng xuất JSON phải được bật, nếu không web_search không thể đọc kết quả.",
+			"placeholder": "https://searx.example.org"
+		},
+		"maxResults": {
+			"label": "Kết quả mỗi truy vấn",
+			"description": "Số kết quả tìm kiếm web_search trả về cho mỗi truy vấn. Giá trị thấp hơn giữ cửa sổ ngữ cảnh nhỏ. Mặc định 5."
+		}
+	},
+	"subagents": {
+		"maxConcurrency": {
+			"label": "Số tác nhân con song song tối đa",
+			"description": "Giới hạn cứng số tác vụ con song song (run_parallel_tasks) có thể chạy cùng lúc. Đặt thành Tắt (dưới 2) để tắt hoàn toàn tác vụ con song song; khi đó bộ điều phối ủy quyền qua từng tác vụ con đơn lẻ. Bộ điều phối có thể yêu cầu ít hơn, không bao giờ nhiều hơn; các tác vụ con thêm chờ trong hàng đợi.",
+			"off": "Tắt"
+		},
+		"followupTimeout": {
+			"label": "Thời hạn chờ câu hỏi",
+			"description": "Thời gian câu hỏi của tác nhân con chờ câu trả lời của bạn trước khi được tự động phê duyệt và tác nhân con tự tiếp tục. 0 trả lời ngay lập tức (hoàn toàn tự chủ).",
+			"immediate": "tắt"
+		}
 	}
 }

@@ -320,7 +320,23 @@
 		"triggerLabel_zero": "0 được tự động phê duyệt",
 		"triggerLabel_one": "1 được tự động phê duyệt",
 		"triggerLabel_other": "{{count}} được tự động phê duyệt",
-		"triggerLabelAll": "BRRR"
+		"triggerLabelAll": "BRRR",
+		"mode": {
+			"label": "Chế độ tự động phê duyệt",
+			"forcedHint": "Luôn được chế độ hiện tại phê duyệt",
+			"default": {
+				"label": "Mặc định",
+				"description": "Tuân thủ các công tắc riêng, danh sách lệnh được phép và các bộ gác ngoài không gian làm việc / tệp được bảo vệ."
+			},
+			"bypass": {
+				"label": "Bỏ qua",
+				"description": "Bán tự động: phê duyệt mọi lệnh đọc, ghi, MCP, tác vụ con, đổi chế độ và lệnh (kể cả chưa rõ) mà không hỏi. Câu hỏi tiếp theo vẫn ngắt bạn."
+			},
+			"autonomous": {
+				"label": "Tự chủ",
+				"description": "Tự động hoàn toàn: mọi thứ Bỏ qua làm, cộng với câu hỏi tiếp theo được trả lời tự động để tác nhân chạy đến khi xong."
+			}
+		}
 	},
 	"reasoning": {
 		"thinking": "Đang suy nghĩ",
@@ -339,6 +355,12 @@
 			"messagesRemoved": "{{count}} tin nhắn đã xóa",
 			"messagesRemoved_other": "{{count}} tin nhắn đã xóa",
 			"description": "Các tin nhắn cũ hơn đã bị xóa khỏi cuộc trò chuyện để giữ trong giới hạn cửa sổ ngữ cảnh. Đây là cách tiếp cận nhanh nhưng ít bảo toàn ngữ cảnh hơn so với cô đọng."
+		},
+		"prune": {
+			"title": "Đã chuyển kết xuất công cụ cũ sang đĩa",
+			"summary": "{{count}} kết quả công cụ, giải phóng khoảng {{kb}} KB",
+			"summary_other": "{{count}} kết quả công cụ, giải phóng khoảng {{kb}} KB",
+			"description": "Các kết quả công cụ cũ và quá lớn đã được lưu thành artifact tác vụ và thay bằng bản xem trước ngắn. Không mất gì: mỗi bản xem trước ghi tên artifact của nó, và mô hình có thể đọc lại toàn bộ văn bản bằng read_artifact. Việc này chạy thay cho tóm tắt AI, nên không văn bản hội thoại nào bị viết lại."
 		}
 	},
 	"skill": {
@@ -535,5 +557,44 @@
 		"reviewFile": "Xem xét kế hoạch",
 		"loading": "Đang tải kế hoạch…",
 		"pauseTitle": "Kế hoạch đã cập nhật — xem xét và phê duyệt"
+	},
+	"subagents": {
+		"headerActive": "Tác nhân con: {{active}}/{{total}} đang chạy",
+		"headerDone": "Tác nhân con: {{total}} đã xong",
+		"noOutput": "Chưa có kết xuất.",
+		"tokens": "Token đã dùng",
+		"cancel": "Huỷ tác nhân con này",
+		"send": "Gửi",
+		"answerPlaceholder": "Trả lời câu hỏi của tác nhân con…",
+		"guidancePlaceholder": "Gửi hướng dẫn (giao tại điểm dừng tiếp theo)…",
+		"status": {
+			"queued": "Đang chờ",
+			"running": "Đang chạy",
+			"awaiting_input": "Cần nhập",
+			"completed": "Hoàn thành",
+			"failed": "Thất bại",
+			"cancelled": "Đã huỷ"
+		},
+		"apiConfig": "Hồ sơ API: {{name}} (ghim theo chế độ của tác vụ con; đổi trong Cài đặt → Chế độ)",
+		"permissionNeeded": "Tác vụ con này cần quyền để tiếp tục"
+	},
+	"webSearch": {
+		"wantsToSearch": "Tumble muốn tìm trên web <code>{{queries}}</code>",
+		"didSearch": "Tumble đã tìm trên web <code>{{queries}}</code>"
+	},
+	"webFetch": {
+		"wantsToFetch": "Tumble muốn đọc <code>{{url}}</code>",
+		"didFetch": "Tumble đã đọc <code>{{url}}</code>"
+	},
+	"readArtifact": {
+		"title": "Tumble đọc artifact"
+	},
+	"searchTaskHistory": {
+		"title": "Tumble đã tìm trong lịch sử tác vụ này"
+	},
+	"memoryActivity": {
+		"recalling": "Đang gọi lại bộ nhớ…",
+		"writing": "Đang ghi bộ nhớ…",
+		"both": "Đang gọi lại và ghi bộ nhớ…"
 	}
 }

@@ -319,7 +319,23 @@
 		"triggerLabel_zero": "0 aprobaciones automáticas",
 		"triggerLabel_one": "1 aprobación automática",
 		"triggerLabel_other": "{{count}} aprobaciones automáticas",
-		"triggerLabelAll": "BRRR"
+		"triggerLabelAll": "BRRR",
+		"mode": {
+			"label": "Modo de aprobación automática",
+			"forcedHint": "Siempre aprobado por el modo actual",
+			"default": {
+				"label": "Predeterminado",
+				"description": "Respeta los conmutadores individuales, la lista de comandos permitidos y las protecciones de archivos fuera del espacio de trabajo y protegidos."
+			},
+			"bypass": {
+				"label": "Omitir",
+				"description": "Semiautomático: aprueba cada lectura, escritura, MCP, subtarea, cambio de modo y comando (incluso desconocidos) sin preguntar. Las preguntas de seguimiento siguen interrumpiéndote."
+			},
+			"autonomous": {
+				"label": "Autónomo",
+				"description": "Automático completo: todo lo que hace Omitir, y además las preguntas de seguimiento se responden automáticamente para que el agente funcione hasta terminar."
+			}
+		}
 	},
 	"reasoning": {
 		"thinking": "Pensando",
@@ -338,6 +354,12 @@
 			"messagesRemoved": "{{count}} mensaje eliminado",
 			"messagesRemoved_other": "{{count}} mensajes eliminados",
 			"description": "Se eliminaron mensajes más antiguos de la conversación para mantenerse dentro del límite de la ventana de contexto. Este es un enfoque rápido pero menos conservador del contexto en comparación con la condensación."
+		},
+		"prune": {
+			"title": "Salida antigua de herramientas movida al disco",
+			"summary": "{{count}} resultado de herramienta, unos {{kb}} KB liberados",
+			"summary_other": "{{count}} resultados de herramientas, unos {{kb}} KB liberados",
+			"description": "Los resultados de herramientas antiguos y demasiado grandes se guardaron como artefactos de tarea y se reemplazaron con una vista previa breve. No se perdió nada: cada vista previa nombra su artefacto y el modelo puede volver a leer el texto completo con read_artifact. Esto se ejecutó en lugar de un resumen con IA, por lo que no se reescribió ningún texto de la conversación."
 		}
 	},
 	"skill": {
@@ -534,5 +556,44 @@
 		"reviewFile": "Revisar plan",
 		"loading": "Cargando plan…",
 		"pauseTitle": "Plan actualizado — revisa y aprueba"
+	},
+	"subagents": {
+		"headerActive": "Subagentes: {{active}}/{{total}} activos",
+		"headerDone": "Subagentes: {{total}} finalizados",
+		"noOutput": "Aún no hay salida.",
+		"tokens": "Tokens usados",
+		"cancel": "Cancelar este subagente",
+		"send": "Enviar",
+		"answerPlaceholder": "Responde a la pregunta del subagente…",
+		"guidancePlaceholder": "Envía orientación (entregada en el próximo punto de parada)…",
+		"status": {
+			"queued": "En cola",
+			"running": "En ejecución",
+			"awaiting_input": "Necesita entrada",
+			"completed": "Completado",
+			"failed": "Fallido",
+			"cancelled": "Cancelado"
+		},
+		"apiConfig": "Perfil de API: {{name}} (fijado al modo de la subtarea; cámbialo en Configuración → Modos)",
+		"permissionNeeded": "Esta subtarea necesita permiso para continuar"
+	},
+	"webSearch": {
+		"wantsToSearch": "Tumble quiere buscar en la web <code>{{queries}}</code>",
+		"didSearch": "Tumble buscó en la web <code>{{queries}}</code>"
+	},
+	"webFetch": {
+		"wantsToFetch": "Tumble quiere leer <code>{{url}}</code>",
+		"didFetch": "Tumble leyó <code>{{url}}</code>"
+	},
+	"readArtifact": {
+		"title": "Tumble lee un artefacto"
+	},
+	"searchTaskHistory": {
+		"title": "Tumble buscó en el historial de esta tarea"
+	},
+	"memoryActivity": {
+		"recalling": "Recuperando memoria…",
+		"writing": "Escribiendo memoria…",
+		"both": "Recuperando y escribiendo memoria…"
 	}
 }

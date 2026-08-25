@@ -42,7 +42,9 @@
 		"language": "Język",
 		"about": "O Tumble Code",
 		"skills": "Skills",
-		"subagents": "Subagenci"
+		"subagents": "Subagenci",
+		"memory": "Pamięć",
+		"web": "Narzędzia sieciowe"
 	},
 	"about": {
 		"bugReport": {
@@ -696,6 +698,15 @@
 		"enableSubfolderRules": {
 			"label": "Włącz reguły podfolderów",
 			"description": "Rekursywnie odkrywaj i ładuj pliki .roo/rules i AGENTS.md z podkatalogów. Przydatne dla monorepo z regułami dla poszczególnych pakietów."
+		},
+		"pruneBeforeCondense": {
+			"label": "Oczyść stare wyniki narzędzi przed skondensowaniem",
+			"description": "Gdy kontekst się kurczy, najpierw przenieś stare, zbyt duże wyniki narzędzi do artefaktów zadania i zostaw krótki podgląd podający nazwę artefaktu. To nie kosztuje żadnego wywołania API i nic nie traci: model odczytuje pełny tekst z powrotem przez read_artifact. Podsumowanie przez AI uruchamia się tylko, gdy oczyszczanie nie wystarczy. Wyłącz, aby przejść od razu do podsumowania."
+		},
+		"pruneToolResultBudget": {
+			"label": "Próg oczyszczania pojedynczego wyniku narzędzia",
+			"bytes": "bajty",
+			"description": "Stare wyniki narzędzi większe niż to są przenoszone do artefaktu i zastępowane swoimi pierwszymi i ostatnimi 20 wierszami. Niższe wartości zwalniają więcej kontekstu na przebieg; wyższe wartości zachowują więcej wyników w treści."
 		}
 	},
 	"terminal": {
@@ -793,6 +804,14 @@
 		"todoList": {
 			"label": "Włącz narzędzie listy zadań",
 			"description": "Po włączeniu Tumble może tworzyć i zarządzać listami zadań do śledzenia postępu zadań. Pomaga to organizować złożone zadania w łatwe do zarządzania kroki."
+		},
+		"slimToolset": {
+			"label": "Odchudzony zestaw narzędzi (małe modele)",
+			"description": "Daje temu profilowi jedno oczywiste narzędzie na każde zadanie: read_file, search_files, list_files, codebase_search, apply_diff, write_to_file, execute_command, read_artifact, narzędzia sieciowe i narzędzia zadań (ask, complete, switch mode, new task, todo list, skill, load tools). Zapasowe czasowniki edycji (edit, search_replace, edit_file, apply_patch), generowanie obrazów, zadania równoległe i polecenia z ukośnikiem są ukryte. Małe modele przestają wybierać niewłaściwy edytor. Jeśli model mimo to wywoła ukryte narzędzie, ono nadal działa.",
+			"hideMcp": {
+				"label": "Ukryj też narzędzia MCP",
+				"description": "Schematy narzędzi MCP to zazwyczaj największa część promptu narzędzi. Utrzymuj to włączone, chyba że ten profil wymaga serwera MCP."
+			}
 		}
 	},
 	"experimental": {
@@ -1058,6 +1077,60 @@
 			"label": "Limit czasu pytania",
 			"description": "Jak długo pytanie subagenta czeka na Twoją odpowiedź, zanim zostanie automatycznie zatwierdzone i subagent ruszy dalej samodzielnie. 0 odpowiada natychmiast (pełna autonomia).",
 			"immediate": "wył."
+		}
+	},
+	"memory": {
+		"enable": {
+			"label": "Włącz trwałą pamięć",
+			"description": "Gdy włączone, agent utrzymuje pamięć opartą na plikach o tobie, twoich preferencjach i kontekście projektu. Pamięć utrzymuje się między sesjami w prywatnej pamięci rozszerzenia. Agent odczytuje ją przy każdym zadaniu i zapisuje w trakcie twojej pracy. <0>Więcej</0>"
+		},
+		"recall": {
+			"label": "Włącz przywoływanie istotnej pamięci",
+			"description": "Gdy włączone, agent wykonuje szybkie zapytanie w tle, aby wydobyć najbardziej istotne wspomnienia dla bieżącego zapytania. Wyłączenie oszczędza koszt zapytania pobocznego; indeks pamięci nadal się ładuje. Wymaga skonfigurowanego dostawcy modelu."
+		},
+		"directory": {
+			"label": "Niestandardowy katalog pamięci (opcjonalne)",
+			"description": "Nadpisuje domyślną lokalizację przechowywania pamięci. Musi być ścieżką bezwzględną. Ustawienia projektu są ignorowane dla tego pola (tylko zaufane źródła), aby repozytorium nie mogło przekierować zapisów pamięci. Pozostaw puste, aby użyć domyślnej lokalizacji rozszerzenia.",
+			"placeholder": "/absolute/path/to/memory/dir"
+		},
+		"shareWithClaudeCode": {
+			"label": "Współdziel pamięć z Claude Code",
+			"description": "Odczytuje i zapisuje ten sam zbiór MEMORY.md co Claude Code, w ~/.claude/projects/<workspace>/memory, zamiast trzymać oddzielny w pamięci rozszerzenia. Oba agenty pamiętają wtedy to samo o tym obszarze roboczym.",
+			"overridden": "Wyłączone, ponieważ ustawiono niestandardowy katalog pamięci; jawna ścieżka ma pierwszeństwo przed współdzieleniem."
+		},
+		"writerProfile": {
+			"label": "Profil API zapisywacza pamięci",
+			"description": "Kieruje zapisywaczy pamięci w tle (ekstrakcja i konsolidacja marzeń) do tańszego lub lokalnego profilu API zamiast modelu pierwszoplanowego. Nieaktualny lub usunięty profil automatycznie wraca do bieżącego profilu.",
+			"useCurrent": "Użyj bieżącego profilu"
+		},
+		"dream": {
+			"enable": {
+				"label": "Włącz konsolidację pamięci (marzenie)",
+				"description": "Gdy włączone, agent okresowo przegląda i reorganizuje pamięć: łączy duplikaty, usuwa sprzeczne fakty i wycina nieaktualne wpisy. Uruchamia się automatycznie, gdy upłynie wystarczająco dużo czasu i sesji."
+			},
+			"minHours": {
+				"label": "Minimalne godziny między marzeniami",
+				"description": "Godziny od ostatniej konsolidacji, zanim będzie mogło wystąpić kolejne marzenie. Wartość domyślna 24. Zakres: 1-168."
+			},
+			"minSessions": {
+				"label": "Minimalne sesje między marzeniami",
+				"description": "Sesje zadania od ostatniej konsolidacji wymagane, zanim uruchomi się kolejne marzenie. Wartość domyślna 5. Zakres: 1-100. To brama pomijania, więc zaniżenie jedynie opóźnia marzenie."
+			}
+		}
+	},
+	"web": {
+		"enable": {
+			"label": "Włącz narzędzia sieciowe",
+			"description": "Daje trybom z grupą Dostęp do sieci natywne narzędzia web_search i web_fetch, oparte na samodzielnie hostowanej instancji SearXNG. Gdy wyłączone, narzędzia są ukryte przed modelem i nie można ich wywołać."
+		},
+		"searxngBaseUrl": {
+			"label": "Bazowy adres URL SearXNG",
+			"description": "Bazowy adres URL twojej instancji SearXNG. Jej format wyjścia JSON musi być włączony, inaczej web_search nie może odczytać wyników.",
+			"placeholder": "https://searx.example.org"
+		},
+		"maxResults": {
+			"label": "Wyników na zapytanie",
+			"description": "Ile wyników wyszukiwania web_search zwraca dla każdego zapytania. Niższe wartości utrzymują małe okno kontekstu. Wartość domyślna 5."
 		}
 	}
 }

@@ -162,7 +162,9 @@
 		"organization_share_link_copied": "Lien de partage d'organisation copié dans le presse-papiers !",
 		"public_share_link_copied": "Lien de partage public copié dans le presse-papiers !",
 		"mode_exported": "Mode '{{mode}}' exporté avec succès",
-		"mode_imported": "Mode importé avec succès"
+		"mode_imported": "Mode importé avec succès",
+		"memory_saved": "Mémoire : {{count}} nouveaux souvenirs enregistrés",
+		"memory_consolidated": "Mémoire : {{count}} souvenirs consolidés"
 	},
 	"answers": {
 		"yes": "Oui",
@@ -252,5 +254,21 @@
 	"docsLink": {
 		"label": "Docs",
 		"url": "https://docs.tumblecode.dev"
+	},
+	"agentInterchange": {
+		"pick_up_title": "Reprendre le travail d'un autre agent",
+		"pick_up_placeholder": "Transmissions en attente pour vous, puis les sessions Claude Code récentes dans cet espace de travail",
+		"handoff_from": "transmission de {{agent}} · {{when}}",
+		"session_from": "{{agent}} · {{when}}",
+		"nothing_to_pick_up": "Aucune transmission ni session Claude Code trouvée pour cet espace de travail.",
+		"reading": "Lecture de la session de l'autre agent…",
+		"read_failed": "Cette session n'a pas pu être lue ; ses fichiers ont peut-être été supprimés.",
+		"no_provider": "Ouvrez d'abord le panneau Tumble Code, puis réessayez.",
+		"no_current_task": "Aucune tâche en cours d'exécution à transmettre.",
+		"next_steps_title": "Transmettre à Claude Code",
+		"next_steps_prompt": "Que doit faire Claude Code ensuite ? Séparez les étapes avec ';'. Laissez vide pour ne transmettre que le briefing.",
+		"next_steps_placeholder": "Exécuter la suite d'intégration ; ouvrir la PR",
+		"handoff_created": "Transmis à {{agent}} sous {{id}}.",
+		"open_handoff": "Ouvrir le document"
 	}
 }

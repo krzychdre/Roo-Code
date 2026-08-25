@@ -41,7 +41,10 @@
 		"experimental": "Expérimental",
 		"language": "Langue",
 		"about": "À propos de Tumble Code",
-		"skills": "Skills"
+		"skills": "Skills",
+		"memory": "Mémoire",
+		"web": "Outils web",
+		"subagents": "Sous-agents"
 	},
 	"about": {
 		"bugReport": {
@@ -695,6 +698,15 @@
 		"enableSubfolderRules": {
 			"label": "Activer les règles des sous-dossiers",
 			"description": "Découvrir et charger récursivement les fichiers .roo/rules et AGENTS.md depuis les sous-répertoires. Utile pour les monorepos avec des règles par package."
+		},
+		"pruneBeforeCondense": {
+			"label": "Élaguer l'ancienne sortie d'outil avant de condenser",
+			"description": "Quand le contexte diminue, déplace d'abord les anciens résultats d'outil trop volumineux vers des artefacts de tâche et laisse un aperçu court qui nomme l'artefact. Cela ne coûte aucun appel API et ne perd rien : le modèle relit le texte complet avec read_artifact. Un résumé par IA ne s'exécute que si l'élagage n'a pas suffi. Désactivez-le pour passer directement au résumé."
+		},
+		"pruneToolResultBudget": {
+			"label": "Seuil d'élagage pour un seul résultat d'outil",
+			"bytes": "octets",
+			"description": "Les anciens résultats d'outil plus grands que cela sont déplacés vers un artefact et remplacés par leurs 20 premières et dernières lignes. Les valeurs plus basses libèrent plus de contexte par passe ; les valeurs plus élevées conservent plus de sortie en ligne."
 		}
 	},
 	"terminal": {
@@ -792,6 +804,14 @@
 		"todoList": {
 			"label": "Activer l'outil de liste de tâches",
 			"description": "Lorsqu'activé, Tumble peut créer et gérer des listes de tâches pour suivre la progression. Cela aide à organiser les tâches complexes en étapes gérables."
+		},
+		"slimToolset": {
+			"label": "Jeu d'outils réduit (petits modèles)",
+			"description": "Offre à ce profil un outil évident par tâche : read_file, search_files, list_files, codebase_search, apply_diff, write_to_file, execute_command, read_artifact, les outils web et les outils de tâche (ask, complete, switch mode, new task, todo list, skill, load tools). Les verbes d'édition en surplus (edit, search_replace, edit_file, apply_patch), la génération d'images, les tâches parallèles et les commandes slash sont masqués. Les petits modèles arrêtent de choisir le mauvais éditeur. Si le modèle appelle un outil masqué malgré tout, il s'exécute quand même.",
+			"hideMcp": {
+				"label": "Masquer aussi les outils MCP",
+				"description": "Les schémas d'outils MCP sont généralement la plus grande partie du prompt d'outils. Gardez ceci activé sauf si ce profil a besoin d'un serveur MCP."
+			}
 		}
 	},
 	"experimental": {
@@ -1046,5 +1066,71 @@
 			"descriptionTooLong": "La description doit contenir au maximum 1024 caractères"
 		},
 		"footer": "Créez vos propres skills avec le mode Skill Writer, disponible dans le <MarketplaceLink>Modes Marketplace</MarketplaceLink>."
+	},
+	"memory": {
+		"enable": {
+			"label": "Activer la mémoire persistante",
+			"description": "Lorsqu'activée, l'agent maintient une mémoire basée sur des fichiers décrivant qui vous êtes, vos préférences et le contexte du projet. La mémoire persiste entre les sessions dans un stockage privé de l'extension. L'agent la lit à chaque tâche et y écrit pendant que vous travaillez. <0>En savoir plus</0>"
+		},
+		"recall": {
+			"label": "Activer le rappel de mémoire pertinente",
+			"description": "Lorsqu'activé, l'agent exécute une requête rapide en arrière-plan pour faire émerger les souvenirs les plus pertinents pour votre invite actuelle. Désactiver économise le coût de la requête ; l'index mémoire se charge toujours. Requiert un fournisseur de modèle configuré."
+		},
+		"directory": {
+			"label": "Répertoire de mémoire personnalisé (facultatif)",
+			"description": "Remplace l'emplacement de stockage par défaut de la mémoire. Doit être un chemin absolu. Les paramètres du projet sont ignorés pour ce champ (sources de confiance uniquement) afin qu'un dépôt ne puisse pas rediriger les écritures mémoire. Laissez vide pour utiliser l'emplacement de stockage par défaut de l'extension.",
+			"placeholder": "/absolute/path/to/memory/dir"
+		},
+		"shareWithClaudeCode": {
+			"label": "Partager la mémoire avec Claude Code",
+			"description": "Lit et écrit le même ensemble MEMORY.md que Claude Code, sous ~/.claude/projects/<workspace>/memory, au lieu d'en garder un séparé dans le stockage de l'extension. Les deux agents se souviennent alors des mêmes choses pour cet espace de travail.",
+			"overridden": "Désactivé car un répertoire de mémoire personnalisé est défini ; un chemin explicite prime sur le partage."
+		},
+		"writerProfile": {
+			"label": "Profil d'API de l'auteur mémoire",
+			"description": "Aiguille les auteurs mémoire en arrière-plan (extraction et consolidation de rêve) vers un profil d'API moins cher ou local au lieu du modèle de premier plan. Un profil périmé ou supprimé revient automatiquement au profil actuel.",
+			"useCurrent": "Utiliser le profil actuel"
+		},
+		"dream": {
+			"enable": {
+				"label": "Activer la consolidation de mémoire (rêve)",
+				"description": "Lorsqu'activé, l'agent révise et réorganise périodiquement la mémoire : fusionne les doublons, supprime les faits contredits et élagage les entrées périmées. S'exécute automatiquement quand suffisamment de temps et de sessions se sont écoulés."
+			},
+			"minHours": {
+				"label": "Heures minimum entre rêves",
+				"description": "Heures depuis la dernière consolidation avant que le prochain rêve puisse s'exécuter. Par défaut 24. Plage : 1-168."
+			},
+			"minSessions": {
+				"label": "Sessions minimum entre rêves",
+				"description": "Sessions de tâche depuis la dernière consolidation requises avant que le prochain rêve s'exécute. Par défaut 5. Plage : 1-100. C'est une porte de contournement, donc sous-compter ne fait que retarder un rêve."
+			}
+		}
+	},
+	"web": {
+		"enable": {
+			"label": "Activer les outils web",
+			"description": "Donne aux modes du groupe Accès web les outils natifs web_search et web_fetch, adossés à une instance SearXNG auto-hébergée. Lorsque désactivé, les outils sont masqués au modèle et ne peuvent être appelés."
+		},
+		"searxngBaseUrl": {
+			"label": "URL de base SearXNG",
+			"description": "URL de base de votre instance SearXNG. Son format de sortie JSON doit être activé, sinon web_search ne peut pas lire les résultats.",
+			"placeholder": "https://searx.example.org"
+		},
+		"maxResults": {
+			"label": "Résultats par requête",
+			"description": "Combien de résultats de recherche web_search renvoie pour chaque requête. Les valeurs plus basses gardent la fenêtre de contexte petite. Par défaut 5."
+		}
+	},
+	"subagents": {
+		"maxConcurrency": {
+			"label": "Maximum de sous-agents en parallèle",
+			"description": "Plafond strict sur le nombre de sous-tâches parallèles (run_parallel_tasks) pouvant s'exécuter en même temps. Mettre sur Désactivé (en dessous de 2) pour désactiver entièrement les sous-tâches parallèles ; l'orchestrateur délègue alors via des sous-tâches uniques. L'orchestrateur peut en demander moins, jamais plus ; les sous-tâches supplémentaires attendent dans la file.",
+			"off": "Désactivé"
+		},
+		"followupTimeout": {
+			"label": "Délai de réponse à la question",
+			"description": "Combien de temps la question d'un sous-agent attend votre réponse avant d'être auto-approuvée et que le sous-agent continue de lui-même. 0 répond immédiatement (totalement autonome).",
+			"immediate": "désactivé"
+		}
 	}
 }

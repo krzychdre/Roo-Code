@@ -41,7 +41,10 @@
 		"experimental": "Experimental",
 		"language": "Idioma",
 		"about": "Sobre Tumble Code",
-		"skills": "Skills"
+		"skills": "Skills",
+		"memory": "Memòria",
+		"web": "Eines web",
+		"subagents": "Subagents"
 	},
 	"about": {
 		"bugReport": {
@@ -695,6 +698,15 @@
 		"enableSubfolderRules": {
 			"label": "Activa les regles dels subdirectoris",
 			"description": "Descobreix i carrega recursivament fitxers .roo/rules i AGENTS.md des de subdirectoris. Útil per a monorepos amb regles per paquet."
+		},
+		"pruneBeforeCondense": {
+			"label": "Poda la sortida antiga d'eines abans de condensar",
+			"description": "Quan el context s'escurça, primer mou els resultats d'eines antics i grans a artefactes de tasca i deixa una vista prèvia breu que anomeni l'artefacte. Això no costa cap crida API i no perd res: el model llegeix el text complet amb read_artifact. Un resum amb IA només s'executa si la poda no ha estat suficient. Desactiva-ho per anar directament al resum."
+		},
+		"pruneToolResultBudget": {
+			"label": "Llindar de poda per a un únic resultat d'eina",
+			"bytes": "bytes",
+			"description": "Els resultats d'eines antics més grans que això es mouen a un artefacte i se substitueixen per les seves primeres i últimes 20 línies. Els valors més baixos alliberen més context per passada; els més alts mantenen més sortida en línia."
 		}
 	},
 	"terminal": {
@@ -792,6 +804,14 @@
 		"todoList": {
 			"label": "Habilitar eina de llista de tasques",
 			"description": "Quan està habilitat, Tumble pot crear i gestionar llistes de tasques per fer el seguiment del progrés de les tasques. Això ajuda a organitzar tasques complexes en passos manejables."
+		},
+		"slimToolset": {
+			"label": "Conjunt d'eines reduït (models petits)",
+			"description": "Ofereix a aquest perfil una eina evident per a cada feina: read_file, search_files, list_files, codebase_search, apply_diff, write_to_file, execute_command, read_artifact, les eines web i les eines de tasca (ask, complete, switch mode, new task, todo list, skill, load tools). Els verbs d'edició sobrers (edit, search_replace, edit_file, apply_patch), la generació d'imatges, les tasques paral·leles i les ordres amb barra queden ocults. Els models petits deixen de triar l'editor equivocat. Si el model crida una eina oculta de totes maneres, encara s'executa.",
+			"hideMcp": {
+				"label": "Amaga també les eines MCP",
+				"description": "Els esquemes d'eines MCP solen ser la part més gran de l'indicador d'eines. Mantén-ho activat tret que aquest perfil necessiti un servidor MCP."
+			}
 		}
 	},
 	"experimental": {
@@ -1046,5 +1066,71 @@
 			"descriptionTooLong": "La descripció ha de tenir com a màxim 1024 caràcters"
 		},
 		"footer": "Crea les teves pròpies skills amb el mode Skill Writer, disponible al <MarketplaceLink>Modes Marketplace</MarketplaceLink>."
+	},
+	"memory": {
+		"enable": {
+			"label": "Activa la memòria persistent",
+			"description": "Quan està activat, l'agent manté una memòria basada en fitxers sobre qui ets, les teves preferències i el context del projecte. La memòria persisteix entre sessions en un emmagatzematge privat de l'extensió. L'agent la llegeix a cada tasca i hi escriu mentre treballles. <0>Més informació</0>"
+		},
+		"recall": {
+			"label": "Activa el recordat de memòria rellevant",
+			"description": "Quan està activat, l'agent executa una consulta ràpida en segon pla per mostrar els records més rellevants per a la teva sol·licitud actual. Desactivar-ho estalvia el cost de la consulta; l'índex de memòria encara es carrega. Requereix un proveïdor de model configurat."
+		},
+		"directory": {
+			"label": "Directori de memòria personalitzat (opcional)",
+			"description": "Substitueix la ubicació predeterminada d'emmagatzematge de memòria. Ha de ser un camí absolut. La configuració del projecte s'ignora per a aquest camp (només fonts fiables) perquè un repositori no pot redirigir les escriptures de memòria. Deixa-ho en blanc per usar la ubicació predeterminada de l'extensió.",
+			"placeholder": "/absolute/path/to/memory/dir"
+		},
+		"shareWithClaudeCode": {
+			"label": "Comparteix memòria amb Claude Code",
+			"description": "Llegeix i escriu el mateix conjunt de MEMORY.md que Claude Code, a ~/.claude/projects/<workspace>/memory, en lloc de mantenir-ne un de separat a l'emmagatzematge de l'extensió. Aleshores ambdós agents recorden el mateix sobre aquest espai de treball.",
+			"overridden": "Desactivat perquè s'ha definit un directori de memòria personalitzat; un camí explícit té prioritat sobre la compartició."
+		},
+		"writerProfile": {
+			"label": "Perfil d'API de l'escriptor de memòria",
+			"description": "Encamina els escriptors de memòria en segon pla (extracció i consolidació de somni) a un perfil d'API més barat o local en lloc del model en primer pla. Un perfil obsolet o suprimit torna automàticament al perfil actual.",
+			"useCurrent": "Usa el perfil actual"
+		},
+		"dream": {
+			"enable": {
+				"label": "Activa la consolidació de memòria (somni)",
+				"description": "Quan està activat, l'agent revisa i reorganitza periòdicament la memòria: fusiona duplicats, elimina fets contradictoris i poda les entrades obsoletes. S'executa automàticament quan ha passat prou temps i sessions."
+			},
+			"minHours": {
+				"label": "Hores mínimes entre somnis",
+				"description": "Hores des de l'última consolidació abans que pugui executar-se el proper somni. Per defecte 24. Rang: 1-168."
+			},
+			"minSessions": {
+				"label": "Sessions mínimes entre somnis",
+				"description": "Sessions de tasca des de l'última consolidació necessàries abans que s'executi el proper somni. Per defecte 5. Rang: 1-100. És una porta de salt, de manera que subestimar només retarda un somni."
+			}
+		}
+	},
+	"web": {
+		"enable": {
+			"label": "Activa les eines web",
+			"description": "Dóna als modes amb el grup Accés web les eines natives web_search i web_fetch, recolzades per una instància SearXNG autoallotjada. Quan està desactivat, les eines s'amaguen del model i no es poden cridar."
+		},
+		"searxngBaseUrl": {
+			"label": "URL base de SearXNG",
+			"description": "URL base de la teva instància de SearXNG. El seu format de sortida JSON ha d'estar activat, altrament web_search no pot llegir els resultats.",
+			"placeholder": "https://searx.example.org"
+		},
+		"maxResults": {
+			"label": "Resultats per consulta",
+			"description": "Quants resultats de cerca retorna web_search per a cada consulta. Els valors més baixos mantenen la finestra de context petita. Per defecte 5."
+		}
+	},
+	"subagents": {
+		"maxConcurrency": {
+			"label": "Màxim de subagents en paral·lel",
+			"description": "Límit estricte de quantes subtasques paral·leles (run_parallel_tasks) poden executar-se alhora. Definiu-ho a Desactivat (per sota de 2) per inhabilitar completament les subtasques paral·leles; aleshores l'orquestador delega mitjançant subtasques úniques. L'orquestador pot demanar-ne menys, mai més; les subtasques addicionals esperen a la cua.",
+			"off": "Desactivat"
+		},
+		"followupTimeout": {
+			"label": "Temps d'espera de la pregunta",
+			"description": "Quant de temps una pregunta d'un subagent espera la teva resposta abans de ser aprovada automàticament i el subagent continua pel seu compte. 0 respon immediatament (totalment autònom).",
+			"immediate": "desactivat"
+		}
 	}
 }

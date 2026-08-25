@@ -162,7 +162,9 @@
 		"organization_share_link_copied": "組織分享連結已複製到剪貼簿！",
 		"public_share_link_copied": "公開分享連結已複製到剪貼簿！",
 		"mode_exported": "模式 '{{mode}}' 已成功匯出",
-		"mode_imported": "模式已成功匯入"
+		"mode_imported": "模式已成功匯入",
+		"memory_saved": "記憶:已儲存 {{count}} 個新記憶",
+		"memory_consolidated": "記憶:已合併 {{count}} 個記憶"
 	},
 	"answers": {
 		"yes": "是",
@@ -252,5 +254,21 @@
 	"docsLink": {
 		"label": "Docs",
 		"url": "https://docs.tumblecode.dev"
+	},
+	"agentInterchange": {
+		"pick_up_title": "接手另一個代理的工作",
+		"pick_up_placeholder": "留給你的交接,然後是此工作區中最近的 Claude Code 工作階段",
+		"handoff_from": "來自 {{agent}} 的交接 · {{when}}",
+		"session_from": "{{agent}} · {{when}}",
+		"nothing_to_pick_up": "未找到此工作區的交接或 Claude Code 工作階段。",
+		"reading": "正在讀取另一個代理的工作階段…",
+		"read_failed": "無法讀取該工作階段;其檔案可能已被刪除。",
+		"no_provider": "請先開啟 Tumble Code 面板,然後再試一次。",
+		"no_current_task": "沒有正在執行的任務可以交接。",
+		"next_steps_title": "交接給 Claude Code",
+		"next_steps_prompt": "Claude Code 接下來該做什麼?用 ';' 分隔步驟。留空則只交接簡報。",
+		"next_steps_placeholder": "執行整合測試套件;開啟 PR",
+		"handoff_created": "已交接給 {{agent}},識別為 {{id}}。",
+		"open_handoff": "開啟文件"
 	}
 }

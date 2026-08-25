@@ -162,7 +162,9 @@
 		"organization_share_link_copied": "Organisatie deel-link gekopieerd naar klembord!",
 		"public_share_link_copied": "Openbare deel-link gekopieerd naar klembord!",
 		"mode_exported": "Modus '{{mode}}' succesvol geëxporteerd",
-		"mode_imported": "Modus succesvol geïmporteerd"
+		"mode_imported": "Modus succesvol geïmporteerd",
+		"memory_saved": "Geheugen: {{count}} nieuwe herinneringen opgeslagen",
+		"memory_consolidated": "Geheugen: {{count}} herinneringen geconsolideerd"
 	},
 	"answers": {
 		"yes": "Ja",
@@ -252,5 +254,21 @@
 	"docsLink": {
 		"label": "Docs",
 		"url": "https://docs.tumblecode.dev"
+	},
+	"agentInterchange": {
+		"pick_up_title": "Werk van een andere agent overnemen",
+		"pick_up_placeholder": "Aan jou achtergelaten overdrachten, daarna recente Claude Code-sessies in deze werkruimte",
+		"handoff_from": "overdracht van {{agent}} · {{when}}",
+		"session_from": "{{agent}} · {{when}}",
+		"nothing_to_pick_up": "Geen overdrachten of Claude Code-sessies gevonden voor deze werkruimte.",
+		"reading": "Sessie van de andere agent wordt gelezen…",
+		"read_failed": "Die sessie kon niet worden gelezen; de bestanden zijn mogelijk verwijderd.",
+		"no_provider": "Open eerst het Tumble Code-paneel en probeer het opnieuw.",
+		"no_current_task": "Er draait geen taak om over te dragen.",
+		"next_steps_title": "Overdragen aan Claude Code",
+		"next_steps_prompt": "Wat moet Claude Code hierna doen? Scheid stappen met ';'. Laat leeg om alleen de briefing over te dragen.",
+		"next_steps_placeholder": "Integratiesuite draaien; PR openen",
+		"handoff_created": "Overgedragen aan {{agent}} als {{id}}.",
+		"open_handoff": "Document openen"
 	}
 }

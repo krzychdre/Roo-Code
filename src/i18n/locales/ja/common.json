@@ -162,7 +162,9 @@
 		"organization_share_link_copied": "組織共有リンクがクリップボードにコピーされました！",
 		"public_share_link_copied": "公開共有リンクがクリップボードにコピーされました！",
 		"mode_exported": "モード「{{mode}}」が正常にエクスポートされました",
-		"mode_imported": "モードが正常にインポートされました"
+		"mode_imported": "モードが正常にインポートされました",
+		"memory_saved": "メモリ: 新しいメモリを {{count}} 件保存しました",
+		"memory_consolidated": "メモリ: {{count}} 件のメモリを統合しました"
 	},
 	"answers": {
 		"yes": "はい",
@@ -252,5 +254,21 @@
 	"docsLink": {
 		"label": "Docs",
 		"url": "https://docs.tumblecode.dev"
+	},
+	"agentInterchange": {
+		"pick_up_title": "別のエージェントの作業を引き継ぐ",
+		"pick_up_placeholder": "あなたに残された引き継ぎ、続いてこのワークスペースでの直近の Claude Code セッション",
+		"handoff_from": "{{agent}} からの引き継ぎ · {{when}}",
+		"session_from": "{{agent}} · {{when}}",
+		"nothing_to_pick_up": "このワークスペースには引き継ぎも Claude Code セッションも見つかりませんでした。",
+		"reading": "別のエージェントのセッションを読み取り中…",
+		"read_failed": "そのセッションを読み取れませんでした。ファイルが削除された可能性があります。",
+		"no_provider": "まず Tumble Code のパネルを開いてから、もう一度お試しください。",
+		"no_current_task": "引き継げる実行中のタスクはありません。",
+		"next_steps_title": "Claude Code に引き継ぐ",
+		"next_steps_prompt": "Claude Code に次に何をさせますか? 手順は ';' で区切ってください。ブリーフィングだけを引き継ぐ場合は空のままにします。",
+		"next_steps_placeholder": "統合スイートを実行; PR を開く",
+		"handoff_created": "{{agent}} に {{id}} として引き継ぎました。",
+		"open_handoff": "ドキュメントを開く"
 	}
 }

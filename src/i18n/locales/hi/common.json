@@ -162,7 +162,9 @@
 		"organization_share_link_copied": "संगठन साझाकरण लिंक क्लिपबोर्ड में कॉपी किया गया!",
 		"public_share_link_copied": "सार्वजनिक साझाकरण लिंक क्लिपबोर्ड में कॉपी किया गया!",
 		"mode_exported": "मोड '{{mode}}' सफलतापूर्वक निर्यात किया गया",
-		"mode_imported": "मोड सफलतापूर्वक आयात किया गया"
+		"mode_imported": "मोड सफलतापूर्वक आयात किया गया",
+		"memory_saved": "स्मृति: {{count}} नई स्मृतियाँ सहेजी गईं",
+		"memory_consolidated": "स्मृति: {{count}} स्मृतियाँ समेकित की गईं"
 	},
 	"answers": {
 		"yes": "हां",
@@ -252,5 +254,21 @@
 	"docsLink": {
 		"label": "Docs",
 		"url": "https://docs.tumblecode.dev"
+	},
+	"agentInterchange": {
+		"pick_up_title": "किसी अन्य एजेंट का कार्य अपनाएँ",
+		"pick_up_placeholder": "आपके लिए छोड़े गए हैंडऑफ़, फिर इस कार्यक्षेत्र में हाल की Claude Code सत्र",
+		"handoff_from": "{{agent}} द्वारा हैंडऑफ़ · {{when}}",
+		"session_from": "{{agent}} · {{when}}",
+		"nothing_to_pick_up": "इस कार्यक्षेत्र के लिए कोई हैंडऑफ़ या Claude Code सत्र नहीं मिले।",
+		"reading": "दूसरे एजेंट का सत्र पढ़ा जा रहा है…",
+		"read_failed": "वह सत्र पढ़ा नहीं जा सका; हो सकता है इसकी फ़ाइलें हटा दी गई हों।",
+		"no_provider": "पहले Tumble Code पैनल खोलें, फिर पुनः प्रयास करें।",
+		"no_current_task": "हस्तांतरण के लिए कोई चल रही कार्य नहीं है।",
+		"next_steps_title": "Claude Code को हैंडऑफ़ करें",
+		"next_steps_prompt": "Claude Code को आगे क्या करना चाहिए? चरणों को ';' से अलग करें। केवल ब्रीफिंग हस्तांतरित करने के लिए खाली छोड़ें।",
+		"next_steps_placeholder": "एकीकरण सूट चलाएँ; PR खोलें",
+		"handoff_created": "{{agent}} को {{id}} के रूप में हैंडऑफ़ किया गया।",
+		"open_handoff": "दस्तावेज़ खोलें"
 	}
 }

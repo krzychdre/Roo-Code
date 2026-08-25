@@ -319,7 +319,23 @@
 		"triggerLabel_zero": "0 automatisch genehmigt",
 		"triggerLabel_one": "1 automatisch genehmigt",
 		"triggerLabel_other": "{{count}} automatisch genehmigt",
-		"triggerLabelAll": "BRRR"
+		"triggerLabelAll": "BRRR",
+		"mode": {
+			"label": "Auto-Genehmigungsmodus",
+			"forcedHint": "Vom aktuellen Modus immer genehmigt",
+			"default": {
+				"label": "Standard",
+				"description": "Berücksichtigt die einzelnen Schalter, die Befehls-Freigabeliste sowie die Schutzregeln für Dateien außerhalb des Workspaces und geschützte Dateien."
+			},
+			"bypass": {
+				"label": "Umgehen",
+				"description": "Halbautomatik: genehmigt jedes Lesen, Schreiben, MCP, Teilaufgabe, Moduswechsel und jeden Befehl (auch unbekannte) ohne Nachfrage. Rückfragen unterbrechen dich weiterhin."
+			},
+			"autonomous": {
+				"label": "Autonom",
+				"description": "Vollautomatik: alles aus Umgehen, plus Rückfragen werden automatisch beantwortet, sodass der Agent bis zum Ende durchläuft."
+			}
+		}
 	},
 	"reasoning": {
 		"thinking": "Denke nach",
@@ -338,6 +354,12 @@
 			"messagesRemoved": "{{count}} Nachricht entfernt",
 			"messagesRemoved_other": "{{count}} Nachrichten entfernt",
 			"description": "Ältere Nachrichten wurden aus der Konversation entfernt, um innerhalb des Kontextfenster-Limits zu bleiben. Dies ist ein schnellerer, aber weniger kontexterhaltender Ansatz im Vergleich zur Komprimierung."
+		},
+		"prune": {
+			"title": "Alte Werkzeugausgaben auf Festplatte verschoben",
+			"summary": "{{count}} Werkzeugergebnis, ca. {{kb}} KB freigegeben",
+			"summary_other": "{{count}} Werkzeugergebnisse, ca. {{kb}} KB freigegeben",
+			"description": "Alte, sehr große Werkzeugergebnisse wurden als Aufgaben-Artefakte gespeichert und durch eine kurze Vorschau ersetzt. Es ging nichts verloren: Jede Vorschau nennt ihr Artefakt, und das Modell kann den Volltext mit read_artifact wieder lesen. Dies lief statt einer KI-Zusammenfassung, sodass kein Konversationstext umgeschrieben wurde."
 		}
 	},
 	"skill": {
@@ -534,5 +556,44 @@
 		"reviewFile": "Plan überprüfen",
 		"loading": "Plan wird geladen…",
 		"pauseTitle": "Plan aktualisiert — prüfen und genehmigen"
+	},
+	"subagents": {
+		"headerActive": "Subagenten: {{active}}/{{total}} aktiv",
+		"headerDone": "Subagenten: {{total}} abgeschlossen",
+		"noOutput": "Noch keine Ausgabe.",
+		"tokens": "Verwendete Token",
+		"cancel": "Diesen Subagenten abbrechen",
+		"send": "Senden",
+		"answerPlaceholder": "Frage des Subagenten beantworten…",
+		"guidancePlaceholder": "Anleitung senden (beim nächsten Halt zugestellt)…",
+		"status": {
+			"queued": "In Warteschlange",
+			"running": "Läuft",
+			"awaiting_input": "Eingabe erforderlich",
+			"completed": "Abgeschlossen",
+			"failed": "Fehlgeschlagen",
+			"cancelled": "Abgebrochen"
+		},
+		"apiConfig": "API-Profil: {{name}} (an den Modus der Teilaufgabe angeheftet; in Einstellungen → Modi ändern)",
+		"permissionNeeded": "Diese Teilaufgabe benötigt eine Berechtigung, um fortzufahren"
+	},
+	"webSearch": {
+		"wantsToSearch": "Tumble möchte im Web nach <code>{{queries}}</code> suchen",
+		"didSearch": "Tumble hat im Web nach <code>{{queries}}</code> gesucht"
+	},
+	"webFetch": {
+		"wantsToFetch": "Tumble möchte <code>{{url}}</code> lesen",
+		"didFetch": "Tumble hat <code>{{url}}</code> gelesen"
+	},
+	"readArtifact": {
+		"title": "Tumble liest Artefakt"
+	},
+	"searchTaskHistory": {
+		"title": "Tumble durchsuchte den Verlauf dieser Aufgabe"
+	},
+	"memoryActivity": {
+		"recalling": "Erinnerungen werden abgerufen…",
+		"writing": "Gedächtnis wird geschrieben…",
+		"both": "Gedächtnis wird abgerufen und geschrieben…"
 	}
 }

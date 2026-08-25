@@ -162,7 +162,9 @@
 		"organization_share_link_copied": "조직 공유 링크가 클립보드에 복사되었습니다!",
 		"public_share_link_copied": "공개 공유 링크가 클립보드에 복사되었습니다!",
 		"mode_exported": "'{{mode}}' 모드가 성공적으로 내보내졌습니다",
-		"mode_imported": "모드를 성공적으로 가져왔습니다"
+		"mode_imported": "모드를 성공적으로 가져왔습니다",
+		"memory_saved": "메모리: 새 메모리 {{count}}개 저장됨",
+		"memory_consolidated": "메모리: 메모리 {{count}}개 통합됨"
 	},
 	"answers": {
 		"yes": "예",
@@ -252,5 +254,21 @@
 	"docsLink": {
 		"label": "Docs",
 		"url": "https://docs.tumblecode.dev"
+	},
+	"agentInterchange": {
+		"pick_up_title": "다른 에이전트의 작업 이어받기",
+		"pick_up_placeholder": "당신에게 남겨진 인계, 그다음 이 워크스페이스의 최근 Claude Code 세션",
+		"handoff_from": "{{agent}}의 인계 · {{when}}",
+		"session_from": "{{agent}} · {{when}}",
+		"nothing_to_pick_up": "이 워크스페이스에 대한 인계 또는 Claude Code 세션이 없습니다.",
+		"reading": "다른 에이전트의 세션을 읽는 중…",
+		"read_failed": "해당 세션을 읽을 수 없습니다. 파일이 제거되었을 수 있습니다.",
+		"no_provider": "먼저 Tumble Code 패널을 연 뒤 다시 시도하세요.",
+		"no_current_task": "인계할 실행 중인 작업이 없습니다.",
+		"next_steps_title": "Claude Code에 인계",
+		"next_steps_prompt": "Claude Code가 다음에 무엇을 해야 합니까? 단계는 ';'로 구분하세요. 브리핑만 인계하려면 비워 두세요.",
+		"next_steps_placeholder": "통합 스위트 실행; PR 열기",
+		"handoff_created": "{{agent}}에게 {{id}}로 인계됨.",
+		"open_handoff": "문서 열기"
 	}
 }
