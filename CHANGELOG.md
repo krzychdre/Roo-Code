@@ -1,5 +1,17 @@
 # Tumble Code Changelog
 
+## 3.53.1
+
+### Patch Changes
+
+- Suppress celebration sound when reopening a completed task from history
+- Previously, opening a completed task from the history list replayed the
+- "task completed" celebration sound because the rehydrated `clineMessages`
+- already end in the original `completion_result` ask, which the ChatView
+- sound effect treated as a fresh completion. The sound now only plays when
+- the `completion_result` is genuinely new — i.e. the active task did not
+- just switch and the last-message timestamp advanced within the same task.
+
 > This changelog continues the history of [Roo Code](https://github.com/RooCodeInc/Roo-Code).
 > All entries below v3.53.0 describe Roo Code releases authored by the upstream team.
 > Tumble Code is a community fork that picks up maintenance from v3.53.0 onward.
