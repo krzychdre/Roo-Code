@@ -41,7 +41,10 @@
 		"experimental": "實驗性",
 		"language": "語言",
 		"about": "關於 Tumble Code",
-		"skills": "Skills"
+		"skills": "Skills",
+		"memory": "記憶",
+		"web": "網路工具",
+		"subagents": "子代理"
 	},
 	"about": {
 		"bugReport": {
@@ -705,6 +708,15 @@
 		"enableSubfolderRules": {
 			"label": "啟用子資料夾規則",
 			"description": "遞迴發現並載入子目錄中的 .roo/rules 和 AGENTS.md 檔案。適用於具有每包規則的 monorepo。"
+		},
+		"pruneBeforeCondense": {
+			"label": "在壓縮前修剪舊的工具輸出",
+			"description": "當情境不足時,首先將舊且過大的工具結果移至任務 artifact,並保留一個指明 artifact 名稱的簡短預覽。這不耗費任何 API 呼叫,也不會遺失任何內容:模型可透過 read_artifact 讀回全文。僅在修剪不夠時才執行 AI 摘要。關閉此項可直接進入摘要。"
+		},
+		"pruneToolResultBudget": {
+			"label": "單一工具結果的修剪閾值",
+			"bytes": "位元組",
+			"description": "大於此值的舊工具結果會移至 artifact 並替換為其前 20 行和後 20 行。較低的值每次釋放更多情境;較高的值在本文中保留更多輸出。"
 		}
 	},
 	"terminal": {
@@ -802,6 +814,14 @@
 		"todoList": {
 			"label": "啟用待辦事項清單工具",
 			"description": "啟用後，Tumble 可以建立和管理待辦事項清單來追蹤任務進度。這有助於將複雜任務組織成可管理的步驟。"
+		},
+		"slimToolset": {
+			"label": "精簡工具集(小模型)",
+			"description": "為此設定檔在每個任務中提供一個明確的工具:read_file、search_files、list_files、codebase_search、apply_diff、write_to_file、execute_command、read_artifact、網路工具以及任務工具(ask、complete、switch mode、new task、todo list、skill、load tools)。多餘的編輯動詞(edit、search_replace、edit_file、apply_patch)、影像生成、並行任務和斜線命令均被隱藏。小模型不再選錯編輯器。若模型仍呼叫被隱藏的工具,該工具仍會執行。",
+			"hideMcp": {
+				"label": "同時隱藏 MCP 工具",
+				"description": "MCP 工具的 schema 通常是工具提示詞中最大的一部分。除非此設定檔需要 MCP 伺服器,否則請保持開啟。"
+			}
 		}
 	},
 	"experimental": {
@@ -1046,5 +1066,71 @@
 			"descriptionTooLong": "說明不得超過1024個字元"
 		},
 		"footer": "使用技能編寫器模式建立您自己的技能，可在 <MarketplaceLink>模式市集</MarketplaceLink> 中取得。"
+	},
+	"memory": {
+		"enable": {
+			"label": "啟用持久記憶",
+			"description": "啟用後,代理會維護基於檔案的記憶,記錄你是誰、你的偏好和專案情境。記憶在擴充套件的私有儲存中跨工作階段保留。代理在每次任務中讀取它,並在你工作時寫入。<0>了解更多</0>"
+		},
+		"recall": {
+			"label": "啟用相關記憶回憶",
+			"description": "啟用後,代理會執行一個快速背景查詢,以呈現與目前提示最相關的記憶。停用可節省附帶查詢的成本;記憶索引仍會載入。需要已設定的模型供應商。"
+		},
+		"directory": {
+			"label": "自訂記憶目錄(選用)",
+			"description": "覆寫預設的記憶儲存位置。必須為絕對路徑。此欄位會忽略專案設定(僅限可信來源),使存放庫無法重新導向記憶寫入。留空則使用擴充套件的預設儲存位置。",
+			"placeholder": "/absolute/path/to/memory/dir"
+		},
+		"shareWithClaudeCode": {
+			"label": "與 Claude Code 共享記憶",
+			"description": "在 ~/.claude/projects/<workspace>/memory 讀取和寫入與 Claude Code 相同的 MEMORY.md 集,而非在擴充套件儲存中保留單獨一份。這樣兩個代理對工作區的記憶就保持一致。",
+			"overridden": "已停用,因為設定了自訂記憶目錄;顯式路徑優先於共享。"
+		},
+		"writerProfile": {
+			"label": "記憶寫入器 API 設定檔",
+			"description": "將背景記憶寫入器(抽取與 dream 合併)路由到更便宜或本地的 API 設定檔,而非前景模型。過期或已刪除的設定檔會自動退回目前設定檔。",
+			"useCurrent": "使用目前設定檔"
+		},
+		"dream": {
+			"enable": {
+				"label": "啟用記憶合併(dream)",
+				"description": "啟用後,代理會定期審查並重組記憶:合併重複項、刪除矛盾事實並清理過期條目。當經過足夠的時間和工作階段後自動執行。"
+			},
+			"minHours": {
+				"label": "dream 之間的最小小時數",
+				"description": "自上次合併後到下次 dream 可執行之間的最少小時數。預設 24。範圍:1-168。"
+			},
+			"minSessions": {
+				"label": "dream 之間的最小工作階段數",
+				"description": "自上次合併以來、下次 dream 執行前所需的任務工作階段數。預設 5。範圍:1-100。這是一個跳過門,因此少計只會延後 dream。"
+			}
+		}
+	},
+	"web": {
+		"enable": {
+			"label": "啟用網路工具",
+			"description": "為具有網頁存取群組的模式提供原生 web_search 與 web_fetch 工具,由自架的 SearXNG 實例支援。關閉時,這些工具對模型隱藏且無法呼叫。"
+		},
+		"searxngBaseUrl": {
+			"label": "SearXNG 基礎 URL",
+			"description": "你的 SearXNG 實例的基礎 URL。必須啟用其 JSON 輸出格式,否則 web_search 無法讀取結果。",
+			"placeholder": "https://searx.example.org"
+		},
+		"maxResults": {
+			"label": "每次查詢的結果數",
+			"description": "web_search 每次查詢回傳的搜尋結果數量。較低的值可保持情境視窗較小。預設 5。"
+		}
+	},
+	"subagents": {
+		"maxConcurrency": {
+			"label": "最大並行子代理數",
+			"description": "對可同時執行的並行子任務(run_parallel_tasks)數量的硬性上限。設為關閉(低於 2)可完全停用並行子任務;編排器隨後改為透過單一子任務委派。編排器可以請求更少,但絕不會更多;多餘的子任務在佇列中等待。",
+			"off": "關閉"
+		},
+		"followupTimeout": {
+			"label": "問題逾時",
+			"description": "子代理的問題在自動核准並由子代理自行繼續之前,等待你回答的時長。0 表示立即作答(完全自主)。",
+			"immediate": "關閉"
+		}
 	}
 }

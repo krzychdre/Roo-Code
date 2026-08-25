@@ -41,7 +41,10 @@
 		"experimental": "Experimental",
 		"language": "Idioma",
 		"about": "Sobre",
-		"skills": "Skills"
+		"skills": "Skills",
+		"memory": "Memória",
+		"web": "Ferramentas web",
+		"subagents": "Subagentes"
 	},
 	"about": {
 		"bugReport": {
@@ -695,6 +698,15 @@
 		"enableSubfolderRules": {
 			"label": "Ativar regras de subpastas",
 			"description": "Descobrir e carregar recursivamente arquivos .roo/rules e AGENTS.md de subdiretórios. Útil para monorepos com regras por pacote."
+		},
+		"pruneBeforeCondense": {
+			"label": "Podar a saída antiga de ferramentas antes de condensar",
+			"description": "Quando o contexto fica curto, primeiro mova resultados antigos e muito grandes de ferramentas para artefatos de tarefa e deixe uma prévia curta que nomeie o artefato. Isso não custa nenhuma chamada de API e não perde nada: o modelo relê o texto completo com read_artifact. Um resumo por IA só roda se a poda não for suficiente. Desative para ir direto ao resumo."
+		},
+		"pruneToolResultBudget": {
+			"label": "Limiar de poda para um único resultado de ferramenta",
+			"bytes": "bytes",
+			"description": "Resultados antigos de ferramentas maiores que isto são movidos para um artefato e substituídos por suas primeiras e últimas 20 linhas. Valores menores liberam mais contexto por passada; valores maiores mantêm mais saída embutida."
 		}
 	},
 	"terminal": {
@@ -792,6 +804,14 @@
 		"todoList": {
 			"label": "Habilitar ferramenta de lista de tarefas",
 			"description": "Quando habilitado, o Tumble pode criar e gerenciar listas de tarefas para acompanhar o progresso das tarefas. Isso ajuda a organizar tarefas complexas em etapas gerenciáveis."
+		},
+		"slimToolset": {
+			"label": "Conjunto de ferramentas enxuto (modelos pequenos)",
+			"description": "Oferece a este perfil uma ferramenta óbvia por tarefa: read_file, search_files, list_files, codebase_search, apply_diff, write_to_file, execute_command, read_artifact, as ferramentas web e as de tarefa (ask, complete, switch mode, new task, todo list, skill, load tools). Os verbos de edição excedentes (edit, search_replace, edit_file, apply_patch), geração de imagens, tarefas paralelas e comandos slash ficam ocultos. Modelos pequenos param de escolher o editor errado. Se o modelo chamar uma ferramenta oculta mesmo assim, ela ainda roda.",
+			"hideMcp": {
+				"label": "Ocultar também ferramentas MCP",
+				"description": "Os esquemas de ferramentas MCP costumam ser a maior parte do prompt de ferramentas. Mantenha isto ativo a menos que este perfil precise de um servidor MCP."
+			}
 		}
 	},
 	"experimental": {
@@ -1046,5 +1066,71 @@
 			"descriptionTooLong": "A descrição deve ter no máximo 1024 caracteres"
 		},
 		"footer": "Crie suas próprias skills com o modo Skill Writer, disponível em <MarketplaceLink>Modes Marketplace</MarketplaceLink>."
+	},
+	"memory": {
+		"enable": {
+			"label": "Ativar memória persistente",
+			"description": "Quando ativo, o agente mantém uma memória baseada em arquivos sobre quem você é, suas preferências e o contexto do projeto. A memória persiste entre sessões no armazenamento privado da extensão. O agente a lê a cada tarefa e escreve nela enquanto você trabalha. <0>Saiba mais</0>"
+		},
+		"recall": {
+			"label": "Ativar recall de memória relevante",
+			"description": "Quando ativo, o agente executa uma consulta rápida em segundo plano para trazer as memórias mais relevantes para seu prompt atual. Desativar economiza o custo da consulta paralela; o índice de memória ainda carrega. Requer um provedor de modelo configurado."
+		},
+		"directory": {
+			"label": "Diretório de memória personalizado (opcional)",
+			"description": "Sobrescreve o local padrão de armazenamento de memória. Deve ser um caminho absoluto. As configurações do projeto são ignoradas neste campo (apenas fontes confiáveis) para que um repositório não redirecione gravações de memória. Deixe vazio para usar o local padrão da extensão.",
+			"placeholder": "/absolute/path/to/memory/dir"
+		},
+		"shareWithClaudeCode": {
+			"label": "Compartilhar memória com o Claude Code",
+			"description": "Lê e escreve o mesmo conjunto de MEMORY.md do Claude Code, em ~/.claude/projects/<workspace>/memory, em vez de manter um separado no armazenamento da extensão. Ambos os agentes então lembram das mesmas coisas sobre este espaço de trabalho.",
+			"overridden": "Desativado porque um diretório de memória personalizado está definido; um caminho explícito prevalece sobre o compartilhamento."
+		},
+		"writerProfile": {
+			"label": "Perfil de API do gravador de memória",
+			"description": "Direciona gravadores de memória em segundo plano (extração e consolidação dream) a um perfil de API mais barato ou local em vez do modelo em primeiro plano. Um perfil obsoleto ou excluído volta automaticamente ao perfil atual.",
+			"useCurrent": "Usar perfil atual"
+		},
+		"dream": {
+			"enable": {
+				"label": "Ativar consolidação de memória (dream)",
+				"description": "Quando ativo, o agente periodicamente revisa e reorganiza a memória: funde duplicatas, remove fatos contraditórios e poda entradas obsoletas. Roda automaticamente quando tempo e sessões suficientes se passaram."
+			},
+			"minHours": {
+				"label": "Horas mínimas entre dreams",
+				"description": "Horas desde a última consolidação antes que o próximo dream possa rodar. Padrão 24. Intervalo: 1-168."
+			},
+			"minSessions": {
+				"label": "Sessões mínimas entre dreams",
+				"description": "Sessões de tarefa desde a última consolidação exigidas antes que o próximo dream rode. Padrão 5. Intervalo: 1-100. É um portão de salto, então subestimar apenas atrasa um dream."
+			}
+		}
+	},
+	"web": {
+		"enable": {
+			"label": "Ativar ferramentas web",
+			"description": "Dá aos modos com o grupo Acesso web as ferramentas nativas web_search e web_fetch, apoiadas por uma instância SearXNG auto-hospedada. Quando desativado, as ferramentas são ocultadas do modelo e não podem ser chamadas."
+		},
+		"searxngBaseUrl": {
+			"label": "URL base do SearXNG",
+			"description": "URL base da sua instância SearXNG. Seu formato de saída JSON deve estar ativado, caso contrário web_search não poderá ler os resultados.",
+			"placeholder": "https://searx.example.org"
+		},
+		"maxResults": {
+			"label": "Resultados por consulta",
+			"description": "Quantos resultados de busca o web_search retorna para cada consulta. Valores menores mantêm a janela de contexto pequena. Padrão 5."
+		}
+	},
+	"subagents": {
+		"maxConcurrency": {
+			"label": "Máximo de subagentes paralelos",
+			"description": "Limite rígido de quantas sub-tarefas paralelas (run_parallel_tasks) podem rodar ao mesmo tempo. Defina como Desligado (abaixo de 2) para desativar sub-tarefas paralelas totalmente; o orquestrador então delega via sub-tarefas únicas. O orquestrador pode pedir menos, nunca mais; sub-tarefas adicionais aguardam na fila.",
+			"off": "Desligado"
+		},
+		"followupTimeout": {
+			"label": "Tempo limite da pergunta",
+			"description": "Por quanto tempo a pergunta de um subagente aguarda sua resposta antes de ser auto-aprovada e o subagente seguir sozinho. 0 responde imediatamente (totalmente autônomo).",
+			"immediate": "desligado"
+		}
 	}
 }

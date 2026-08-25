@@ -319,7 +319,23 @@
 		"triggerLabel_zero": "0 aprovacions automàtiques",
 		"triggerLabel_one": "1 aprovació automàtica",
 		"triggerLabel_other": "{{count}} aprovacions automàtiques",
-		"triggerLabelAll": "BRRR"
+		"triggerLabelAll": "BRRR",
+		"mode": {
+			"label": "Mode d'aprovació automàtica",
+			"forcedHint": "Sempre aprovat pel mode actual",
+			"default": {
+				"label": "Per defecte",
+				"description": "Respecta els commutadors individuals, la llista de comandes permeses i les proteccions de fora de l'espai de treball i de fitxers protegits."
+			},
+			"bypass": {
+				"label": "Ometre",
+				"description": "Semi-automàtic: aprova cada lectura, escriptura, MCP, subtasca, canvi de mode i comanda (fins i tot les desconegudes) sense preguntar. Les preguntes de seguiment encara t'interrompen."
+			},
+			"autonomous": {
+				"label": "Autònom",
+				"description": "Automàtic complet: tot el que fa Ometre, més que les preguntes de seguiment es responen automàticament perquè l'agent funcioni fins que acabi."
+			}
+		}
 	},
 	"reasoning": {
 		"thinking": "Pensant",
@@ -338,6 +354,12 @@
 			"messagesRemoved": "{{count}} missatge eliminat",
 			"messagesRemoved_other": "{{count}} missatges eliminats",
 			"description": "S'han eliminat missatges més antics de la conversa per mantenir-se dins del límit de la finestra de context. Aquest és un enfocament ràpid però menys conservador del context en comparació amb la condensació."
+		},
+		"prune": {
+			"title": "Sortida antiga d'eines moguda al disc",
+			"summary": "{{count}} resultat d'eina, uns {{kb}} KB alliberats",
+			"summary_other": "{{count}} resultats d'eines, uns {{kb}} KB alliberats",
+			"description": "Els resultats d'eines antics i grans s'han desat com a artefactes de tasca i substituïts per una vista prèvia breu. No s'ha perdut res: cada vista prèvia anomena el seu artefacte, i el model pot tornar a llegir el text complet amb read_artifact. Això s'ha executat en lloc d'un resum amb IA, de manera que no s'ha reescrit cap text de la conversa."
 		}
 	},
 	"skill": {
@@ -534,5 +556,44 @@
 		"reviewFile": "Revisar pla",
 		"loading": "Carregant pla…",
 		"pauseTitle": "Pla actualitzat — revisa i aprova"
+	},
+	"subagents": {
+		"headerActive": "Subagents: {{active}}/{{total}} actius",
+		"headerDone": "Subagents: {{total}} finalitzats",
+		"noOutput": "Encara no hi ha sortida.",
+		"tokens": "Tokens utilitzats",
+		"cancel": "Cancel·la aquest subagent",
+		"send": "Envia",
+		"answerPlaceholder": "Respon la pregunta del subagent…",
+		"guidancePlaceholder": "Envia orientació (entregada al proper punt d'aturada)…",
+		"status": {
+			"queued": "En cua",
+			"running": "En execució",
+			"awaiting_input": "Necessita entrada",
+			"completed": "Completat",
+			"failed": "Fallat",
+			"cancelled": "Cancel·lat"
+		},
+		"apiConfig": "Perfil d'API: {{name}} (fixat al mode de la subtasca; canvia-ho a Configuració → Modes)",
+		"permissionNeeded": "Aquesta subtasca necessita permís per continuar"
+	},
+	"webSearch": {
+		"wantsToSearch": "Tumble vol cercar al web <code>{{queries}}</code>",
+		"didSearch": "Tumble ha cercat al web <code>{{queries}}</code>"
+	},
+	"webFetch": {
+		"wantsToFetch": "Tumble vol llegir <code>{{url}}</code>",
+		"didFetch": "Tumble ha llegit <code>{{url}}</code>"
+	},
+	"readArtifact": {
+		"title": "Tumble llegeix un artefacte"
+	},
+	"searchTaskHistory": {
+		"title": "Tumble ha cercat a l'historial d'aquesta tasca"
+	},
+	"memoryActivity": {
+		"recalling": "S'està recol·lectant memòria…",
+		"writing": "S'està escrivint memòria…",
+		"both": "S'està recol·lectant i escrivint memòria…"
 	}
 }

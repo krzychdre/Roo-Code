@@ -319,7 +319,23 @@
 		"triggerLabel_zero": "0 automatisch goedgekeurd",
 		"triggerLabel_one": "1 automatisch goedgekeurd",
 		"triggerLabel_other": "{{count}} automatisch goedgekeurd",
-		"triggerLabelAll": "BRRR"
+		"triggerLabelAll": "BRRR",
+		"mode": {
+			"label": "Modus voor automatisch goedkeuren",
+			"forcedHint": "Altijd goedgekeurd door de huidige modus",
+			"default": {
+				"label": "Standaard",
+				"description": "Respecteert de individuele schakelaars, de lijst met toegestane opdrachten en de bewaking buiten de werkruimte / voor beveiligde bestanden."
+			},
+			"bypass": {
+				"label": "Omzeilen",
+				"description": "Semi-auto: keurt elke lees-, schrijf-, MCP-, subtaak-, moduswissel- en opdrachtbewerking (ook onbekende) goed zonder te vragen. Vervolgvragen onderbreken je nog steeds."
+			},
+			"autonomous": {
+				"label": "Autonoom",
+				"description": "Volautomatisch: alles uit Omzeilen, plus vervolgvragen worden automatisch beantwoord zodat de agent doorloopt tot hij klaar is."
+			}
+		}
 	},
 	"announcement": {
 		"title": "Tumble Code {{version}} uitgebracht",
@@ -366,6 +382,12 @@
 			"messagesRemoved": "{{count}} bericht verwijderd",
 			"messagesRemoved_other": "{{count}} berichten verwijderd",
 			"description": "Oudere berichten zijn uit het gesprek verwijderd om binnen de limiet van het contextvenster te blijven. Dit is een snelle maar minder contextbehoudende aanpak in vergelijking met samenvoeging."
+		},
+		"prune": {
+			"title": "Oude tool-uitvoer naar schijf verplaatst",
+			"summary": "{{count}} tool-resultaat, ongeveer {{kb}} KB vrijgemaakt",
+			"summary_other": "{{count}} tool-resultaten, ongeveer {{kb}} KB vrijgemaakt",
+			"description": "Oude, te grote tool-resultaten zijn opgeslagen als taak-artefacten en vervangen door een korte voorvertoning. Er ging niets verloren: elke voorvertoning noemt zijn artefact, en het model kan de volledige tekst teruglezen met read_artifact. Dit liep in plaats van een AI-samenvatting, dus er is geen gesprekstekst herschreven."
 		}
 	},
 	"skill": {
@@ -534,5 +556,44 @@
 		"reviewFile": "Plan beoordelen",
 		"loading": "Plan laden…",
 		"pauseTitle": "Plan bijgewerkt — beoordeel en keur goed"
+	},
+	"subagents": {
+		"headerActive": "Subagenten: {{active}}/{{total}} actief",
+		"headerDone": "Subagenten: {{total}} voltooid",
+		"noOutput": "Nog geen uitvoer.",
+		"tokens": "Tokens gebruikt",
+		"cancel": "Deze subagent annuleren",
+		"send": "Verzenden",
+		"answerPlaceholder": "Beantwoord de vraag van de subagent…",
+		"guidancePlaceholder": "Stuur aanwijzingen (geleverd bij het volgende stoppunt)…",
+		"status": {
+			"queued": "In wachtrij",
+			"running": "Actief",
+			"awaiting_input": "Invoer nodig",
+			"completed": "Voltooid",
+			"failed": "Mislukt",
+			"cancelled": "Geannuleerd"
+		},
+		"apiConfig": "API-profiel: {{name}} (vastgezet op de modus van de subtaak; wijzig via Instellingen → Modus)",
+		"permissionNeeded": "Deze subtaak heeft toestemming nodig om door te gaan"
+	},
+	"webSearch": {
+		"wantsToSearch": "Tumble wil op het web zoeken naar <code>{{queries}}</code>",
+		"didSearch": "Tumble heeft op het web gezocht naar <code>{{queries}}</code>"
+	},
+	"webFetch": {
+		"wantsToFetch": "Tumble wil <code>{{url}}</code> lezen",
+		"didFetch": "Tumble heeft <code>{{url}}</code> gelezen"
+	},
+	"readArtifact": {
+		"title": "Tumble leest artefact"
+	},
+	"searchTaskHistory": {
+		"title": "Tumble doorzocht de geschiedenis van deze taak"
+	},
+	"memoryActivity": {
+		"recalling": "Geheugen wordt opgehaald…",
+		"writing": "Geheugen wordt geschreven…",
+		"both": "Geheugen wordt opgehaald en geschreven…"
 	}
 }

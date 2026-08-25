@@ -162,7 +162,9 @@
 		"organization_share_link_copied": "Ссылка для совместного доступа организации скопирована в буфер обмена!",
 		"public_share_link_copied": "Публичная ссылка для совместного доступа скопирована в буфер обмена!",
 		"mode_exported": "Режим '{{mode}}' успешно экспортирован",
-		"mode_imported": "Режим успешно импортирован"
+		"mode_imported": "Режим успешно импортирован",
+		"memory_saved": "Память: сохранено {{count}} новых воспоминаний",
+		"memory_consolidated": "Память: консолидировано {{count}} воспоминаний"
 	},
 	"answers": {
 		"yes": "Да",
@@ -252,5 +254,21 @@
 	"docsLink": {
 		"label": "Docs",
 		"url": "https://docs.tumblecode.dev"
+	},
+	"agentInterchange": {
+		"pick_up_title": "Подхватить работу другого агента",
+		"pick_up_placeholder": "Передачи, оставленные для вас, затем недавние сессии Claude Code в этом рабочем пространстве",
+		"handoff_from": "передача от {{agent}} · {{when}}",
+		"session_from": "{{agent}} · {{when}}",
+		"nothing_to_pick_up": "Для этого рабочего пространства не найдено передач или сессий Claude Code.",
+		"reading": "Чтение сессии другого агента…",
+		"read_failed": "Не удалось прочитать эту сессию; возможно, её файлы были удалены.",
+		"no_provider": "Сначала откройте панель Tumble Code, затем попробуйте снова.",
+		"no_current_task": "Нет выполняемой задачи для передачи.",
+		"next_steps_title": "Передать в Claude Code",
+		"next_steps_prompt": "Что Claude Code должен сделать дальше? Разделяйте шаги символом ';'. Оставьте пустым, чтобы передать только сводку.",
+		"next_steps_placeholder": "Запустить набор интеграционных тестов; открыть PR",
+		"handoff_created": "Передано агенту {{agent}} как {{id}}.",
+		"open_handoff": "Открыть документ"
 	}
 }

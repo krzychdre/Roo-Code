@@ -166,7 +166,9 @@
 		"organization_share_link_copied": "Enllaç de compartició d'organització copiat al porta-retalls!",
 		"public_share_link_copied": "Enllaç de compartició pública copiat al porta-retalls!",
 		"mode_exported": "Mode '{{mode}}' exportat correctament",
-		"mode_imported": "Mode importat correctament"
+		"mode_imported": "Mode importat correctament",
+		"memory_saved": "Memòria: s'han desat {{count}} records nous",
+		"memory_consolidated": "Memòria: {{count}} records consolidats"
 	},
 	"answers": {
 		"yes": "Sí",
@@ -252,5 +254,21 @@
 	"docsLink": {
 		"label": "Docs",
 		"url": "https://docs.tumblecode.dev"
+	},
+	"agentInterchange": {
+		"pick_up_title": "Reprèn la feina d'un altre agent",
+		"pick_up_placeholder": "Lliuraments pendents per a tu, després sessions recents de Claude Code en aquest espai de treball",
+		"handoff_from": "lliurament de {{agent}} · {{when}}",
+		"session_from": "{{agent}} · {{when}}",
+		"nothing_to_pick_up": "No s'han trobat lliuraments ni sessions de Claude Code per a aquest espai de treball.",
+		"reading": "S'està llegint la sessió de l'altre agent…",
+		"read_failed": "No s'ha pogut llegir aquella sessió; potser els seus fitxers han estat eliminats.",
+		"no_provider": "Obre primer el panell de Tumble Code i torna-ho a provar.",
+		"no_current_task": "No hi ha cap tasca en execució per lliurar.",
+		"next_steps_title": "Lliura a Claude Code",
+		"next_steps_prompt": "Què ha de fer Claude Code a continuació? Separa els passos amb ';'. Deixa-ho en blanc per lliurar només l'informe.",
+		"next_steps_placeholder": "Executa la suite d'integració; obre la PR",
+		"handoff_created": "S'ha lliurat a {{agent}} com a {{id}}.",
+		"open_handoff": "Obre el document"
 	}
 }

@@ -320,7 +320,23 @@
 		"triggerLabel_zero": "0 otomatik onaylandı",
 		"triggerLabel_one": "1 otomatik onaylandı",
 		"triggerLabel_other": "{{count}} otomatik onaylandı",
-		"triggerLabelAll": "BRRR"
+		"triggerLabelAll": "BRRR",
+		"mode": {
+			"label": "Otomatik onay modu",
+			"forcedHint": "Her zaman mevcut mod tarafından onaylanır",
+			"default": {
+				"label": "Varsayılan",
+				"description": "Bireysel anahtarları, komut izin listesini ve çalışma alanı dışı / korumalı dosya güvenliklerini gözetir."
+			},
+			"bypass": {
+				"label": "Atla",
+				"description": "Yarı otomatik: her okuma, yazma, MCP, alt görev, mod değişimi ve komutu (bilinmeyenler bile) sormadan onaylar. Takip soruları yine de sizi böler."
+			},
+			"autonomous": {
+				"label": "Otonom",
+				"description": "Tam otomatik: Atla'nın yaptığı her şey, ayrıca takip soruları otomatik yanıtlanır böylece araç bitene kadar çalışır."
+			}
+		}
 	},
 	"reasoning": {
 		"thinking": "Düşünüyor",
@@ -339,6 +355,12 @@
 			"messagesRemoved": "{{count}} mesaj kaldırıldı",
 			"messagesRemoved_other": "{{count}} mesaj kaldırıldı",
 			"description": "Bağlam penceresi sınırında kalmak için eski mesajlar konuşmadan kaldırıldı. Bu, yoğunlaştırmaya kıyasla hızlı ancak daha az bağlam koruyucu bir yaklaşımdır."
+		},
+		"prune": {
+			"title": "Eski araç çıktısı diske taşındı",
+			"summary": "{{count}} araç sonucu, yaklaşık {{kb}} KB boşaltıldı",
+			"summary_other": "{{count}} araç sonucu, yaklaşık {{kb}} KB boşaltıldı",
+			"description": "Eski ve çok büyük araç sonuçları görev artefaktı olarak kaydedildi ve kısa bir önizlemeyle değiştirildi. Hiçbir şey kaybolmadı: her önizleme kendi artefaktını adlandırır ve model tüm metni read_artifact ile geri okuyabilir. Bu, bir AI özeti yerine çalıştı, bu yüzden hiçbir konuşma metni yeniden yazılmadı."
 		}
 	},
 	"skill": {
@@ -535,5 +557,44 @@
 		"reviewFile": "Planı incele",
 		"loading": "Plan yükleniyor…",
 		"pauseTitle": "Plan güncellendi — incele ve onayla"
+	},
+	"subagents": {
+		"headerActive": "Alt aracılar: {{active}}/{{total}} aktif",
+		"headerDone": "Alt aracılar: {{total}} tamamlandı",
+		"noOutput": "Henüz çıktı yok.",
+		"tokens": "Kullanılan token",
+		"cancel": "Bu alt aracıyı iptal et",
+		"send": "Gönder",
+		"answerPlaceholder": "Alt aracının sorusunu yanıtla…",
+		"guidancePlaceholder": "Yönerge gönder (bir sonraki durak noktasında iletilir)…",
+		"status": {
+			"queued": "Sırada",
+			"running": "Çalışıyor",
+			"awaiting_input": "Girdi bekliyor",
+			"completed": "Tamamlandı",
+			"failed": "Başarısız",
+			"cancelled": "İptal edildi"
+		},
+		"apiConfig": "API profili: {{name}} (alt görevin moduna sabitlendi; Ayarlar → Modlar bölümünde değiştirin)",
+		"permissionNeeded": "Bu alt görevi sürdürmek için izin gerekiyor"
+	},
+	"webSearch": {
+		"wantsToSearch": "Tumble web'de <code>{{queries}}</code> aramak istiyor",
+		"didSearch": "Tumble web'de <code>{{queries}}</code> aradı"
+	},
+	"webFetch": {
+		"wantsToFetch": "Tumble <code>{{url}}</code> okumak istiyor",
+		"didFetch": "Tumble <code>{{url}}</code> okudu"
+	},
+	"readArtifact": {
+		"title": "Tumble artefakt okudu"
+	},
+	"searchTaskHistory": {
+		"title": "Tumble bu görevin geçmişini aradı"
+	},
+	"memoryActivity": {
+		"recalling": "Bellek geri çağrılıyor…",
+		"writing": "Bellek yazılıyor…",
+		"both": "Bellek geri çağrılıyor ve yazılıyor…"
 	}
 }

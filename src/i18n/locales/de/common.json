@@ -162,7 +162,9 @@
 		"organization_share_link_copied": "Organisations-Freigabelink in die Zwischenablage kopiert!",
 		"public_share_link_copied": "Öffentlicher Freigabelink in die Zwischenablage kopiert!",
 		"mode_exported": "Modus '{{mode}}' erfolgreich exportiert",
-		"mode_imported": "Modus erfolgreich importiert"
+		"mode_imported": "Modus erfolgreich importiert",
+		"memory_saved": "Gedächtnis: {{count}} neue Erinnerungen gespeichert",
+		"memory_consolidated": "Gedächtnis: {{count}} Erinnerungen konsolidiert"
 	},
 	"answers": {
 		"yes": "Ja",
@@ -247,5 +249,21 @@
 	"docsLink": {
 		"label": "Docs",
 		"url": "https://docs.tumblecode.dev"
+	},
+	"agentInterchange": {
+		"pick_up_title": "Arbeit eines anderen Agenten übernehmen",
+		"pick_up_placeholder": "An dich hinterlegte Übergaben, danach aktuelle Claude-Code-Sitzungen in diesem Workspace",
+		"handoff_from": "Übergabe von {{agent}} · {{when}}",
+		"session_from": "{{agent}} · {{when}}",
+		"nothing_to_pick_up": "Keine Übergaben oder Claude-Code-Sitzungen für diesen Workspace gefunden.",
+		"reading": "Sitzung des anderen Agenten wird gelesen…",
+		"read_failed": "Diese Sitzung konnte nicht gelesen werden; ihre Dateien wurden möglicherweise entfernt.",
+		"no_provider": "Öffne zuerst das Tumble-Code-Bedienfeld und versuche es erneut.",
+		"no_current_task": "Es läuft keine Aufgabe, die übergeben werden könnte.",
+		"next_steps_title": "An Claude Code übergeben",
+		"next_steps_prompt": "Was soll Claude Code als Nächstes tun? Trenne Schritte mit ';'. Leer lassen, um nur das Briefing zu übergeben.",
+		"next_steps_placeholder": "Integrationssuite ausführen; PR öffnen",
+		"handoff_created": "An {{agent}} als {{id}} übergeben.",
+		"open_handoff": "Dokument öffnen"
 	}
 }

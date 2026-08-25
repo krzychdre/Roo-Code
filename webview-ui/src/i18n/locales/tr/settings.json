@@ -41,7 +41,10 @@
 		"experimental": "Deneysel",
 		"language": "Dil",
 		"about": "Tumble Code Hakkında",
-		"skills": "Skills"
+		"skills": "Skills",
+		"memory": "Bellek",
+		"web": "Web araçları",
+		"subagents": "Alt aracılar"
 	},
 	"about": {
 		"bugReport": {
@@ -695,6 +698,15 @@
 		"enableSubfolderRules": {
 			"label": "Alt klasör kurallarını etkinleştir",
 			"description": "Alt dizinlerden .roo/rules ve AGENTS.md dosyalarını yinelemeli olarak keşfet ve yükle. Paket başına kuralları olan monorepo'lar için kullanışlı."
+		},
+		"pruneBeforeCondense": {
+			"label": "Sıkıştırmadan önce eski araç çıktısını buda",
+			"description": "Bağlam kısaldığında, önce eski ve çok büyük araç sonuçlarını görev artefaktlarına taşı ve artefaktı adlandıran kısa bir önizleme bırak. Bu hiçbir API çağrısına mal olmaz ve hiçbir şey kaybetmez: model tüm metni read_artifact ile geri okur. AI özeti yalnızca budama yetmediğinde çalışır. Doğrudan özete gitmek için bunu kapatın."
+		},
+		"pruneToolResultBudget": {
+			"label": "Tek bir araç sonucu için budama eşiği",
+			"bytes": "bayt",
+			"description": "Bundan daha büyük eski araç sonuçları bir artefakta taşınır ve ilk ve son 20 satırlarıyla değiştirilir. Düşük değerler her geçişte daha fazla bağlam boşaltır; yüksek değerler daha fazla çıktıyı satır içinde tutar."
 		}
 	},
 	"terminal": {
@@ -792,6 +804,14 @@
 		"todoList": {
 			"label": "Yapılacaklar listesi aracını etkinleştir",
 			"description": "Etkinleştirildiğinde, Tumble görev ilerlemesini takip etmek için yapılacaklar listeleri oluşturabilir ve yönetebilir. Bu, karmaşık görevleri yönetilebilir adımlara organize etmeye yardımcı olur."
+		},
+		"slimToolset": {
+			"label": "Sade araç seti (küçük modeller)",
+			"description": "Bu profile her iş için belirgin bir araç sunar: read_file, search_files, list_files, codebase_search, apply_diff, write_to_file, execute_command, read_artifact, web araçları ve görev araçları (ask, complete, switch mode, new task, todo list, skill, load tools). Yedek düzenleme fiilleri (edit, search_replace, edit_file, apply_patch), görüntü üretimi, paralel görevler ve slash komutları gizlenir. Küçük modeller yanlış editörü seçmeyi bırakır. Model gizli bir aracı yine de çağırırsa, yine de çalışır.",
+			"hideMcp": {
+				"label": "MCP araçlarını da gizle",
+				"description": "MCP araç şemaları genellikle araç isteminin en büyük parçasıdır. Bu profil bir MCP sunucusu gerektirmedikçe açık tutun."
+			}
 		}
 	},
 	"experimental": {
@@ -1046,5 +1066,71 @@
 			"descriptionTooLong": "Açıklama en fazla 1024 karakter olmalıdır"
 		},
 		"footer": "Skill Writer modu ile kendi becerilerinizi oluşturun. <MarketplaceLink>Modes Marketplace</MarketplaceLink>'de mevcut."
+	},
+	"memory": {
+		"enable": {
+			"label": "Kalıcı belleği etkinleştir",
+			"description": "Etkin olduğunda, aracı kim olduğunuz, tercihleriniz ve proje bağlamı hakkında dosya tabanlı bir bellek tutar. Bellek, uzantıya özel depolamada oturumlar arasında kalıcı olur. Aracı onu her görevde okur ve siz çalışırken yazar. <0>Daha fazla</0>"
+		},
+		"recall": {
+			"label": "İlgili bellek geri çağrımını etkinleştir",
+			"description": "Etkin olduğunda, aracı geçerli isteğiniz için en ilgili anıları ortaya çıkarmak amacıyla hızlı bir arka plan sorgusu çalıştırır. Devre dışı bırakmak yan sorgu maliyetinden tasarruf sağlar; bellek dizini yine de yüklenir. Yapılandırılmış bir model sağlayıcısı gerekir."
+		},
+		"directory": {
+			"label": "Özel bellek dizini (isteğe bağlı)",
+			"description": "Varsayılan bellek depolama konumunu geçersiz kılar. Mutlak bir yol olmalıdır. Bir depo bellek yazımlarını yeniden yönlendiremesin diye bu alan için proje ayarları yok sayılır (yalnızca güvenilir kaynaklar). Uzantının varsayılan depolama konumunu kullanmak için boş bırakın.",
+			"placeholder": "/absolute/path/to/memory/dir"
+		},
+		"shareWithClaudeCode": {
+			"label": "Belleği Claude Code ile paylaş",
+			"description": "Uzantı depolamasında ayrı bir tane tutmak yerine, Claude Code ile aynı MEMORY.md kümesini ~/.claude/projects/<workspace>/memory konumunda okur ve yazar. Her iki aracı da bu çalışma alanı hakkında aynı şeyleri hatırlar.",
+			"overridden": "Özel bir bellek dizini ayarlandığı için devre dışı; açık bir yol paylaşıma göre öncelikli."
+		},
+		"writerProfile": {
+			"label": "Bellek yazıcı API profili",
+			"description": "Arka plan bellek yazıcılarını (çıkarma ve dream birleştirme) ön plan modeli yerine daha ucuz veya yerel bir API profiline yönlendirir. Eski veya silinmiş bir profil otomatik olarak geçerli profile geri döner.",
+			"useCurrent": "Geçerli profili kullan"
+		},
+		"dream": {
+			"enable": {
+				"label": "Bellek birleştirmeyi (dream) etkinleştir",
+				"description": "Etkin olduğunda, aracı periyodik olarak belleği gözden geçirip yeniden düzenler: yinelenenleri birleştirir, çelişen gerçekleri kaldırır ve eski girdileri budar. Yeterli süre ve oturum geçtiğinde otomatik çalışır."
+			},
+			"minHours": {
+				"label": "Dream'ler arası minimum saat",
+				"description": "Bir sonraki dream çalışmadan önce son birleştirmeden bu yana saat. Varsayılan 24. Aralık: 1-168."
+			},
+			"minSessions": {
+				"label": "Dream'ler arası minimum oturum",
+				"description": "Bir sonraki dream çalışmadan önce son birleştirmeden bu yana gereken görev oturumları. Varsayılan 5. Aralık: 1-100. Bu bir atlama kapısıdır, bu yüzden eksik saymak yalnızca dream'i geciktirir."
+			}
+		}
+	},
+	"web": {
+		"enable": {
+			"label": "Web araçlarını etkinleştir",
+			"description": "Web erişimi grubuna sahip modlara, kendi sunucunuzda barındırılan bir SearXNG örneği destekli yerel web_search ve web_fetch araçlarını verir. Kapalıyken araçlar modelden gizlenir ve çağrılamaz."
+		},
+		"searxngBaseUrl": {
+			"label": "SearXNG temel URL",
+			"description": "SearXNG örneğinizin temel URL'si. JSON çıktı biçimi etkinleştirilmelidir, aksi halde web_search sonuçları okuyamaz.",
+			"placeholder": "https://searx.example.org"
+		},
+		"maxResults": {
+			"label": "Sorgu başına sonuç",
+			"description": "web_search her sorgu için kaç arama sonucu döndürür. Daha düşük değerler bağlam penceresini küçük tutar. Varsayılan 5."
+		}
+	},
+	"subagents": {
+		"maxConcurrency": {
+			"label": "Maksimum paralel alt aracı",
+			"description": "Aynı anda kaç paralel alt görevin (run_parallel_tasks) çalışabileceğine dair sert sınır. Paralel alt görevleri tamamen devre dışı bırakmak için Kapalı (2'nin altı) olarak ayarlayın; orkestratör o zaman tekil alt görevlerle yetkilendirir. Orkestratör daha az isteyebilir, asla daha fazla değil; ek alt görevler kuyrukta bekler.",
+			"off": "Kapalı"
+		},
+		"followupTimeout": {
+			"label": "Soru zaman aşımı",
+			"description": "Bir alt aracının sorusu, otomatik onaylanıp alt aracın kendi başına devam etmeden önce cevabınızı ne kadar bekler. 0 anında yanıt verir (tamamen otonom).",
+			"immediate": "kapalı"
+		}
 	}
 }

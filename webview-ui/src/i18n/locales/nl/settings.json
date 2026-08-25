@@ -41,7 +41,10 @@
 		"experimental": "Experimenteel",
 		"language": "Taal",
 		"about": "Over Tumble Code",
-		"skills": "Skills"
+		"skills": "Skills",
+		"memory": "Geheugen",
+		"web": "Webtools",
+		"subagents": "Subagenten"
 	},
 	"about": {
 		"bugReport": {
@@ -695,6 +698,15 @@
 		"enableSubfolderRules": {
 			"label": "Submap-regels inschakelen",
 			"description": "Recursief .roo/rules en AGENTS.md-bestanden uit submappen ontdekken en laden. Handig voor monorepo's met regels per pakket."
+		},
+		"pruneBeforeCondense": {
+			"label": "Oude tool-uitvoer bijsnijden vóór het condenseren",
+			"description": "Als de context schaars wordt, verplaats dan eerst oude, te grote tool-resultaten naar taak-artefacten en laat een korte voorvertoning achter die het artefact noemt. Dit kost geen API-aanroep en verliest niets: het model leest de volledige tekst terug met read_artifact. Een AI-samenvatting draait alleen als bijsnijden niet volstond. Zet uit om direct naar de samenvatting te gaan."
+		},
+		"pruneToolResultBudget": {
+			"label": "Bijsnijdingsdrempel voor een enkel tool-resultaat",
+			"bytes": "bytes",
+			"description": "Oude tool-resultaten groter dan dit worden naar een artefact verplaatst en vervangen door hun eerste en laatste 20 regels. Lagere waarden maken meer context vrij per doorgang; hogere waarden behouden meer uitvoer inline."
 		}
 	},
 	"terminal": {
@@ -792,6 +804,14 @@
 		"todoList": {
 			"label": "Takenlijst-tool inschakelen",
 			"description": "Wanneer ingeschakeld, kan Tumble takenlijsten maken en beheren om de voortgang van taken bij te houden. Dit helpt complexe taken te organiseren in beheersbare stappen."
+		},
+		"slimToolset": {
+			"label": "Slanke toolset (kleine modellen)",
+			"description": "Biedt dit profiel één duidelijke tool per taak: read_file, search_files, list_files, codebase_search, apply_diff, write_to_file, execute_command, read_artifact, de webtools en de taaktools (ask, complete, switch mode, new task, todo list, skill, load tools). De overbodige edit-werkwoorden (edit, search_replace, edit_file, apply_patch), beeldgeneratie, parallelle taken en slashopdrachten zijn verborgen. Kleine modellen stoppen met de verkeerde editor kiezen. Als het model toch een verborgen tool aanroept, draait hij alsnog.",
+			"hideMcp": {
+				"label": "Ook MCP-tools verbergen",
+				"description": "MCP-tool-schema's zijn meestal het grootste deel van de tool-prompt. Laat dit aan tenzij dit profiel een MCP-server nodig heeft."
+			}
 		}
 	},
 	"experimental": {
@@ -1046,5 +1066,71 @@
 			"descriptionTooLong": "Beschrijving moet maximaal 1024 tekens zijn"
 		},
 		"footer": "Maak je eigen skills met de Skill Writer modus, beschikbaar in de <MarketplaceLink>Modes Marketplace</MarketplaceLink>."
+	},
+	"memory": {
+		"enable": {
+			"label": "Persistent geheugen inschakelen",
+			"description": "Indien ingeschakeld onderhoudt de agent een bestandsgebaseerd geheugen over wie je bent, je voorkeuren en de projectcontext. Het geheugen blijft bewaard tussen sessies in extensie-eigen opslag. De agent leest het bij elke taak en schrijft ernaar tijdens het werken. <0>Meer info</0>"
+		},
+		"recall": {
+			"label": "Relevante-geheugen ophalen inschakelen",
+			"description": "Indien ingeschakeld voert de agent een snelle achtergrondquery uit om de meest relevante herinneringen voor je huidige prompt naar voren te halen. Uitschakelen bespaart de kosten van de side-query; de geheugenindex wordt nog steeds geladen. Vereist een geconfigureerde modelprovider."
+		},
+		"directory": {
+			"label": "Aangepaste geheugenmap (optioneel)",
+			"description": "Overschrijft de standaard opslaglocatie van het geheugen. Moet een absoluut pad zijn. Projectinstellingen worden voor dit veld genegeerd (alleen vertrouwde bronnen) zodat een repository geheugenschrijfbewerkingen niet kan omleiden. Laat leeg om de standaard opslaglocatie van de extensie te gebruiken.",
+			"placeholder": "/absolute/path/to/memory/dir"
+		},
+		"shareWithClaudeCode": {
+			"label": "Geheugen delen met Claude Code",
+			"description": "Leest en schrijft dezelfde MEMORY.md-set als Claude Code, op ~/.claude/projects/<workspace>/memory, in plaats van een aparte in de extensie-opslag te bewaren. Beide agents herinneren zich dan hetzelfde over deze werkruimte.",
+			"overridden": "Uitgeschakeld omdat een aangepaste geheugenmap is ingesteld; een expliciet pad gaat boven delen."
+		},
+		"writerProfile": {
+			"label": "API-profiel van geheugenschrijver",
+			"description": "Leidt achtergrond-geheugenschrijvers (extractie en droom-consolidatie) naar een goedkoper of lokaal API-profiel in plaats van het voorgrondmodel. Een verouderd of verwijderd profiel valt automatisch terug op het huidige profiel.",
+			"useCurrent": "Huidig profiel gebruiken"
+		},
+		"dream": {
+			"enable": {
+				"label": "Geheugenconsolidatie (droom) inschakelen",
+				"description": "Indien ingeschakeld herziet en herorganiseert de agent periodiek het geheugen: voegt duplicaten samen, verwijdert tegengestelde feiten en snoeit verouderde vermeldingen. Draait automatisch wanneer er genoeg tijd en sessies zijn verstreken."
+			},
+			"minHours": {
+				"label": "Minimale uren tussen dromen",
+				"description": "Uren sinds de laatste consolidatie voordat de volgende droom kan draaien. Standaard 24. Bereik: 1-168."
+			},
+			"minSessions": {
+				"label": "Minimale sessies tussen dromen",
+				"description": "Taaksessies sinds de laatste consolidatie die vereist zijn voordat de volgende droom draait. Standaard 5. Bereik: 1-100. Het is een skip-gate, dus onderschatten vertraagt een droom slechts."
+			}
+		}
+	},
+	"web": {
+		"enable": {
+			"label": "Webtools inschakelen",
+			"description": "Geeft modi met de groep Webtoegang de native tools web_search en web_fetch, ondersteund door een zelf-gehost SearXNG-exemplaar. Wanneer uit, zijn de tools verborgen voor het model en kunnen ze niet worden aangeroepen."
+		},
+		"searxngBaseUrl": {
+			"label": "SearXNG-basis-URL",
+			"description": "Basis-URL van je SearXNG-exemplaar. De JSON-uitvoerindeling moet ingeschakeld zijn, anders kan web_search de resultaten niet lezen.",
+			"placeholder": "https://searx.example.org"
+		},
+		"maxResults": {
+			"label": "Resultaten per query",
+			"description": "Hoeveel zoekresultaten web_search per query teruggeeft. Lagere waarden houden het contextvenster klein. Standaard 5."
+		}
+	},
+	"subagents": {
+		"maxConcurrency": {
+			"label": "Maximale parallelle subagenten",
+			"description": "Harde bovengrens voor hoeveel parallelle subtaken (run_parallel_tasks) tegelijk mogen draaien. Zet op Uit (onder 2) om parallelle subtaken volledig uit te schakelen; de orchestrator delegeert dan via losse subtaken. De orchestrator kan er minder, nooit meer vragen; extra subtaken wachten in de wachtrij.",
+			"off": "Uit"
+		},
+		"followupTimeout": {
+			"label": "Time-out voor vraag",
+			"description": "Hoe lang de vraag van een subagent op je antwoord wacht voordat deze automatisch wordt goedgekeurd en de subagent zelfstandig doorgaat. 0 antwoordt direct (volledig autonoom).",
+			"immediate": "uit"
+		}
 	}
 }

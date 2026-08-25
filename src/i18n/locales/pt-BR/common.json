@@ -166,7 +166,9 @@
 		"organization_share_link_copied": "Link de compartilhamento da organização copiado para a área de transferência!",
 		"public_share_link_copied": "Link de compartilhamento público copiado para a área de transferência!",
 		"mode_exported": "Modo '{{mode}}' exportado com sucesso",
-		"mode_imported": "Modo importado com sucesso"
+		"mode_imported": "Modo importado com sucesso",
+		"memory_saved": "Memória: {{count}} novas memórias salvas",
+		"memory_consolidated": "Memória: {{count}} memórias consolidadas"
 	},
 	"answers": {
 		"yes": "Sim",
@@ -252,5 +254,21 @@
 	"docsLink": {
 		"label": "Docs",
 		"url": "https://docs.tumblecode.dev"
+	},
+	"agentInterchange": {
+		"pick_up_title": "Retomar o trabalho de outro agente",
+		"pick_up_placeholder": "Repasses deixados para você, depois sessões recentes do Claude Code neste espaço de trabalho",
+		"handoff_from": "repasses de {{agent}} · {{when}}",
+		"session_from": "{{agent}} · {{when}}",
+		"nothing_to_pick_up": "Nenhum repasse ou sessão do Claude Code encontrado para este espaço de trabalho.",
+		"reading": "Lendo a sessão do outro agente…",
+		"read_failed": "Não foi possível ler aquela sessão; seus arquivos podem ter sido removidos.",
+		"no_provider": "Abra o painel do Tumble Code primeiro e tente novamente.",
+		"no_current_task": "Não há nenhuma tarefa em execução para repassar.",
+		"next_steps_title": "Repassar para o Claude Code",
+		"next_steps_prompt": "O que o Claude Code deve fazer a seguir? Separe as etapas com ';'. Deixe vazio para repassar apenas o resumo.",
+		"next_steps_placeholder": "Execute a suíte de integração; abra o PR",
+		"handoff_created": "Repassado para {{agent}} como {{id}}.",
+		"open_handoff": "Abrir documento"
 	}
 }

@@ -162,7 +162,9 @@
 		"organization_share_link_copied": "¡Enlace de compartición de organización copiado al portapapeles!",
 		"public_share_link_copied": "¡Enlace de compartición pública copiado al portapapeles!",
 		"mode_exported": "Modo '{{mode}}' exportado correctamente",
-		"mode_imported": "Modo importado correctamente"
+		"mode_imported": "Modo importado correctamente",
+		"memory_saved": "Memoria: guardadas {{count}} recuerdos nuevos",
+		"memory_consolidated": "Memoria: {{count}} recuerdos consolidados"
 	},
 	"answers": {
 		"yes": "Sí",
@@ -247,5 +249,21 @@
 	"docsLink": {
 		"label": "Docs",
 		"url": "https://docs.tumblecode.dev"
+	},
+	"agentInterchange": {
+		"pick_up_title": "Retomar el trabajo de otro agente",
+		"pick_up_placeholder": "Entregas pendientes para ti, luego sesiones recientes de Claude Code en este espacio de trabajo",
+		"handoff_from": "entrega de {{agent}} · {{when}}",
+		"session_from": "{{agent}} · {{when}}",
+		"nothing_to_pick_up": "No se encontraron entregas ni sesiones de Claude Code para este espacio de trabajo.",
+		"reading": "Leyendo la sesión del otro agente…",
+		"read_failed": "No se pudo leer esa sesión; puede que sus archivos se hayan eliminado.",
+		"no_provider": "Abre primero el panel de Tumble Code e inténtalo de nuevo.",
+		"no_current_task": "No hay ninguna tarea en ejecución que entregar.",
+		"next_steps_title": "Entregar a Claude Code",
+		"next_steps_prompt": "¿Qué debe hacer Claude Code a continuación? Separa los pasos con ';'. Déjalo vacío para entregar solo el informe.",
+		"next_steps_placeholder": "Ejecuta la suite de integración; abre la PR",
+		"handoff_created": "Entregado a {{agent}} como {{id}}.",
+		"open_handoff": "Abrir documento"
 	}
 }

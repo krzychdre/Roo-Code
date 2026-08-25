@@ -319,7 +319,23 @@
 		"triggerLabel_zero": "0 approuvé automatiquement",
 		"triggerLabel_one": "1 approuvé automatiquement",
 		"triggerLabel_other": "{{count}} approuvés automatiquement",
-		"triggerLabelAll": "BRRR"
+		"triggerLabelAll": "BRRR",
+		"mode": {
+			"label": "Mode d'approbation automatique",
+			"forcedHint": "Toujours approuvé par le mode actuel",
+			"default": {
+				"label": "Par défaut",
+				"description": "Respecte les bascules individuelles, la liste de commandes autorisées et les protections hors espace de travail / fichiers protégés."
+			},
+			"bypass": {
+				"label": "Contournement",
+				"description": "Semi-auto : approuve chaque lecture, écriture, MCP, sous-tâche, changement de mode et commande (même inconnues) sans demander. Les questions de suivi vous interrompent encore."
+			},
+			"autonomous": {
+				"label": "Autonome",
+				"description": "Plein auto : tout ce que fait Contournement, plus les questions de suivi sont répondues automatiquement pour que l'agent fonctionne jusqu'à la fin."
+			}
+		}
 	},
 	"reasoning": {
 		"thinking": "Réflexion",
@@ -338,6 +354,12 @@
 			"messagesRemoved": "{{count}} message supprimé",
 			"messagesRemoved_other": "{{count}} messages supprimés",
 			"description": "Les messages plus anciens ont été supprimés de la conversation pour rester dans la limite de la fenêtre de contexte. C'est une approche rapide mais moins conservatrice du contexte par rapport à la condensation."
+		},
+		"prune": {
+			"title": "Ancienne sortie d'outil déplacée sur le disque",
+			"summary": "{{count}} résultat d'outil, environ {{kb}} Ko libérés",
+			"summary_other": "{{count}} résultats d'outil, environ {{kb}} Ko libérés",
+			"description": "Les anciens résultats d'outil trop volumineux ont été enregistrés comme artefacts de tâche et remplacés par un aperçu court. Rien n'a été perdu : chaque aperçu nomme son artefact, et le modèle peut relire le texte complet avec read_artifact. Cela s'est exécuté à la place d'un résumé par IA, donc aucun texte de conversation n'a été réécrit."
 		}
 	},
 	"skill": {
@@ -534,5 +556,44 @@
 		"reviewFile": "Examiner le plan",
 		"loading": "Chargement du plan…",
 		"pauseTitle": "Plan mis à jour — relisez et approuvez"
+	},
+	"subagents": {
+		"headerActive": "Sous-agents : {{active}}/{{total}} actifs",
+		"headerDone": "Sous-agents : {{total}} terminés",
+		"noOutput": "Pas encore de sortie.",
+		"tokens": "Jetons utilisés",
+		"cancel": "Annuler ce sous-agent",
+		"send": "Envoyer",
+		"answerPlaceholder": "Répondre à la question du sous-agent…",
+		"guidancePlaceholder": "Envoyer des instructions (remises au prochain point d'arrêt)…",
+		"status": {
+			"queued": "En file d'attente",
+			"running": "En cours",
+			"awaiting_input": "Saisie requise",
+			"completed": "Terminé",
+			"failed": "Échoué",
+			"cancelled": "Annulé"
+		},
+		"apiConfig": "Profil d'API : {{name}} (épinglé au mode de la sous-tâche ; modifiez-le dans Paramètres → Modes)",
+		"permissionNeeded": "Cette sous-tâche nécessite une autorisation pour continuer"
+	},
+	"webSearch": {
+		"wantsToSearch": "Tumble veut chercher sur le web <code>{{queries}}</code>",
+		"didSearch": "Tumble a cherché sur le web <code>{{queries}}</code>"
+	},
+	"webFetch": {
+		"wantsToFetch": "Tumble veut lire <code>{{url}}</code>",
+		"didFetch": "Tumble a lu <code>{{url}}</code>"
+	},
+	"readArtifact": {
+		"title": "Tumble lit un artefact"
+	},
+	"searchTaskHistory": {
+		"title": "Tumble a cherché dans l'historique de cette tâche"
+	},
+	"memoryActivity": {
+		"recalling": "Rappel de la mémoire…",
+		"writing": "Écriture de la mémoire…",
+		"both": "Rappel et écriture de la mémoire…"
 	}
 }

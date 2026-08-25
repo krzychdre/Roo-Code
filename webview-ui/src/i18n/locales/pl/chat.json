@@ -339,7 +339,23 @@
 		"triggerLabel_zero": "0 automatycznie zatwierdzone",
 		"triggerLabel_one": "1 automatycznie zatwierdzony",
 		"triggerLabel_other": "{{count}} automatycznie zatwierdzonych",
-		"triggerLabelAll": "BRRR"
+		"triggerLabelAll": "BRRR",
+		"mode": {
+			"label": "Tryb autozatwierdzania",
+			"forcedHint": "Zawsze zatwierdzane przez bieżący tryb",
+			"default": {
+				"label": "Domyślny",
+				"description": "Przestrzega poszczególnych przełączników, listy dozwolonych poleceń oraz zabezpieczeń plików spoza obszaru roboczego i chronionych."
+			},
+			"bypass": {
+				"label": "Pomiń",
+				"description": "Półautomat: zatwierdza każdy odczyt, zapis, MCP, podzadanie, przełączenie trybu i polecenie (nawet nieznane) bez pytania. Pytania uzupełniające nadal cię przerywają."
+			},
+			"autonomous": {
+				"label": "Autonomiczny",
+				"description": "Pełny automat: wszystko, co robi Pomiń, a dodatkowo pytania uzupełniające są odpowiadane automatycznie, by agent działał do końca."
+			}
+		}
 	},
 	"reasoning": {
 		"thinking": "Myślenie",
@@ -358,6 +374,12 @@
 			"messagesRemoved": "{{count}} wiadomość usunięta",
 			"messagesRemoved_other": "{{count}} wiadomości usunięte",
 			"description": "Starsze wiadomości zostały usunięte z konwersacji, aby pozostać w granicach okna kontekstu. To szybsze, ale mniej zachowujące kontekst podejście w porównaniu z kondensacją."
+		},
+		"prune": {
+			"title": "Stare wyniki narzędzi przeniesiono na dysk",
+			"summary": "{{count}} wynik narzędzia, uwolniono ok. {{kb}} KB",
+			"summary_other": "{{count}} wyników narzędzi, uwolniono ok. {{kb}} KB",
+			"description": "Stare, zbyt duże wyniki narzędzi zostały zapisane jako artefakty zadania i zastąpione krótkim podglądem. Nic nie zostało utracone: każdy podgląd podaje nazwę swojego artefaktu, a model może odczytać pełny tekst z powrotem przez read_artifact. Zamiast podsumowania przez AI wykonano to oczyszczanie, więc żaden tekst rozmowy nie został przepisany."
 		}
 	},
 	"skill": {
@@ -559,5 +581,19 @@
 		"reviewFile": "Przegląd planu",
 		"loading": "Ładowanie planu…",
 		"pauseTitle": "Plan zaktualizowany — przejrzyj i zatwierdź"
+	},
+	"webSearch": {
+		"wantsToSearch": "Tumble chce wyszukać w sieci <code>{{queries}}</code>",
+		"didSearch": "Tumble wyszukał w sieci <code>{{queries}}</code>"
+	},
+	"webFetch": {
+		"wantsToFetch": "Tumble chce odczytać <code>{{url}}</code>",
+		"didFetch": "Tumble odczytał <code>{{url}}</code>"
+	},
+	"readArtifact": {
+		"title": "Tumble odczytał artefakt"
+	},
+	"searchTaskHistory": {
+		"title": "Tumble przeszukał historię tego zadania"
 	}
 }

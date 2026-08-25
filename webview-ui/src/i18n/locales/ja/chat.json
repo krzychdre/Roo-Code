@@ -319,7 +319,23 @@
 		"triggerLabel_zero": "0個の自動承認",
 		"triggerLabel_one": "1個の自動承認済み",
 		"triggerLabel_other": "{{count}}個の自動承認済み",
-		"triggerLabelAll": "BRRR"
+		"triggerLabelAll": "BRRR",
+		"mode": {
+			"label": "自動承認モード",
+			"forcedHint": "現在のモードで常に承認",
+			"default": {
+				"label": "既定",
+				"description": "個別のトグル、コマンド許可リスト、ワークスペース外・保護ファイルのガードを尊重します。"
+			},
+			"bypass": {
+				"label": "バイパス",
+				"description": "セミ自動: 読み取り、書き込み、MCP、サブタスク、モード切替、コマンド(未知のものも)を確認なしで承認します。追跡質問は引き続き中断を発生させます。"
+			},
+			"autonomous": {
+				"label": "自律",
+				"description": "完全自動: バイパスのすべてに加え、追跡質問も自動応答され、エージェントが完了するまで実行されます。"
+			}
+		}
 	},
 	"reasoning": {
 		"thinking": "考え中",
@@ -338,6 +354,12 @@
 			"messagesRemoved": "{{count}}件のメッセージを削除",
 			"messagesRemoved_other": "{{count}}件のメッセージを削除",
 			"description": "コンテキストウィンドウの制限内に収めるため、古いメッセージが会話から削除されました。これは圧縮と比較して高速ですが、コンテキストの保持性が低いアプローチです。"
+		},
+		"prune": {
+			"title": "古いツール出力をディスクに移動しました",
+			"summary": "ツール結果 {{count}} 件、約 {{kb}} KB を解放",
+			"summary_other": "ツール結果 {{count}} 件、約 {{kb}} KB を解放",
+			"description": "古くて大きすぎるツール結果はタスクのアーティファクトとして保存され、短いプレビューに置き換えられました。失われたものはありません。各プレビューは属するアーティファクト名を示し、モデルは read_artifact で全文を再読できます。これは AI 要約の代わりに実行されたため、会話テキストは一切書き換えられていません。"
 		}
 	},
 	"skill": {
@@ -534,5 +556,44 @@
 		"reviewFile": "プランをレビュー",
 		"loading": "プランを読み込み中…",
 		"pauseTitle": "プランが更新されました — 確認して承認してください"
+	},
+	"subagents": {
+		"headerActive": "サブエージェント: {{active}}/{{total}} 個実行中",
+		"headerDone": "サブエージェント: {{total}} 件完了",
+		"noOutput": "まだ出力はありません。",
+		"tokens": "使用トークン",
+		"cancel": "このサブエージェントをキャンセル",
+		"send": "送信",
+		"answerPlaceholder": "サブエージェントの質問に答える…",
+		"guidancePlaceholder": "ガイダンスを送信(次の停止時に配信)…",
+		"status": {
+			"queued": "待機中",
+			"running": "実行中",
+			"awaiting_input": "入力待ち",
+			"completed": "完了",
+			"failed": "失敗",
+			"cancelled": "キャンセル済み"
+		},
+		"apiConfig": "API プロファイル: {{name}} (サブタスクのモードに固定。設定 → モードで変更)",
+		"permissionNeeded": "このサブタスクを続行するには許可が必要です"
+	},
+	"webSearch": {
+		"wantsToSearch": "Tumble がウェブで <code>{{queries}}</code> を検索したがっています",
+		"didSearch": "Tumble はウェブで <code>{{queries}}</code> を検索しました"
+	},
+	"webFetch": {
+		"wantsToFetch": "Tumble が <code>{{url}}</code> を読み取りたがっています",
+		"didFetch": "Tumble は <code>{{url}}</code> を読み取りました"
+	},
+	"readArtifact": {
+		"title": "Tumble がアーティファクトを読み取りました"
+	},
+	"searchTaskHistory": {
+		"title": "Tumble はこのタスクの履歴を検索しました"
+	},
+	"memoryActivity": {
+		"recalling": "メモリを呼び出し中…",
+		"writing": "メモリを書き込み中…",
+		"both": "メモリを呼び出し・書き込み中…"
 	}
 }

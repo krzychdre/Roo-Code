@@ -234,6 +234,12 @@
 			"messagesRemoved": "{{count}} pesan dihapus",
 			"messagesRemoved_other": "{{count}} pesan dihapus",
 			"description": "Pesan lama telah dihapus dari percakapan untuk tetap dalam batas jendela konteks. Ini adalah pendekatan yang cepat tetapi kurang mempertahankan konteks dibandingkan dengan kondensasi."
+		},
+		"prune": {
+			"title": "Keluaran alat lama dipindahkan ke disk",
+			"summary": "{{count}} hasil alat, sekitar {{kb}} KB dibebaskan",
+			"summary_other": "{{count}} hasil alat, sekitar {{kb}} KB dibebaskan",
+			"description": "Hasil alat lama yang terlalu besar disimpan sebagai artefak tugas dan diganti dengan pratinjau singkat. Tidak ada yang hilang: setiap pratinjau menyebut artefaknya, dan model dapat membaca teks lengkapnya kembali dengan read_artifact. Ini berjalan sebagai ganti ringkasan AI, jadi tidak ada teks percakapan yang ditulis ulang."
 		}
 	},
 	"skill": {
@@ -375,7 +381,23 @@
 		"triggerLabel_zero": "0 disetujui otomatis",
 		"triggerLabel_one": "1 disetujui otomatis",
 		"triggerLabel_other": "{{count}} disetujui otomatis",
-		"triggerLabelAll": "BRRR"
+		"triggerLabelAll": "BRRR",
+		"mode": {
+			"label": "Mode persetujuan otomatis",
+			"forcedHint": "Selalu disetujui oleh mode saat ini",
+			"default": {
+				"label": "Bawaan",
+				"description": "Mematuhi sakelar individual, daftar perintah yang diizinkan, dan penjaga di luar ruang kerja / berkas terlindungi."
+			},
+			"bypass": {
+				"label": "Lewati",
+				"description": "Semi-otomatis: setujui setiap baca, tulis, MCP, sub-tugas, ganti mode, dan perintah (bahkan yang tidak dikenal) tanpa bertanya. Pertanyaan tindak lanjut masih menyela Anda."
+			},
+			"autonomous": {
+				"label": "Otonom",
+				"description": "Otomatis penuh: semua yang dilakukan Lewati, ditambah pertanyaan tindak lanjut dijawab otomatis agar agen berjalan sampai selesai."
+			}
+		}
 	},
 	"announcement": {
 		"title": "Tumble Code {{version}} Dirilis",
@@ -540,5 +562,44 @@
 		"reviewFile": "Tinjau rencana",
 		"loading": "Memuat rencana…",
 		"pauseTitle": "Rencana diperbarui — tinjau dan setujui"
+	},
+	"subagents": {
+		"headerActive": "Subagen: {{active}}/{{total}} aktif",
+		"headerDone": "Subagen: {{total}} selesai",
+		"noOutput": "Belum ada keluaran.",
+		"tokens": "Token digunakan",
+		"cancel": "Batalkan subagen ini",
+		"send": "Kirim",
+		"answerPlaceholder": "Jawab pertanyaan subagen…",
+		"guidancePlaceholder": "Kirim panduan (disampaikan pada titik berhenti berikutnya)…",
+		"status": {
+			"queued": "Antrian",
+			"running": "Berjalan",
+			"awaiting_input": "Butuh masukan",
+			"completed": "Selesai",
+			"failed": "Gagal",
+			"cancelled": "Dibatalkan"
+		},
+		"apiConfig": "Profil API: {{name}} (disematkan ke mode sub-tugas; ubah di Pengaturan → Mode)",
+		"permissionNeeded": "Sub-tugas ini butuh izin untuk lanjut"
+	},
+	"webSearch": {
+		"wantsToSearch": "Tumble ingin mencari di web <code>{{queries}}</code>",
+		"didSearch": "Tumble mencari di web <code>{{queries}}</code>"
+	},
+	"webFetch": {
+		"wantsToFetch": "Tumble ingin membaca <code>{{url}}</code>",
+		"didFetch": "Tumble membaca <code>{{url}}</code>"
+	},
+	"readArtifact": {
+		"title": "Tumble membaca artefak"
+	},
+	"searchTaskHistory": {
+		"title": "Tumble mencari di riwayat tugas ini"
+	},
+	"memoryActivity": {
+		"recalling": "Mengingat memori…",
+		"writing": "Menulis memori…",
+		"both": "Mengingat dan menulis memori…"
 	}
 }

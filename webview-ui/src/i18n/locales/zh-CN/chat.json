@@ -320,7 +320,23 @@
 		"triggerLabel_zero": "0 个自动批准",
 		"triggerLabel_one": "1 个自动批准",
 		"triggerLabel_other": "{{count}} 个自动批准",
-		"triggerLabelAll": "BRRR"
+		"triggerLabelAll": "BRRR",
+		"mode": {
+			"label": "自动批准模式",
+			"forcedHint": "始终由当前模式批准",
+			"default": {
+				"label": "默认",
+				"description": "遵守各个开关、命令允许列表以及工作区外/受保护文件的防护。"
+			},
+			"bypass": {
+				"label": "绕过",
+				"description": "半自动:无需询问即批准每次读取、写入、MCP、子任务、模式切换和命令(即使是未知的)。后续问题仍会中断你。"
+			},
+			"autonomous": {
+				"label": "自主",
+				"description": "全自动:包含绕过的全部功能,且后续问题自动作答,使代理一直运行直到完成。"
+			}
+		}
 	},
 	"reasoning": {
 		"thinking": "思考中",
@@ -339,6 +355,12 @@
 			"messagesRemoved": "已移除 {{count}} 条消息",
 			"messagesRemoved_other": "已移除 {{count}} 条消息",
 			"description": "为保持在上下文窗口限制内，已从对话中移除较旧的消息。与压缩相比，这是一种快速但上下文保留较少的方法。"
+		},
+		"prune": {
+			"title": "旧的工具输出已移至磁盘",
+			"summary": "{{count}} 条工具结果,释放约 {{kb}} KB",
+			"summary_other": "{{count}} 条工具结果,释放约 {{kb}} KB",
+			"description": "旧且过大的工具结果已保存为任务 artifact 并替换为简短预览。没有任何丢失:每个预览都标明其 artifact 名称,模型可用 read_artifact 读回全文。这取代了 AI 摘要运行,因此没有对话文本被改写。"
 		}
 	},
 	"skill": {
@@ -535,5 +557,44 @@
 		"reviewFile": "审阅计划",
 		"loading": "正在加载计划…",
 		"pauseTitle": "计划已更新 — 请审查并批准"
+	},
+	"subagents": {
+		"headerActive": "子代理:{{active}}/{{total}} 个活动中",
+		"headerDone": "子代理:{{total}} 个已完成",
+		"noOutput": "暂无输出。",
+		"tokens": "已用 token",
+		"cancel": "取消此子代理",
+		"send": "发送",
+		"answerPlaceholder": "回答子代理的问题…",
+		"guidancePlaceholder": "发送指导(在下一个停止点送达)…",
+		"status": {
+			"queued": "排队中",
+			"running": "运行中",
+			"awaiting_input": "需要输入",
+			"completed": "已完成",
+			"failed": "失败",
+			"cancelled": "已取消"
+		},
+		"apiConfig": "API 配置:{{name}} (固定到子任务的模式;在 设置 → 模式 中修改)",
+		"permissionNeeded": "此子任务需要权限才能继续"
+	},
+	"webSearch": {
+		"wantsToSearch": "Tumble 想在网页中搜索 <code>{{queries}}</code>",
+		"didSearch": "Tumble 已在网页中搜索 <code>{{queries}}</code>"
+	},
+	"webFetch": {
+		"wantsToFetch": "Tumble 想读取 <code>{{url}}</code>",
+		"didFetch": "Tumble 已读取 <code>{{url}}</code>"
+	},
+	"readArtifact": {
+		"title": "Tumble 读取 artifact"
+	},
+	"searchTaskHistory": {
+		"title": "Tumble 搜索了此任务的历史"
+	},
+	"memoryActivity": {
+		"recalling": "正在回忆记忆…",
+		"writing": "正在写入记忆…",
+		"both": "正在回忆并写入记忆…"
 	}
 }

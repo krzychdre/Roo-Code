@@ -162,7 +162,9 @@
 		"organization_share_link_copied": "Link udostępniania organizacji skopiowany do schowka!",
 		"public_share_link_copied": "Publiczny link udostępniania skopiowany do schowka!",
 		"mode_exported": "Tryb '{{mode}}' pomyślnie wyeksportowany",
-		"mode_imported": "Tryb pomyślnie zaimportowany"
+		"mode_imported": "Tryb pomyślnie zaimportowany",
+		"memory_saved": "Pamięć: zapisano {{count}} nowych wspomnień",
+		"memory_consolidated": "Pamięć: skonsolidowano {{count}} wspomnień"
 	},
 	"answers": {
 		"yes": "Tak",
@@ -252,5 +254,21 @@
 	"docsLink": {
 		"label": "Docs",
 		"url": "https://docs.tumblecode.dev"
+	},
+	"agentInterchange": {
+		"pick_up_title": "Przejmij pracę od innego agenta",
+		"pick_up_placeholder": "Przekazania zostawione dla ciebie, a następnie ostatnie sesje Claude Code w tym obszarze roboczym",
+		"handoff_from": "przekazanie od {{agent}} · {{when}}",
+		"session_from": "{{agent}} · {{when}}",
+		"nothing_to_pick_up": "Nie znaleziono przekazań ani sesji Claude Code dla tego obszaru roboczego.",
+		"reading": "Odczytywanie sesji drugiego agenta…",
+		"read_failed": "Nie udało się odczytać tej sesji; jej pliki mogły zostać usunięte.",
+		"no_provider": "Najpierw otwórz panel Tumble Code, a potem spróbuj ponownie.",
+		"no_current_task": "Brak uruchomionego zadania do przekazania.",
+		"next_steps_title": "Przekaż do Claude Code",
+		"next_steps_prompt": "Co Claude Code ma zrobić dalej? Oddziel kroki średnikiem ';'. Pozostaw puste, aby przekazać tylko streszczenie.",
+		"next_steps_placeholder": "Uruchom zestaw integracyjny; otwórz PR",
+		"handoff_created": "Przekazano do {{agent}} jako {{id}}.",
+		"open_handoff": "Otwórz dokument"
 	}
 }

@@ -50,5 +50,7 @@
 	"settings.debugProxy.tlsInsecure.description": "Proxy से आने वाले self-signed certificates accept करो। **MITM inspection के लिए ज़रूरी।** ⚠️ Insecure — सिर्फ local debugging के लिए इस्तेमाल करो।",
 	"settings.cloudApiUrl.description": "Override the Roo Code Cloud API URL (e.g. `https://app.roocode.com`). Leave empty to use the default. Intended for self-hosted or development deployments.",
 	"settings.cloudProviderUrl.description": "Override the Roo Code Cloud Provider URL (e.g. `https://api.roocode.com/proxy`). Leave empty to use the default. Intended for self-hosted or development deployments.",
-	"settings.clerkBaseUrl.description": "Override the Clerk authentication base URL (e.g. `https://clerk.roocode.com`). Leave empty to use the default. Intended for self-hosted or development deployments."
+	"settings.clerkBaseUrl.description": "Override the Clerk authentication base URL (e.g. `https://clerk.roocode.com`). Leave empty to use the default. Intended for self-hosted or development deployments.",
+	"command.pickUpAgentSession.title": "एजेंट सत्र अपनाएँ…",
+	"command.handOffCurrentTask.title": "वर्तमान कार्य हैंडऑफ़ करें…"
 }
