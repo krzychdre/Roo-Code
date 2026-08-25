@@ -314,7 +314,16 @@ promise the opener makes; changing them would be churn with no defect behind it.
 
 `schemas/roomodes.json` needs no regeneration: `zod-to-json-schema` does not represent `trim`, so
 the generated `{"type":"string","minLength":1}` is byte-identical and
-`roomodes-schema-sync.spec.ts` stays green. Verified by running it.
+`roomodes-schema.spec.ts` stays green. Verified by running it.
+
+**Blast radius of the tightened schema, accepted on purpose.** `CustomModesManager.loadModesFromFile`
+returns `[]` for the ENTIRE file when any single mode fails `customModesSettingsSchema`, with one
+error toast. Before this fix, a `custom_modes.yaml` or `.roomodes` containing one mode with a
+whitespace-only `roleDefinition` loaded fine and only that mode rendered without a MODE section;
+after it, every mode in that file disappears until the file is repaired. The trade is deliberate:
+the toast names the exact field (`customModes.N.roleDefinition: Role definition is required`), and a
+loud, named validation error beats a silently broken prompt. The settings UI cannot produce such a
+file (it trims before saving), so only hand-edited files are affected.
 
 **Known residual, recorded on purpose.** `getModeSelection` in `src/shared/modes.ts` resolves a
 BUILT-IN mode's role as `promptComponent?.roleDefinition || baseMode.roleDefinition`. An empty

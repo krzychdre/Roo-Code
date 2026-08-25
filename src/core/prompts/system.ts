@@ -75,6 +75,12 @@ import {
  * The two destinations are always there. MODE renders for every schema-valid
  * mode, because `modeConfigSchema.roleDefinition` is trim-aware and rejects a
  * whitespace-only value that would otherwise trim to "" and drop the section.
+ * One known residual door remains: a `customModePrompts` override goes through
+ * `promptComponentSchema`, which does not trim, and a whitespace-only override
+ * is truthy, so it wins in `getModeSelection` (src/shared/modes.ts) and drops
+ * MODE. Unreachable from the settings UI (it trims before saving); reachable
+ * only programmatically. Recorded in
+ * ai_plans/2026-08-25_prefix-opener-review-fixes.md as a follow-up candidate.
  * USER'S CUSTOM INSTRUCTIONS renders unconditionally too, because the Language
  * Preference entry is always pushed into it (sections/custom-instructions.ts);
  * `prefix-stability.spec.ts` carries a guard test that fails if anyone puts
