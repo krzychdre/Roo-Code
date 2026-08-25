@@ -69,7 +69,7 @@ describe("insertMention", () => {
 
 		expect(result.newValue).toBe(`Mention @${expectedEscapedPath} `)
 		expect(result.mentionIndex).toBe(8)
-		// Verify escapeSpaces was effectively used (implicitly by checking output)
+		// Verify escapeSpacesForMention was effectively used (implicitly by checking output)
 		expect(result.newValue).toContain("\\ ")
 	})
 
@@ -90,7 +90,7 @@ describe("insertMention", () => {
 		// It should insert the already escaped path without double-escaping
 		expect(result.newValue).toBe(`Insert @${alreadyEscapedPath} `)
 		expect(result.mentionIndex).toBe(7)
-		// Check that it wasn't passed through escapeSpaces again (mock check)
+		// Check that it wasn't passed through escapeSpacesForMention again (mock check)
 		// This relies on the mock implementation detail or careful checking
 		// A better check might be ensuring no double backslashes appear unexpectedly.
 		expect(result.newValue.includes("\\\\ ")).toBe(false)

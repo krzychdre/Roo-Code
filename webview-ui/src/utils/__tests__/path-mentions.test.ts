@@ -1,40 +1,68 @@
-import { escapeSpaces, convertToMentionPath } from "../path-mentions"
+import { escapeSpacesForMention, convertToMentionPath } from "../path-mentions"
+import { mentionRegexGlobal, unescapeSpaces } from "@roo/context-mentions"
 
 describe("Path Mentions Utilities", () => {
-	describe("escapeSpaces", () => {
+	describe("escapeSpacesForMention", () => {
 		it("should replace spaces with escaped spaces", () => {
-			expect(escapeSpaces("file with spaces.txt")).toBe("file\\ with\\ spaces.txt")
-			expect(escapeSpaces("/path/to/another file/")).toBe("/path/to/another\\ file/")
-			expect(escapeSpaces("single space")).toBe("single\\ space")
+			expect(escapeSpacesForMention("file with spaces.txt")).toBe("file\\ with\\ spaces.txt")
+			expect(escapeSpacesForMention("/path/to/another file/")).toBe("/path/to/another\\ file/")
+			expect(escapeSpacesForMention("single space")).toBe("single\\ space")
 		})
 
 		it("should handle paths without spaces", () => {
-			expect(escapeSpaces("file_without_spaces.txt")).toBe("file_without_spaces.txt")
-			expect(escapeSpaces("/path/to/normal/file")).toBe("/path/to/normal/file")
+			expect(escapeSpacesForMention("file_without_spaces.txt")).toBe("file_without_spaces.txt")
+			expect(escapeSpacesForMention("/path/to/normal/file")).toBe("/path/to/normal/file")
 		})
 
 		it("should handle multiple spaces", () => {
-			expect(escapeSpaces("a b c d.txt")).toBe("a\\ b\\ c\\ d.txt")
+			expect(escapeSpacesForMention("a b c d.txt")).toBe("a\\ b\\ c\\ d.txt")
 		})
 
 		it("should handle leading/trailing spaces", () => {
-			expect(escapeSpaces(" leading space")).toBe("\\ leading\\ space")
-			expect(escapeSpaces("trailing space ")).toBe("trailing\\ space\\ ")
+			expect(escapeSpacesForMention(" leading space")).toBe("\\ leading\\ space")
+			expect(escapeSpacesForMention("trailing space ")).toBe("trailing\\ space\\ ")
 		})
 
 		it("should handle empty string", () => {
-			expect(escapeSpaces("")).toBe("")
+			expect(escapeSpacesForMention("")).toBe("")
 		})
 
 		it("should not affect already escaped spaces", () => {
 			// This function assumes input spaces are not already escaped
 			// The function will re-escape the backslashes, resulting in double-escaped spaces
-			expect(escapeSpaces("file\\ with\\ spaces.txt")).toBe("file\\\\ with\\\\ spaces.txt")
+			expect(escapeSpacesForMention("file\\ with\\ spaces.txt")).toBe("file\\\\ with\\\\ spaces.txt")
 		})
 
 		it("should not escape other characters", () => {
-			expect(escapeSpaces("path/with/slashes")).toBe("path/with/slashes")
-			expect(escapeSpaces("file-with-hyphens.txt")).toBe("file-with-hyphens.txt")
+			expect(escapeSpacesForMention("path/with/slashes")).toBe("path/with/slashes")
+			expect(escapeSpacesForMention("file-with-hyphens.txt")).toBe("file-with-hyphens.txt")
+		})
+
+		it("is a mention-grammar formatter, not a shell escaper (CodeQL #6 regression)", () => {
+			// The escaped value, embedded in an @-mention token, must be matched by
+			// mentionRegex (src/shared/context-mentions.ts) and round-trip back to the
+			// original path via unescapeSpaces. This proves the `\ ` escaping serves
+			// the mention grammar, not shell interpolation.
+			const original = "/src/file with spaces & $ HOME `cmd`.txt"
+			const escaped = escapeSpacesForMention(original)
+			const mentionToken = `@${escaped}`
+
+			// 1. The mention regex recognises the whole token.
+			const matches = [...mentionToken.matchAll(mentionRegexGlobal)]
+			expect(matches).toHaveLength(1)
+			expect(matches[0][1]).toBe(escaped)
+
+			// 2. unescapeSpaces inverts the transformation exactly.
+			expect(unescapeSpaces(matches[0][1])).toBe(original)
+
+			// 3. Only spaces are escaped; shell metacharacters pass through verbatim
+			//    (they are not meaningful in the mention grammar). If a shell escaper
+			//    were intended, these would have been altered.
+			expect(escaped).toBe("/src/file\\ with\\ spaces & $ HOME `cmd`.txt")
+			expect(escaped).not.toContain('"')
+			expect(escaped).not.toContain("\\$")
+			expect(escaped).not.toContain("\\`")
+			expect(escaped).not.toContain("\\&")
 		})
 	})
 
