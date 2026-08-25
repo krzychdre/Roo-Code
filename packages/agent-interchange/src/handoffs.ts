@@ -5,6 +5,7 @@ import * as path from "node:path"
 
 import { renderBriefing } from "./briefing.js"
 import { handoffDir, samePath } from "./locate.js"
+import { escapeMarkdownTableCell } from "./markdown.js"
 import { oneLine } from "./normalize.js"
 import { AGENT_LABELS, type AgentKind, type Session } from "./types.js"
 
@@ -272,7 +273,11 @@ export function renderHandoffList(handoffs: Handoff[]): string {
 
 	for (const handoff of handoffs) {
 		lines.push(
-			`| \`${handoff.id}\` | ${handoff.from} → ${handoff.to} | ${handoff.status} | ${handoff.updated.slice(0, 16).replace("T", " ")} | ${handoff.title.replace(/\|/g, "\\|")} |`,
+			`| \`${escapeMarkdownTableCell(handoff.id)}\` | ${escapeMarkdownTableCell(handoff.from)} → ${escapeMarkdownTableCell(
+				handoff.to,
+			)} | ${escapeMarkdownTableCell(handoff.status)} | ${handoff.updated.slice(0, 16).replace("T", " ")} | ${escapeMarkdownTableCell(
+				handoff.title,
+			)} |`,
 		)
 	}
 

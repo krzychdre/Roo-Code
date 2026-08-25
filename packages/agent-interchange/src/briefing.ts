@@ -1,5 +1,6 @@
 import * as path from "node:path"
 
+import { escapeMarkdownTableCell } from "./markdown.js"
 import { oneLine, textOf } from "./normalize.js"
 import { extractActions } from "./tools.js"
 import { AGENT_LABELS, type InterchangeMessage, type Session, type SessionSummary, type ToolAction } from "./types.js"
@@ -245,9 +246,9 @@ export function renderSessionList(summaries: SessionSummary[]): string {
 
 	for (const summary of summaries) {
 		lines.push(
-			`| ${AGENT_LABELS[summary.agent]} | \`${summary.id}\` | ${formatTime(summary.updatedAt)} | ${escapeCell(
-				summary.title,
-			)} |`,
+			`| ${escapeMarkdownTableCell(AGENT_LABELS[summary.agent])} | \`${escapeMarkdownTableCell(
+				summary.id,
+			)}\` | ${formatTime(summary.updatedAt)} | ${escapeMarkdownTableCell(summary.title)} |`,
 		)
 	}
 
@@ -340,10 +341,6 @@ function capped<T>(values: T[], limit: number): T[] {
 
 function unique(values: string[]): string[] {
 	return values.filter((value, index) => values.indexOf(value) === index)
-}
-
-function escapeCell(text: string): string {
-	return text.replace(/\|/g, "\\|").replace(/\n/g, " ")
 }
 
 export function formatTime(epochMs: number): string {
