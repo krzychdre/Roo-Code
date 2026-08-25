@@ -65,6 +65,16 @@ export const HISTORY_SEARCH_DEFAULTS = {
 	MAX_SEARCH_MILLIS: 2_000,
 	/** How many lines are scanned between two clock checks. */
 	BUDGET_CHECK_INTERVAL: 256,
+	/**
+	 * Hard cap on collected matches.
+	 *
+	 * The clock only bounds the scan; sorting and deduplicating the matches runs
+	 * after it, and its cost grows with the match count (measured: ~4 s extra on
+	 * two million matches, reported as within budget). Above this cap the query
+	 * is too broad to produce a useful answer anyway, so the scan stops and the
+	 * call is reported exactly like a budget breach: same outcome, same advice.
+	 */
+	MAX_COLLECTED_MATCHES: 10_000,
 	/** Bytes read from any single artifact file. */
 	MAX_ARTIFACT_SCAN_BYTES: 2 * 1024 * 1024,
 	/** Bytes read from all artifact files of a task, together. */
@@ -231,12 +241,25 @@ function parseSlashDelimited(query: string): { pattern: string; flags: string } 
  * Deliberately syntactic and conservative: it walks the pattern once, tracking
  * escapes and character classes, and only reports the nesting it can actually
  * see. `(foo|bar)+` is fine; `(a+)+`, `(a*)*`, `(?:\d+)*` and `(x|y+)*` are not.
+ *
+ * Two deliberate over-approximations, both paid for with a literal fallback
+ * rather than an error:
+ *
+ * - A body's quantifier survives group nesting even when the inner group is
+ *   itself unquantified, so `((a+))+` is refused like `(a+)+`. This also
+ *   refuses safe shapes such as `((a+)b)+`.
+ * - `?` in a body counts as a quantifier, because a nullable body under an
+ *   unbounded group quantifier (`(a?)+`, `(?:\d?)*`) is the classic blow-up.
+ *   The `?` that is group syntax (`(?:`, `(?=`, `(?!`, `(?<`) does not count,
+ *   so `(?:foo)+` stays a live regex.
  */
 function isCatastrophicPattern(pattern: string): boolean {
 	/** For each open group, whether its body carries an unbounded quantifier. */
 	const groupBodyQuantified: boolean[] = []
 	let inCharClass = false
 	let escaped = false
+	/** True when the previous character was an unescaped `(`. */
+	let afterGroupOpen = false
 
 	const markCurrentGroup = () => {
 		if (groupBodyQuantified.length > 0) {
@@ -246,6 +269,8 @@ function isCatastrophicPattern(pattern: string): boolean {
 
 	for (let i = 0; i < pattern.length; i++) {
 		const char = pattern[i]
+		const wasAfterGroupOpen = afterGroupOpen
+		afterGroupOpen = false
 
 		if (escaped) {
 			escaped = false
@@ -270,6 +295,7 @@ function isCatastrophicPattern(pattern: string): boolean {
 				break
 			case "(":
 				groupBodyQuantified.push(false)
+				afterGroupOpen = true
 				break
 			case ")": {
 				const bodyQuantified = groupBodyQuantified.pop() ?? false
@@ -278,9 +304,11 @@ function isCatastrophicPattern(pattern: string): boolean {
 				if (bodyQuantified && quantified) {
 					return true
 				}
-				if (quantified) {
+				if (bodyQuantified || quantified) {
 					// A quantified group is itself an unbounded quantifier as far
-					// as any enclosing group is concerned.
+					// as any enclosing group is concerned, and a quantifier in the
+					// body survives the nesting: `((a+))` still carries the `+`,
+					// so `((a+))+` must be refused like `(a+)+`.
 					markCurrentGroup()
 				}
 				break
@@ -288,6 +316,14 @@ function isCatastrophicPattern(pattern: string): boolean {
 			case "*":
 			case "+":
 				markCurrentGroup()
+				break
+			case "?":
+				// A nullable body under an unbounded group quantifier ((a?)+) is
+				// the classic exponential shape. `?` right after an unescaped `(`
+				// is group syntax ((?:, (?=, (?!, (?<), not a quantifier.
+				if (!wasAfterGroupOpen) {
+					markCurrentGroup()
+				}
 				break
 			case "{":
 				if (isUnboundedQuantifierAt(pattern, i)) {
@@ -564,7 +600,11 @@ export function searchHistorySources(
 	let scanned = 0
 
 	for (let sourceIndex = 0; sourceIndex < sources.length && !timedOut; sourceIndex++) {
-		const lines = sources[sourceIndex].text.split("\n")
+		// `\r?\n` so a CRLF corpus (Windows line endings in logs and command
+		// output) does not leave a trailing `\r` that silently defeats every
+		// `$`-anchored query. The cache feeds display too, so hit blocks stay
+		// clean as well.
+		const lines = sources[sourceIndex].text.split(/\r?\n/)
 		lineCache.set(sourceIndex, lines)
 
 		for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
@@ -582,8 +622,21 @@ export function searchHistorySources(
 
 			if (regex.test(tested)) {
 				matches.push({ sourceIndex, lineIndex, line })
+
+				// The clock cannot bound the post-scan sort/dedup, so the match
+				// count has to: see MAX_COLLECTED_MATCHES.
+				if (matches.length >= HISTORY_SEARCH_DEFAULTS.MAX_COLLECTED_MATCHES) {
+					timedOut = true
+					break
+				}
 			}
 		}
+	}
+
+	// The interval check above can miss a breach on the last stretch of lines;
+	// nothing below is worth starting once the budget is spent.
+	if (!timedOut && now() > deadline) {
+		timedOut = true
 	}
 
 	const messageCount = options.messageCount ?? 0
@@ -845,7 +898,14 @@ export async function readTaskArtifacts(taskDir: string): Promise<TaskArtifactTe
 				try {
 					const buffer = Buffer.alloc(toRead)
 					const { bytesRead } = await handle.read(buffer, 0, toRead, 0)
-					const text = buffer.subarray(0, bytesRead).toString("utf8")
+					const truncated = bytesRead < stats.size
+					let text = buffer.subarray(0, bytesRead).toString("utf8")
+
+					if (truncated) {
+						// A byte cap can cut a multi-byte character in half, which
+						// decodes as a trailing U+FFFD. Same clean-up as capBytes.
+						text = text.replace(/\uFFFD$/, "")
+					}
 
 					if (isSearchResultText(text)) {
 						continue
@@ -856,7 +916,7 @@ export async function readTaskArtifacts(taskDir: string): Promise<TaskArtifactTe
 					artifacts.push({
 						id: entry,
 						text,
-						truncated: bytesRead < stats.size,
+						truncated,
 					})
 				} finally {
 					await handle.close()

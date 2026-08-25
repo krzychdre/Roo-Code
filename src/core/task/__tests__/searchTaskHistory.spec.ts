@@ -89,8 +89,22 @@ describe("compileHistoryQuery", () => {
 		["(?:\\d+)*", "unsafe"],
 		["(x|y+)*", "unsafe"],
 		["(a{2,})+", "unsafe"],
+		// The body's quantifier must survive group nesting.
+		["((a+))+b", "unsafe"],
+		["((a*))+c", "unsafe"],
+		["(((a+)))+b", "unsafe"],
+		["((a+)?)*", "unsafe"],
+		// A nullable body under an unbounded group quantifier.
+		["(a?)+", "unsafe"],
+		["(?:\\d?)*", "unsafe"],
 		["(foo|bar)+", "regex"],
 		["(a+)", "regex"],
+		// A bounded quantifier on the group is at worst polynomial.
+		["(a+)?", "regex"],
+		["(\\d+)?x", "regex"],
+		// `?` that is group syntax or sits on a plain atom is not a marker.
+		["(?:foo)+", "regex"],
+		["(https?)", "regex"],
 		["answer is \\d+", "regex"],
 		["timeout|timed out", "regex"],
 		["(ab){2,4}", "regex"],
@@ -439,6 +453,70 @@ describe("cost control", () => {
 		expect(search([message("user", line, 1_000)], [], "NEEDLE")).toContain("No match")
 		expect(search([message("user", `NEEDLE ${line}`, 1_000)], [], "NEEDLE")).toContain("matched 1 line(s)")
 	})
+
+	it("refuses the nested wrapping of a pathological pattern just as fast", () => {
+		// ((a+))+b is the same backtracking automaton as (a+)+b; the wrapper
+		// used to slip through the guard and hang on a single 2000-char line.
+		const messages = [message("user", "a".repeat(2_000), 1_000)]
+
+		const started = Date.now()
+		const result = search(messages, [], "((a+))+b")
+		const elapsed = Date.now() - started
+
+		expect(elapsed).toBeLessThan(1_000)
+		expect(result).toContain("No match")
+		expect(result).toContain("exponential time")
+	}, 10_000)
+
+	it("stops collecting matches at the cap instead of paying for unbounded post-scan work", () => {
+		const lines = Array.from({ length: HISTORY_SEARCH_DEFAULTS.MAX_COLLECTED_MATCHES + 5 }, () => "needle")
+		const outcome = searchHistorySources(
+			[{ label: "artifact prune-1000.txt", text: lines.join("\n"), timestamp: 1_000, order: 0 }],
+			"needle",
+			10,
+			{ messageCount: 0, artifactCount: 1 },
+		)
+
+		expect(outcome.timedOut).toBe(true)
+		expect(outcome.hits).toHaveLength(0)
+		expect(outcome.totalMatches).toBe(HISTORY_SEARCH_DEFAULTS.MAX_COLLECTED_MATCHES)
+	})
+
+	it("reports a breach that lands after the last interval check", () => {
+		// Fewer lines than one check interval: the scan loop never looks at the
+		// clock, so only the post-scan check can catch the breach.
+		let calls = 0
+		const now = () => {
+			calls++
+			return calls <= 1 ? 0 : HISTORY_SEARCH_DEFAULTS.MAX_SEARCH_MILLIS + 1
+		}
+
+		const lines = Array.from({ length: 10 }, () => "needle")
+		const outcome = searchHistorySources(
+			[{ label: "artifact prune-1000.txt", text: lines.join("\n"), timestamp: 1_000, order: 0 }],
+			"needle",
+			10,
+			{ messageCount: 0, artifactCount: 1, now },
+		)
+
+		expect(outcome.timedOut).toBe(true)
+		expect(outcome.hits).toHaveLength(0)
+	})
+})
+
+describe("CRLF corpus", () => {
+	it("matches anchored queries on lines that end in \\r\\n", () => {
+		const outcome = searchHistorySources(
+			[{ label: "artifact cmd-1000.txt", text: "alpha\r\nneedle\r\nomega", timestamp: 1_000, order: 0 }],
+			"/^needle$/",
+			10,
+			{ messageCount: 0, artifactCount: 1 },
+		)
+
+		expect(outcome.hits).toHaveLength(1)
+		expect(outcome.hits[0].lineNumber).toBe(2)
+		expect(outcome.hits[0].block).not.toContain("\r")
+	})
 })
 
 describe("empty or unreadable history", () => {
@@ -547,6 +625,19 @@ describe("readTaskArtifacts", () => {
 
 		expect(ids).toEqual(["cmd-1700000000002.txt", "prune-1700000000001.txt"])
 		expect(artifacts.find((a) => a.id === "prune-1700000000001.txt")?.text).toBe("pruned body")
+	})
+
+	it("does not leave a replacement character when the byte cap cuts a multi-byte character", async () => {
+		fs.mkdirSync(path.join(taskDir, "artifacts"), { recursive: true })
+		// "ż" is two UTF-8 bytes; placed so the byte cap cuts it in half.
+		const content = `${"x".repeat(HISTORY_SEARCH_DEFAULTS.MAX_ARTIFACT_SCAN_BYTES - 1)}ż`
+		fs.writeFileSync(path.join(taskDir, "artifacts", "tool-1700000000004.txt"), content, "utf8")
+
+		const [artifact] = await readTaskArtifacts(taskDir)
+
+		expect(artifact.truncated).toBe(true)
+		expect(artifact.text.endsWith("�")).toBe(false)
+		expect(artifact.text).toBe("x".repeat(HISTORY_SEARCH_DEFAULTS.MAX_ARTIFACT_SCAN_BYTES - 1))
 	})
 
 	it("stops at the per-file scan cap and flags the artifact as partial", async () => {
