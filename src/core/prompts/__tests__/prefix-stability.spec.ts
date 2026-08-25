@@ -246,22 +246,30 @@ describe("system prompt common prefix across modes", () => {
 	 * Floor for the prefix two different modes share, in bytes, MEASURED WITH AN
 	 * MCP HUB CONNECTED, which is what `buildPrompt` does by default.
 	 *
-	 * The hub matters. Without one, the five modes here share 11684 bytes,
-	 * because MCP SERVERS is empty for all of them and the shared region runs on
-	 * through MODES and RULES. With a hub connected the worst pair is
-	 * code vs orchestrator: orchestrator has no `mcp` group, so the two prompts
-	 * part company at the MCP SERVERS section and share 8252 bytes, which is the
-	 * stable head (8243) plus its trailing separator. That worst case is the
+	 * The hub matters. With no server connected, the five modes here share 11618
+	 * bytes, because MCP SERVERS is empty for all of them and the shared region
+	 * runs on through MODES and RULES. With a hub connected the worst pair
+	 * is code vs orchestrator: orchestrator has no `mcp` group, so the two
+	 * prompts part company at the MCP SERVERS section and share 8186 bytes, which
+	 * is the stable head plus its trailing separator. That worst case is the
 	 * number this floor guards, because it is the one an orchestrator flow
 	 * actually pays. Before WS-F the same measurement gave 17 bytes.
+	 *
+	 * The measured worst case was 8252 when WS-F landed. It dropped to 8186 when
+	 * the stable opener was reworded to stop promising the conditional
+	 * "Mode-specific Instructions" block: the new sentence is 66 bytes shorter,
+	 * and 8252 - 66 = 8186. That is a deliberate shortening of head TEXT, not a
+	 * mode-dependent section leaking into the head, so the floor stays where it
+	 * is rather than following the measurement down.
 	 *
 	 * HOW TO UPDATE THIS NUMBER LEGITIMATELY: it may only ever go UP, unless a PR
 	 * deliberately shortens a stable-head section (deleting text, moving a section
 	 * into the tail because it turned out to be mode-dependent). Lowering it
 	 * because "the test broke" hides exactly the regression this file exists to
-	 * catch: something mode-dependent creeping into the head. The gap between the
-	 * floor and the measured 8252 is there so ordinary edits to head TEXT (a
-	 * reworded rule) do not fail the suite.
+	 * catch: something mode-dependent creeping into the head. The remaining gap
+	 * between the floor and the measured 8186 is 186 bytes, kept so ordinary
+	 * edits to head TEXT (a reworded rule) do not fail the suite; the computed
+	 * assertion below, not this floor, is the real guard.
 	 */
 	const MIN_SHARED_PREFIX_BYTES = 8000
 
@@ -304,7 +312,7 @@ describe("system prompt common prefix across modes", () => {
 	})
 
 	it("shares more than the head between modes that agree about MCP", async () => {
-		// Control for the test above: the 8252-byte worst case is caused by the
+		// Control for the test above: the 8186-byte worst case is caused by the
 		// MCP group difference, not by the head being short. Two modes that both
 		// carry the `mcp` group keep sharing well past it.
 		const code = await buildPrompt("code")
@@ -312,6 +320,70 @@ describe("system prompt common prefix across modes", () => {
 		const shared = commonPrefixLength(code, debug)
 
 		expect(shared).toBeGreaterThan(code.indexOf("====\n\nRULES"))
+	})
+})
+
+describe("stable opener points only at sections that exist", () => {
+	/**
+	 * The opener is one constant string shared by every mode, so every promise it
+	 * makes has to hold in every mode. It cannot say "see section X" unless X is
+	 * rendered unconditionally.
+	 *
+	 * The block that broke this rule was "Mode-specific Instructions". It renders
+	 * only when the mode has non-empty `customInstructions`, and the default
+	 * `code` mode has none, so the old opener sent the most-used mode of all to a
+	 * section that is not in its prompt. Hence the explicit negative assertion
+	 * below: naming that block again must fail this suite.
+	 */
+	const OPENER_NAMED_SECTIONS = [
+		{ nameInOpener: "MODE section", header: "====\n\nMODE\n\n" },
+		{ nameInOpener: "USER'S CUSTOM INSTRUCTIONS", header: "====\n\nUSER'S CUSTOM INSTRUCTIONS" },
+	]
+
+	it("names sections that the opener really contains", () => {
+		// Guards the fixture itself: if a reword drops one of these phrases the
+		// per-mode assertions below would silently stop testing anything.
+		for (const { nameInOpener } of OPENER_NAMED_SECTIONS) {
+			expect(STABLE_PROMPT_OPENER).toContain(nameInOpener)
+		}
+	})
+
+	it("does not promise the conditional Mode-specific Instructions block", () => {
+		// `code` has no customInstructions, so this block is absent there. An
+		// unconditional pointer to it is a lie in the default mode.
+		expect(STABLE_PROMPT_OPENER).not.toContain("Mode-specific Instructions")
+	})
+
+	it("does not claim the mode is defined at the end of the prompt", () => {
+		// MODE is the fifth of seven tail sections; two more render after it.
+		expect(STABLE_PROMPT_OPENER).not.toContain("at the end of this prompt")
+	})
+
+	it.each(MODES)("delivers every section the opener names, in %s mode", async (mode) => {
+		const prompt = await buildPrompt(mode)
+
+		expect(prompt.startsWith(STABLE_PROMPT_OPENER)).toBe(true)
+
+		for (const { header } of OPENER_NAMED_SECTIONS) {
+			expect(prompt, `opener names a section absent from the ${mode} prompt: ${header}`).toContain(header)
+		}
+
+		// The mutation guard, stated as an implication so it survives rewording:
+		// whatever the opener names must be in the prompt. Re-adding the old
+		// sentence makes this fail for `code`, which has no customInstructions.
+		if (STABLE_PROMPT_OPENER.includes("Mode-specific Instructions")) {
+			expect(prompt).toContain("Mode-specific Instructions:")
+		}
+	})
+
+	it("proves the block really is absent for code and present for orchestrator", async () => {
+		// Without this the implication above could be vacuous for a different
+		// reason than the one it documents.
+		const code = await buildPrompt("code")
+		const orchestrator = await buildPrompt("orchestrator")
+
+		expect(code).not.toContain("Mode-specific Instructions:")
+		expect(orchestrator).toContain("Mode-specific Instructions:")
 	})
 })
 

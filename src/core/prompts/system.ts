@@ -43,14 +43,28 @@ import {
  *
  * Both destinations are named on purpose. The MODE section carries only the
  * role definition; the mode's actual rulebook (a mode's `customInstructions`,
- * for example the orchestrator's delegation protocol) renders further down as
- * the "Mode-specific Instructions" block inside USER'S CUSTOM INSTRUCTIONS. A
- * pointer that named only the MODE section would send a weak model to two
- * sentences of persona and leave it reading its own protocol as a user's wish.
+ * for example the orchestrator's delegation protocol) renders further down,
+ * inside USER'S CUSTOM INSTRUCTIONS. A pointer that named only the MODE section
+ * would send a weak model to two sentences of persona and leave it reading its
+ * own protocol as a user's wish.
+ *
+ * Every claim here has to be true in EVERY mode, because the string is a
+ * constant and cannot adapt. Two rules follow from that:
+ *
+ *  - The second destination is phrased conditionally ("any mode-specific rules
+ *    for you"). The rulebook renders as a "Mode-specific Instructions" block
+ *    only when the mode actually has `customInstructions`; the default `code`
+ *    mode has none (see `DEFAULT_MODES` in packages/types/src/mode.ts and the
+ *    guard in sections/custom-instructions.ts). An earlier version of this
+ *    opener promised that block unconditionally and so pointed a weak model at
+ *    a section that is absent for the most-used mode of all.
+ *  - The position is "later in this prompt", not "at the end": MODE is the
+ *    fifth of seven tail sections, and USER'S CUSTOM INSTRUCTIONS plus the
+ *    deferred-tools catalog render after it.
  *
  * Change this only with the "one-time prefix invalidation" note in the commit.
  */
-export const STABLE_PROMPT_OPENER = `You are Tumble Code, an AI coding agent. Your mode is defined at the end of this prompt and both parts of it are binding on you: the MODE section states your role, and the "Mode-specific Instructions" block inside USER'S CUSTOM INSTRUCTIONS states the rules you must follow in that mode.`
+export const STABLE_PROMPT_OPENER = `You are Tumble Code, an AI coding agent. Your mode is defined later in this prompt: the MODE section states your role, and any mode-specific rules for you appear inside USER'S CUSTOM INSTRUCTIONS. Both are binding on you.`
 
 /**
  * Wrap the mode's role definition in the MODE section the opener points at.
