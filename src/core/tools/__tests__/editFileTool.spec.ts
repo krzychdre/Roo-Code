@@ -674,7 +674,7 @@ describe("editFileTool", () => {
 
 			await executeEditFileTool()
 
-			expect(mockHandleError).toHaveBeenCalledWith("edit_file", expect.any(Error))
+			expect(mockHandleError).toHaveBeenCalledWith("edit_file", expect.any(Error), "edit_file")
 			expect(mockTask.diffViewProvider.reset).toHaveBeenCalled()
 		})
 	})

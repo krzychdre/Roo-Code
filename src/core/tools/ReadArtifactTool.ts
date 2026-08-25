@@ -4,6 +4,7 @@ import * as path from "path"
 import { resolveMaxInlineToolResultBytes } from "@roo-code/types"
 
 import { Task } from "../task/Task"
+import { formatResponse } from "../prompts/responses"
 import { getTaskDirectoryPath } from "../../utils/storage"
 import { artifactCandidatePaths, isValidArtifactId } from "../artifacts/ArtifactStore"
 
@@ -241,7 +242,9 @@ export class ReadArtifactTool extends BaseTool<"read_artifact"> {
 			const errorMsg = error instanceof Error ? error.message : String(error)
 			await task.say("error", `Error reading artifact: ${errorMsg}`)
 			task.didToolFailInCurrentTurn = true
-			pushToolResult(`Error reading artifact: ${errorMsg}`)
+			// The envelope, not a bare string: the model gets `failed_tool` plus this tool's
+			// minimal valid call, which is what a weak model needs when it guessed the id.
+			pushToolResult(formatResponse.toolError(`Error reading artifact: ${errorMsg}`, this.name))
 		}
 	}
 

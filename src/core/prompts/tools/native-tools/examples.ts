@@ -77,7 +77,16 @@ export const TOOL_MINIMAL_EXAMPLES = {
 	read_artifact: { artifact_id: "cmd-1706119234567.txt" },
 	read_command_output: { artifact_id: "cmd-1706119234567.txt" },
 	read_file: { path: "src/app.ts" },
-	run_parallel_tasks: { subtasks: [{ message: "Update the README.", mode: null }], maxConcurrency: null },
+	// TWO subtasks, not one: `validateParallelParams` rejects a single-subtask call
+	// outright (RunParallelTasksTool.ts), so a one-element example taught a call that
+	// can never succeed. The schema sets no maxItems, so two is as minimal as valid gets.
+	run_parallel_tasks: {
+		subtasks: [
+			{ message: "Update the README.", mode: null },
+			{ message: "Update the CHANGELOG.", mode: null },
+		],
+		maxConcurrency: null,
+	},
 	run_slash_command: { command: "init", args: null },
 	search_and_replace: { file_path: "src/app.ts", old_string: "const a = 1", new_string: "const a = 2" },
 	search_files: { path: "src", regex: "retryPolicy", file_pattern: null },

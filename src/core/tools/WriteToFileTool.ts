@@ -220,7 +220,7 @@ export class WriteToFileTool extends BaseTool<"write_to_file"> {
 
 			return
 		} catch (error) {
-			await handleError("writing file", error as Error)
+			await handleError("writing file", error as Error, this.name)
 			await task.diffViewProvider.reset()
 			this.resetPartialState()
 			return

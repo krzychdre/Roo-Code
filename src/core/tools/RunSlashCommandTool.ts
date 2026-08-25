@@ -135,7 +135,7 @@ export class RunSlashCommandTool extends BaseTool<"run_slash_command"> {
 			// Return the command content as the tool result
 			pushToolResult(result)
 		} catch (error) {
-			await handleError("running slash command", error as Error)
+			await handleError("running slash command", error as Error, this.name)
 		}
 	}
 

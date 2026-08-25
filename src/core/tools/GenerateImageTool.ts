@@ -251,7 +251,7 @@ export class GenerateImageTool extends BaseTool<"generate_image"> {
 			await task.say("image", JSON.stringify({ imageUri, imagePath: fullImagePath }))
 			pushToolResult(formatResponse.toolResult(getReadablePath(task.cwd, finalPath)))
 		} catch (error) {
-			await handleError("generating image", error as Error)
+			await handleError("generating image", error as Error, this.name)
 		}
 	}
 

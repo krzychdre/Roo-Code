@@ -134,7 +134,7 @@ export class ApplyPatchTool extends BaseTool<"apply_patch"> {
 			task.consecutiveMistakeCount = 0
 			task.recordToolUsage("apply_patch")
 		} catch (error) {
-			await handleError("apply patch", error as Error)
+			await handleError("apply patch", error as Error, this.name)
 			await task.diffViewProvider.reset()
 		}
 	}

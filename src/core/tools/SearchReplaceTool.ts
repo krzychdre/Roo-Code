@@ -236,7 +236,7 @@ export class SearchReplaceTool extends BaseTool<"search_replace"> {
 			// Process any queued messages after file edit completes
 			task.processQueuedMessages()
 		} catch (error) {
-			await handleError("search and replace", error as Error)
+			await handleError("search and replace", error as Error, this.name)
 			await task.diffViewProvider.reset()
 			this.resetPartialState()
 		}

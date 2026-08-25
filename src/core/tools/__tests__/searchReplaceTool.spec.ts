@@ -379,7 +379,7 @@ describe("searchReplaceTool", () => {
 
 			await executeSearchReplaceTool()
 
-			expect(mockHandleError).toHaveBeenCalledWith("search and replace", expect.any(Error))
+			expect(mockHandleError).toHaveBeenCalledWith("search and replace", expect.any(Error), "search_replace")
 			expect(mockCline.diffViewProvider.reset).toHaveBeenCalled()
 		})
 	})

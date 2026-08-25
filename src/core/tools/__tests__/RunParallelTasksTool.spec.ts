@@ -352,9 +352,9 @@ describe("RunParallelTasksTool helpers", () => {
 			]
 			const out = formatParallelResults(results)
 			expect(out).toContain("1 completed, 1 failed")
-			expect(out).toContain("### Subtask 1 — COMPLETED (code mode)")
+			expect(out).toContain("### Subtask 1: COMPLETED (code mode)")
 			expect(out).toContain("did the thing")
-			expect(out).toContain("### Subtask 2 — FAILED (debug mode)")
+			expect(out).toContain("### Subtask 2: FAILED (debug mode)")
 			expect(out).toContain("Failed: boom")
 		})
 
@@ -381,7 +381,7 @@ describe("RunParallelTasksTool helpers", () => {
 			]
 			const out = formatParallelResults(results)
 			expect(out).toContain("1 completed, 0 failed, 1 cancelled")
-			expect(out).toContain("### Subtask 2 — CANCELLED (code mode)")
+			expect(out).toContain("### Subtask 2: CANCELLED (code mode)")
 			expect(out).toContain("Cancelled before completion.")
 			expect(out).toContain("worktree: /wt/b")
 		})

@@ -74,7 +74,7 @@ export class WebSearchTool extends BaseTool<"web_search"> {
 
 			const message = error instanceof WebSearchError ? error.message : String(error)
 			await task.say("error", message)
-			pushToolResult(formatResponse.toolError(message))
+			pushToolResult(formatResponse.toolError(message, this.name))
 			return
 		}
 
@@ -109,7 +109,7 @@ export class WebSearchTool extends BaseTool<"web_search"> {
 					: `web_search failed: ${error instanceof Error ? error.message : String(error)}; tell the user or continue without web data`
 
 			await task.say("error", message)
-			pushToolResult(formatResponse.toolError(message))
+			pushToolResult(formatResponse.toolError(message, this.name))
 		}
 	}
 

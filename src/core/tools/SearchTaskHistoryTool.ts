@@ -128,7 +128,7 @@ export class SearchTaskHistoryTool extends BaseTool<"search_task_history"> {
 			const errorMsg = `search_task_history failed: ${detail}; continue without the older history or ask the user for the missing detail.`
 			await task.say("error", errorMsg)
 			task.didToolFailInCurrentTurn = true
-			pushToolResult(formatResponse.toolError(errorMsg))
+			pushToolResult(formatResponse.toolError(errorMsg, this.name))
 		}
 	}
 }

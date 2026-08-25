@@ -76,7 +76,7 @@ export class SkillTool extends BaseTool<"skill"> {
 
 			pushToolResult(buildSkillResult(skillName, args, skillContent))
 		} catch (error) {
-			await handleError("executing skill", error as Error)
+			await handleError("executing skill", error as Error, this.name)
 		}
 	}
 

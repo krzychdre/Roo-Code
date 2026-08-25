@@ -210,7 +210,7 @@ describe("SwitchModeTool", () => {
 		await switchModeTool.handle(mockTask, block, mockCallbacks)
 
 		// The error should be caught by the try/catch and reported via handleError
-		expect(mockCallbacks.handleError).toHaveBeenCalledWith("switching mode", stateError)
+		expect(mockCallbacks.handleError).toHaveBeenCalledWith("switching mode", stateError, "switch_mode")
 		// Should NOT have asked for approval or attempted switch
 		expect(mockCallbacks.askApproval).not.toHaveBeenCalled()
 		expect(mockHandleModeSwitch).not.toHaveBeenCalled()
@@ -246,7 +246,7 @@ describe("SwitchModeTool", () => {
 		// Should have called handleModeSwitch (which throws)
 		expect(mockHandleModeSwitch).toHaveBeenCalledWith("architect")
 		// Error should be caught and reported
-		expect(mockCallbacks.handleError).toHaveBeenCalledWith("switching mode", switchError)
+		expect(mockCallbacks.handleError).toHaveBeenCalledWith("switching mode", switchError, "switch_mode")
 	})
 
 	// ===== Partial message handling =====

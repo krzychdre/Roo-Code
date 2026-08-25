@@ -85,7 +85,7 @@ export class WebFetchTool extends BaseTool<"web_fetch"> {
 					: `web_fetch failed for ${url}: ${error instanceof Error ? error.message : String(error)}; tell the user or continue without the page contents`
 
 			await task.say("error", message)
-			pushToolResult(formatResponse.toolError(message))
+			pushToolResult(formatResponse.toolError(message, this.name))
 		}
 	}
 

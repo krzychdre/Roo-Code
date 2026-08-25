@@ -66,7 +66,7 @@ export class SwitchModeTool extends BaseTool<"switch_mode"> {
 
 			await delay(500) // Delay to allow mode change to take effect before next tool is executed
 		} catch (error) {
-			await handleError("switching mode", error as Error)
+			await handleError("switching mode", error as Error, this.name)
 		}
 	}
 

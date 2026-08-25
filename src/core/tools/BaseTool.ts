@@ -120,6 +120,7 @@ export abstract class BaseTool<TName extends ToolName> {
 				await callbacks.handleError(
 					`handling partial ${this.name}`,
 					error instanceof Error ? error : new Error(String(error)),
+					this.name,
 				)
 				// TL-4: if handlePartial threw AFTER opening the diff editor
 				// (e.g., during update()), the editor stays open with isEditing=true
@@ -170,7 +171,33 @@ export abstract class BaseTool<TName extends ToolName> {
 			return
 		}
 
-		// Execute with typed parameters
-		await this.execute(params, task, callbacks)
+		// Execute with typed parameters.
+		//
+		// The catch is a safety net, not the main error path: every tool that has a
+		// top-level try/catch already reports its own runtime failures through
+		// `handleError`. What is left unprotected is the prefix each tool runs BEFORE
+		// opening that try (parameter checks, workspace lookups, the first file read)
+		// plus the tools that have no try at all. A throw from there used to escape
+		// into nothing: `presentAssistantMessage` is called un-awaited from
+		// `TaskStreamProcessor` and `TaskApiLoop`, so the rejection had no owner and the
+		// model got no tool_result at all.
+		//
+		// Routing it through `handleError` gives it the same treatment as any other
+		// runtime failure: an error say, a teaching tool_result carrying this tool's
+		// minimal valid example, and one increment of the mistake counter.
+		//
+		// `didToolFailInCurrentTurn` is deliberately NOT set here: `attempt_completion`
+		// refuses to run when that flag is set, and flipping it centrally would change
+		// control flow, not just error reporting.
+		try {
+			await this.execute(params, task, callbacks)
+		} catch (error) {
+			console.error(`Error executing ${this.name}:`, error)
+			await callbacks.handleError(
+				`executing ${this.name}`,
+				error instanceof Error ? error : new Error(String(error)),
+				this.name,
+			)
+		}
 	}
 }

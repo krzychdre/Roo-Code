@@ -82,7 +82,11 @@ describe("BaseTool partial error handling (TL-4)", () => {
 		await tool.handle(task, makePartialBlock(), callbacks)
 
 		expect(task.diffViewProvider.open).toHaveBeenCalledWith("test/file.txt")
-		expect(callbacks.handleError).toHaveBeenCalledWith("handling partial write_to_file", expect.any(Error))
+		expect(callbacks.handleError).toHaveBeenCalledWith(
+			"handling partial write_to_file",
+			expect.any(Error),
+			"write_to_file",
+		)
 		expect(task.diffViewProvider.reset).toHaveBeenCalled()
 	})
 
@@ -143,6 +147,88 @@ describe("BaseTool partial error handling (TL-4)", () => {
 
 			expect((error as Error).message).toContain("XML tool calls are no longer supported")
 			expect(toolName).toBe("write_to_file")
+		})
+	})
+
+	describe("runtime safety net (WS-D follow-up)", () => {
+		/**
+		 * A tool whose `execute` throws before (or instead of) opening its own try/catch.
+		 * That is the real shape of the gap: the prefix of most tools (parameter checks,
+		 * workspace lookups, the first file read) runs outside any catch, and the throw
+		 * used to escape into an un-awaited promise with no tool_result for the model.
+		 */
+		class ThrowingTool extends BaseTool<"write_to_file"> {
+			readonly name = "write_to_file" as const
+
+			constructor(private readonly thrown: unknown) {
+				super()
+			}
+
+			async execute(): Promise<void> {
+				throw this.thrown
+			}
+		}
+
+		function makeCompleteBlock(): ToolUse<"write_to_file"> {
+			return {
+				type: "tool_use",
+				name: "write_to_file",
+				params: { path: "test/file.txt", content: "test" },
+				nativeArgs: { path: "test/file.txt", content: "test" } as any,
+				partial: false,
+			}
+		}
+
+		it("routes an escaping runtime error to handleError with the tool name", async () => {
+			const tool = new ThrowingTool(new Error("EACCES: permission denied"))
+			const callbacks = makeCallbacks()
+
+			await expect(tool.handle(makeMockTask(), makeCompleteBlock(), callbacks)).resolves.toBeUndefined()
+
+			expect(callbacks.handleError).toHaveBeenCalledTimes(1)
+
+			const [action, error, toolName] = (callbacks.handleError as any).mock.calls[0]
+
+			expect(action).toBe("executing write_to_file")
+			expect((error as Error).message).toContain("EACCES")
+			expect(toolName).toBe("write_to_file")
+		})
+
+		it("normalizes a non-Error throw so the envelope still carries the tool name", async () => {
+			const tool = new ThrowingTool("plain string failure")
+			const callbacks = makeCallbacks()
+
+			await tool.handle(makeMockTask(), makeCompleteBlock(), callbacks)
+
+			const [, error, toolName] = (callbacks.handleError as any).mock.calls[0]
+
+			expect(error).toBeInstanceOf(Error)
+			expect((error as Error).message).toBe("plain string failure")
+			expect(toolName).toBe("write_to_file")
+		})
+
+		it("does not touch didToolFailInCurrentTurn", async () => {
+			// attempt_completion refuses to run when that flag is set, so the safety net
+			// must stay a reporting mechanism and not change control flow.
+			const tool = new ThrowingTool(new Error("boom"))
+			const task = makeMockTask()
+
+			await tool.handle(task, makeCompleteBlock(), makeCallbacks())
+
+			expect(task.didToolFailInCurrentTurn).toBeUndefined()
+		})
+
+		it("leaves a successful execute untouched", async () => {
+			class OkTool extends BaseTool<"write_to_file"> {
+				readonly name = "write_to_file" as const
+				async execute(): Promise<void> {}
+			}
+
+			const callbacks = makeCallbacks()
+
+			await new OkTool().handle(makeMockTask(), makeCompleteBlock(), callbacks)
+
+			expect(callbacks.handleError).not.toHaveBeenCalled()
 		})
 	})
 })

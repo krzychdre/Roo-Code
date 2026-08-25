@@ -380,7 +380,7 @@ describe("ListFilesTool", () => {
 
 		await tool.execute(params, mockTask, mockCallbacks)
 
-		expect(mockCallbacks.handleError).toHaveBeenCalledWith("listing files", error)
+		expect(mockCallbacks.handleError).toHaveBeenCalledWith("listing files", error, "list_files")
 		expect(mockCallbacks.pushToolResult).not.toHaveBeenCalled()
 	})
 
@@ -393,7 +393,7 @@ describe("ListFilesTool", () => {
 
 		await tool.execute(params, mockTask, mockCallbacks)
 
-		expect(mockCallbacks.handleError).toHaveBeenCalledWith("listing files", error)
+		expect(mockCallbacks.handleError).toHaveBeenCalledWith("listing files", error, "list_files")
 	})
 
 	it("should reset consecutive mistake count after successful validation even when listing fails", async () => {

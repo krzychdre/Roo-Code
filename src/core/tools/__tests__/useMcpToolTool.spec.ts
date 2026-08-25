@@ -387,7 +387,7 @@ describe("useMcpToolTool", () => {
 				pushToolResult: mockPushToolResult,
 			})
 
-			expect(mockHandleError).toHaveBeenCalledWith("executing MCP tool", error)
+			expect(mockHandleError).toHaveBeenCalledWith("executing MCP tool", error, "use_mcp_tool")
 		})
 
 		it("should reject unknown tool names", async () => {

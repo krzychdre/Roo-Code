@@ -483,7 +483,7 @@ export class EditFileTool extends BaseTool<"edit_file"> {
 			if (relPathForErrorHandling) {
 				await finalizePartialToolAskIfNeeded(relPathForErrorHandling)
 			}
-			await handleError("edit_file", error as Error)
+			await handleError("edit_file", error as Error, this.name)
 			await task.diffViewProvider.reset()
 			task.didToolFailInCurrentTurn = true
 		} finally {
