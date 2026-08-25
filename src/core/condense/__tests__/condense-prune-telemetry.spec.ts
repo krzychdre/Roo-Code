@@ -82,5 +82,14 @@ describe("condense telemetry: prune fields", () => {
 		})
 
 		expect(TelemetryService.instance.captureContextCondensed).toHaveBeenCalledWith(taskId, false, false)
+
+		// Exactly three positional arguments: not even an `undefined` fourth one.
+		// A regression that always passes a zeroed `pruneStats` (or an empty
+		// object) would widen every historical dashboard row, so the arity is
+		// part of the contract and is asserted directly rather than left to the
+		// matcher above.
+		const calls = vi.mocked(TelemetryService.instance.captureContextCondensed).mock.calls
+		expect(calls).toHaveLength(1)
+		expect(calls[0]).toHaveLength(3)
 	})
 })

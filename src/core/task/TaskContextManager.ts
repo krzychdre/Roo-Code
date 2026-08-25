@@ -505,6 +505,32 @@ export class TaskContextManager {
 					undefined /* contextCondense */,
 					contextTruncation,
 				)
+			} else if (truncateResult.summarySkipped && truncateResult.prunedCount) {
+				// A prune-only round, same as the third branch of manageContextIfNeeded.
+				// The forced path persists the rewritten history a few lines above, so
+				// staying silent here would mean tool output vanishing from the stored
+				// transcript with no explanation and no hint that read_artifact can
+				// bring it back. A destructive rewrite must never be silent, and this
+				// path (the context window is ALREADY exceeded) is the likeliest place
+				// for a real prune-only round to happen.
+				const contextPrune: ContextPrune = {
+					prunedCount: truncateResult.prunedCount,
+					bytesSaved: truncateResult.prunedBytesSaved ?? 0,
+					prevContextTokens: truncateResult.prevContextTokens,
+					newContextTokens: truncateResult.newContextTokens ?? 0,
+				}
+				await this.access.askSay.say(
+					"context_pruned",
+					undefined /* text */,
+					undefined /* images */,
+					false /* partial */,
+					undefined /* checkpoint */,
+					undefined /* progressStatus */,
+					{ isNonInteractive: true } /* options */,
+					undefined /* contextCondense */,
+					undefined /* contextTruncation */,
+					contextPrune,
+				)
 			}
 		} finally {
 			// Notify webview that context management is complete (removes in-progress spinner)

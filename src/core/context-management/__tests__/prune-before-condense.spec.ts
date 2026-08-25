@@ -383,6 +383,12 @@ describe("prune before condense", () => {
 	it("is idempotent across rounds: a second pass writes no new artifacts", async () => {
 		// Hand the (pruned) input straight back, so round two starts from exactly
 		// the history round one produced.
+		//
+		// NOTE ON SCOPE: because this summarizer is a no-op (it returns
+		// `options.messages` verbatim), this test proves idempotency only for the
+		// pruner running twice over its OWN output. It says nothing about a round
+		// where the summary really rewrites the history in between; the test right
+		// below covers that case.
 		vi.spyOn(condenseModule, "summarizeConversation").mockImplementation(async (options) => ({
 			messages: options.messages,
 			summary: "summary",
@@ -410,5 +416,51 @@ describe("prune before condense", () => {
 		const second = await manageContext({ ...options, messages: first.messages })
 		expect(second.prunedCount).toBeUndefined()
 		expect(fs.readdirSync(path.join(store.getTaskDir(), "artifacts"))).toHaveLength(2)
+	})
+
+	it("stays idempotent when the summary rewrote the history in between", async () => {
+		// A summarizer that behaves like the real one: it replaces the history with
+		// a summary message followed by a slice of what it was given. Round two
+		// therefore starts from an array the pruner has never seen, whose only
+		// oversized results are the previews round one wrote. Those must survive:
+		// re-pruning a preview would spend a disk write to save nothing and would
+		// bury the artifact id the first pass put there.
+		vi.spyOn(condenseModule, "summarizeConversation").mockImplementation(async (options) => ({
+			messages: [
+				{ role: "user" as const, content: "## Conversation Summary\nearlier work", ts: 0, isSummary: true },
+				...options.messages.slice(1, 11),
+			],
+			summary: "summary",
+			cost: 0,
+			newContextTokens: 1_000,
+		}))
+
+		const options = {
+			totalTokens: 90_000,
+			contextWindow: 100_000,
+			maxTokens: 8_000,
+			apiHandler,
+			autoCondenseContext: true,
+			autoCondenseContextPercent: 70,
+			systemPrompt: "System prompt",
+			taskId,
+			profileThresholds: {},
+			currentProfileId: "default",
+			artifactStore: store,
+		}
+
+		const first = await manageContext({ ...options, messages: buildHistory() })
+		expect(first.prunedCount).toBe(2)
+		// The condensed history really is a different array that still carries the
+		// two previews, so round two has something to be tempted by.
+		expect(resultText(first.messages, "use-1")!.startsWith(PRUNE_NOTICE_PREFIX)).toBe(true)
+		expect(resultText(first.messages, "use-2")!.startsWith(PRUNE_NOTICE_PREFIX)).toBe(true)
+
+		const second = await manageContext({ ...options, messages: first.messages })
+		expect(second.prunedCount).toBeUndefined()
+		expect(fs.readdirSync(path.join(store.getTaskDir(), "artifacts"))).toHaveLength(2)
+		// The previews are untouched: same text, same artifact ids.
+		expect(resultText(second.messages, "use-1")).toBe(resultText(first.messages, "use-1"))
+		expect(resultText(second.messages, "use-2")).toBe(resultText(first.messages, "use-2"))
 	})
 })
