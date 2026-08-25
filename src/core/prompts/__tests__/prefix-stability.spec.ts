@@ -82,7 +82,7 @@ vi.mock("../../../services/code-index/manager", () => ({
 import type OpenAI from "openai"
 import type * as vscode from "vscode"
 
-import type { ProviderSettings } from "@roo-code/types"
+import type { ModeConfig, ProviderSettings } from "@roo-code/types"
 
 import type { McpHub } from "../../../services/mcp/McpHub"
 import type { ClineProvider } from "../../webview/ClineProvider"
@@ -139,11 +139,23 @@ const baseSettings: SystemPromptSettings = {
  */
 const MODES = ["code", "architect", "ask", "debug", "orchestrator"] as const
 
+/**
+ * Extra inputs the opener-contract tests need and the byte-stability tests do
+ * not. Kept in a bag so the positional calls above stay readable.
+ *
+ * `language` is deliberately distinguishable from "absent": passing
+ * `{ language: undefined }` forwards undefined to SYSTEM_PROMPT so the default
+ * path (`formatLanguage(vscode.env.language)`) runs, which is what the
+ * USER'S CUSTOM INSTRUCTIONS guard test needs to exercise.
+ */
+type PromptExtras = { customModes?: ModeConfig[]; language?: string }
+
 async function buildPrompt(
 	mode: string,
 	settings: SystemPromptSettings = baseSettings,
 	mcpHub: McpHub | undefined = mcpHubWithServers,
 	experiments: Record<string, boolean> = {},
+	extras: PromptExtras = {},
 ): Promise<string> {
 	return SYSTEM_PROMPT(
 		mockContext,
@@ -153,10 +165,10 @@ async function buildPrompt(
 		undefined,
 		mode as never,
 		undefined,
-		undefined,
+		extras.customModes,
 		undefined,
 		experiments,
-		"en",
+		"language" in extras ? extras.language : "en",
 		undefined,
 		settings,
 	)
@@ -246,30 +258,35 @@ describe("system prompt common prefix across modes", () => {
 	 * Floor for the prefix two different modes share, in bytes, MEASURED WITH AN
 	 * MCP HUB CONNECTED, which is what `buildPrompt` does by default.
 	 *
-	 * The hub matters. With no server connected, the five modes here share 11618
+	 * The hub matters. With no server connected, the five modes here share 11628
 	 * bytes, because MCP SERVERS is empty for all of them and the shared region
 	 * runs on through MODES and RULES. With a hub connected the worst pair
 	 * is code vs orchestrator: orchestrator has no `mcp` group, so the two
-	 * prompts part company at the MCP SERVERS section and share 8186 bytes, which
+	 * prompts part company at the MCP SERVERS section and share 8196 bytes, which
 	 * is the stable head plus its trailing separator. That worst case is the
 	 * number this floor guards, because it is the one an orchestrator flow
 	 * actually pays. Before WS-F the same measurement gave 17 bytes.
 	 *
-	 * The measured worst case was 8252 when WS-F landed. It dropped to 8186 when
-	 * the stable opener was reworded to stop promising the conditional
-	 * "Mode-specific Instructions" block: the new sentence is 66 bytes shorter,
-	 * and 8252 - 66 = 8186. That is a deliberate shortening of head TEXT, not a
-	 * mode-dependent section leaking into the head, so the floor stays where it
-	 * is rather than following the measurement down.
+	 * MEASUREMENT LOG, all three numbers from the same pairwise loop below:
+	 *
+	 *   8252  WS-F, when the stable head first landed.
+	 *   8186  opener reword v1: the old sentence promised the conditional
+	 *         "Mode-specific Instructions" block, and dropping that promise cost
+	 *         66 bytes (8252 - 66 = 8186).
+	 *   8196  opener reword v2 (this round): the conditional phrasing "if it has
+	 *         any" and the single-referent bindingness clause add 10 bytes back
+	 *         (8186 + 10 = 8196). The no-hub figure moved by the same 10, from
+	 *         11618 to 11628, because nothing but the opener changed.
 	 *
 	 * HOW TO UPDATE THIS NUMBER LEGITIMATELY: it may only ever go UP, unless a PR
 	 * deliberately shortens a stable-head section (deleting text, moving a section
 	 * into the tail because it turned out to be mode-dependent). Lowering it
 	 * because "the test broke" hides exactly the regression this file exists to
-	 * catch: something mode-dependent creeping into the head. The remaining gap
-	 * between the floor and the measured 8186 is 186 bytes, kept so ordinary
-	 * edits to head TEXT (a reworded rule) do not fail the suite; the computed
-	 * assertion below, not this floor, is the real guard.
+	 * catch: something mode-dependent creeping into the head. The floor stays at
+	 * 8000 through all three measurements above: it never follows head TEXT edits,
+	 * up or down. The remaining gap to the measured 8196 is 196 bytes, kept so
+	 * ordinary edits to head text (a reworded rule) do not fail the suite; the
+	 * computed assertion below, not this floor, is the real guard.
 	 */
 	const MIN_SHARED_PREFIX_BYTES = 8000
 
@@ -312,7 +329,7 @@ describe("system prompt common prefix across modes", () => {
 	})
 
 	it("shares more than the head between modes that agree about MCP", async () => {
-		// Control for the test above: the 8186-byte worst case is caused by the
+		// Control for the test above: the 8196-byte worst case is caused by the
 		// MCP group difference, not by the head being short. Two modes that both
 		// carry the `mcp` group keep sharing well past it.
 		const code = await buildPrompt("code")
@@ -359,6 +376,48 @@ describe("stable opener points only at sections that exist", () => {
 		expect(STABLE_PROMPT_OPENER).not.toContain("at the end of this prompt")
 	})
 
+	it("phrases the mode's own instructions conditionally", () => {
+		// The "Mode-specific Instructions" block is conditional, so the pointer at
+		// it must be too. Anything that reads as a promise ("your mode's
+		// instructions ARE inside...") is the original defect in new words, so the
+		// conditional marker is asserted positively rather than by listing bad
+		// phrasings.
+		expect(STABLE_PROMPT_OPENER).toContain("if it has any")
+	})
+
+	it("makes no universal claim about where mode-scoped content lives", () => {
+		// An earlier opener said "any mode-specific rules for you appear inside
+		// USER'S CUSTOM INSTRUCTIONS". That is a universal claim with a
+		// counterexample in the same prompt: AVAILABLE SKILLS is filtered per mode
+		// (sections/skills.ts) and so also carries mode-scoped content. The opener
+		// may say where the mode's OWN instructions go; it may not say that is the
+		// only place anything mode-scoped can be.
+		expect(STABLE_PROMPT_OPENER).not.toContain("any mode-specific rules")
+		expect(STABLE_PROMPT_OPENER).not.toMatch(/\ball mode\b/i)
+	})
+
+	it("states bindingness with a referent that is never empty", () => {
+		// "Both are binding on you" pointed at the two destinations, and one of
+		// them (the mode's own instructions) is empty in `code` mode, so a weak
+		// model was told that an absent thing bound it. Bindingness now attaches
+		// to "your mode", which every prompt has.
+		expect(STABLE_PROMPT_OPENER).toContain("is binding on you")
+		expect(STABLE_PROMPT_OPENER).not.toContain("Both are binding")
+
+		// The mandatory force survives the reword: a weak model must not be able
+		// to read the opener as advice.
+		expect(STABLE_PROMPT_OPENER).not.toMatch(/\b(should|may|try to|consider|where possible)\b/i)
+	})
+
+	it("stays one plain-ASCII constant of at most two sentences", () => {
+		// The string is the shared KV-cache prefix of every request, so it must be
+		// byte-stable and free of characters a tokenizer or a terminal may mangle.
+		expect(STABLE_PROMPT_OPENER).toMatch(/^[\x20-\x7E]+$/)
+		// En dash and em dash, written as escapes so this file stays ASCII too.
+		expect(STABLE_PROMPT_OPENER).not.toMatch(/[\u2013\u2014]/)
+		expect(STABLE_PROMPT_OPENER.split(". ").length).toBeLessThanOrEqual(2)
+	})
+
 	it.each(MODES)("delivers every section the opener names, in %s mode", async (mode) => {
 		const prompt = await buildPrompt(mode)
 
@@ -384,6 +443,153 @@ describe("stable opener points only at sections that exist", () => {
 
 		expect(code).not.toContain("Mode-specific Instructions:")
 		expect(orchestrator).toContain("Mode-specific Instructions:")
+	})
+
+	/**
+	 * The five built-in modes are not the whole population. A user's custom mode
+	 * (custom_modes.yaml or .roomodes) takes a completely different path through
+	 * `getModeSelection`: it is used ENTIRELY, with no merge against a built-in
+	 * mode, so its `roleDefinition` is the only thing that can fill the MODE
+	 * section. That is precisely the path the opener's first promise depends on,
+	 * and it is the path `modeConfigSchema.roleDefinition` being trim-aware
+	 * protects.
+	 */
+	const customModeWithInstructions: ModeConfig = {
+		slug: "release-manager",
+		name: "Release Manager",
+		roleDefinition: "You are Tumble Code in Release Manager mode. You cut releases and write changelogs.",
+		customInstructions: "Always read CHANGELOG.md before proposing a version bump.",
+		groups: ["read", "edit", "command"],
+		source: "project",
+	}
+
+	const customModeWithoutInstructions: ModeConfig = {
+		slug: "note-taker",
+		name: "Note Taker",
+		roleDefinition: "You are Tumble Code in Note Taker mode. You summarize what the team decided.",
+		groups: ["read"],
+		source: "global",
+	}
+
+	it.each([
+		["with customInstructions", customModeWithInstructions],
+		["without customInstructions", customModeWithoutInstructions],
+	])("delivers every section the opener names, in a custom mode %s", async (_label, customMode) => {
+		const prompt = await buildPrompt(
+			customMode.slug,
+			baseSettings,
+			mcpHubWithServers,
+			{},
+			{
+				customModes: [customMode],
+			},
+		)
+
+		expect(prompt.startsWith(STABLE_PROMPT_OPENER)).toBe(true)
+
+		for (const { header } of OPENER_NAMED_SECTIONS) {
+			expect(prompt, `opener names a section absent from the ${customMode.slug} prompt: ${header}`).toContain(
+				header,
+			)
+		}
+
+		// Not vacuous: the MODE section really carries THIS mode's role, not the
+		// default mode's, so the assertion above is about the custom mode.
+		expect(prompt).toContain(`====\n\nMODE\n\n${customMode.roleDefinition}`)
+
+		// And the conditional destination behaves exactly as the opener's "if it
+		// has any" says it does.
+		if (customMode.customInstructions) {
+			expect(prompt).toContain(`Mode-specific Instructions:\n${customMode.customInstructions}`)
+		} else {
+			expect(prompt).not.toContain("Mode-specific Instructions:")
+		}
+	})
+
+	it("keeps the opener byte-identical for a custom mode", async () => {
+		// The opener is a constant, so a custom mode must not shift it by a byte:
+		// switching from a built-in mode to a user's own mode has to keep the
+		// cached prefix.
+		const builtIn = await buildPrompt("code")
+		const custom = await buildPrompt(
+			"release-manager",
+			baseSettings,
+			mcpHubWithServers,
+			{},
+			{
+				customModes: [customModeWithInstructions],
+			},
+		)
+
+		expect(custom.slice(0, STABLE_PROMPT_OPENER.length)).toBe(builtIn.slice(0, STABLE_PROMPT_OPENER.length))
+		expect(commonPrefixLength(builtIn, custom)).toBeGreaterThanOrEqual(STABLE_PROMPT_OPENER.length)
+	})
+})
+
+describe("USER'S CUSTOM INSTRUCTIONS is unconditional", () => {
+	/**
+	 * WHY THIS GUARD EXISTS.
+	 *
+	 * The opener tells every model, in every mode, that its own instructions
+	 * "appear inside USER'S CUSTOM INSTRUCTIONS". That header is emitted only
+	 * when `addCustomInstructions` collected at least one section
+	 * (sections/custom-instructions.ts: the header is wrapped in
+	 * `joinedSections ? ... : ""`). Every contributing section is optional except
+	 * one: the Language Preference entry, which is pushed whenever
+	 * `options.language` is truthy, and `system.ts` always supplies a language
+	 * (`language ?? formatLanguage(vscode.env.language)`, and `formatLanguage`
+	 * falls back to "en" rather than to ""). So the header is unconditional
+	 * TODAY, by that single thread.
+	 *
+	 * If someone ever puts the Language Preference entry behind a setting, or
+	 * lets an empty language through, this test must go red: at that moment the
+	 * opener starts naming a section that a bare workspace does not have, which
+	 * is the exact defect the previous round removed from the opener. The test is
+	 * therefore not testing the language feature; it is testing the opener's
+	 * second promise, and it is deliberately placed next to the opener contract.
+	 */
+	it("renders the header with every optional custom-instruction input absent", async () => {
+		// Nothing optional is supplied: no global instructions, no
+		// customModePrompts, no rooIgnoreInstructions, AGENTS.md off, `code` has
+		// no customInstructions of its own, the cwd has no .roo rules, and the
+		// language argument is left undefined so the DEFAULT path runs rather
+		// than a hardcoded "en" from this harness.
+		const prompt = await buildPrompt("code", baseSettings, mcpHubWithServers, {}, { language: undefined })
+
+		expect(prompt).toContain("====\n\nUSER'S CUSTOM INSTRUCTIONS")
+
+		// Non-vacuity: the header is there for exactly one reason, so the test
+		// really is pinned to the Language Preference thread and not to some
+		// other section that happened to render.
+		expect(prompt).toContain("Language Preference:")
+		expect(prompt).not.toContain("Global Instructions:")
+		expect(prompt).not.toContain("Mode-specific Instructions:")
+		expect(prompt).not.toContain("Rules:\n\n")
+	})
+
+	it("renders the header for a custom mode with nothing but a role definition", async () => {
+		// The same guarantee on the custom-mode path, where the mode contributes
+		// no instructions of its own at all.
+		const bareCustomMode: ModeConfig = {
+			slug: "bare-mode",
+			name: "Bare Mode",
+			roleDefinition: "You are Tumble Code in Bare Mode.",
+			groups: ["read"],
+		}
+
+		const prompt = await buildPrompt(
+			"bare-mode",
+			baseSettings,
+			mcpHubWithServers,
+			{},
+			{
+				customModes: [bareCustomMode],
+				language: undefined,
+			},
+		)
+
+		expect(prompt).toContain("====\n\nUSER'S CUSTOM INSTRUCTIONS")
+		expect(prompt).toContain("Language Preference:")
 	})
 })
 

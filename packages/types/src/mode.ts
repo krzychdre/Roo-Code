@@ -96,7 +96,28 @@ export const groupEntryArraySchema = z.preprocess((val) => {
 export const modeConfigSchema = z.object({
 	slug: z.string().regex(/^[a-zA-Z0-9-]+$/, "Slug must contain only letters numbers and dashes"),
 	name: z.string().min(1, "Name is required"),
-	roleDefinition: z.string().min(1, "Role definition is required"),
+	/**
+	 * Trim-aware on purpose, and load-bearing for the system prompt.
+	 *
+	 * `min(1)` alone accepts a whitespace-only role definition (a stray space
+	 * hand-edited into custom_modes.yaml or .roomodes). The prompt assembly then
+	 * trims it to "" and drops the whole MODE section
+	 * (`getModeSection` in src/core/prompts/system.ts), while the constant prompt
+	 * opener keeps telling the model that "the MODE section states your role".
+	 * The opener would be pointing at a section that is not in the prompt, which
+	 * is exactly the defect the opener was reworded to remove.
+	 *
+	 * `.trim()` is a ZodString check in zod 3, not a `ZodEffects` wrapper, so the
+	 * field stays a plain `string` for type inference and for `zodResolver` in
+	 * the webview forms. It also normalizes the stored value, which is harmless:
+	 * every consumer trims before use anyway.
+	 *
+	 * Only `roleDefinition` gets this treatment. The optional siblings
+	 * (`whenToUse`, `description`, `customInstructions`) render conditionally, so
+	 * a blank one degrades to "absent" instead of breaking a promise the opener
+	 * makes.
+	 */
+	roleDefinition: z.string().trim().min(1, "Role definition is required"),
 	whenToUse: z.string().optional(),
 	description: z.string().optional(),
 	customInstructions: z.string().optional(),

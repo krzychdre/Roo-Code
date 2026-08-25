@@ -49,22 +49,40 @@ import {
  * own protocol as a user's wish.
  *
  * Every claim here has to be true in EVERY mode, because the string is a
- * constant and cannot adapt. Two rules follow from that:
+ * constant and cannot adapt. Four rules follow from that:
  *
- *  - The second destination is phrased conditionally ("any mode-specific rules
- *    for you"). The rulebook renders as a "Mode-specific Instructions" block
- *    only when the mode actually has `customInstructions`; the default `code`
- *    mode has none (see `DEFAULT_MODES` in packages/types/src/mode.ts and the
- *    guard in sections/custom-instructions.ts). An earlier version of this
- *    opener promised that block unconditionally and so pointed a weak model at
- *    a section that is absent for the most-used mode of all.
+ *  - The second destination is phrased conditionally ("if it has any"). The
+ *    rulebook renders as a "Mode-specific Instructions" block only when the
+ *    mode actually has `customInstructions`; the default `code` mode has none
+ *    (see `DEFAULT_MODES` in packages/types/src/mode.ts and the guard in
+ *    sections/custom-instructions.ts). An earlier version of this opener
+ *    promised that block unconditionally and so pointed a weak model at a
+ *    section that is absent for the most-used mode of all.
+ *  - No universal quantifier. An earlier version said "ANY mode-specific rules
+ *    for you appear inside USER'S CUSTOM INSTRUCTIONS", which is false as
+ *    stated: AVAILABLE SKILLS also carries mode-scoped content (the list is
+ *    filtered per mode, see sections/skills.ts). The sentence now claims only
+ *    where the mode's OWN instructions go, which is true, instead of claiming
+ *    that nothing mode-scoped lives anywhere else.
+ *  - Bindingness has one unambiguous referent, "your mode". An earlier version
+ *    ended with "Both are binding on you", whose two referents were the two
+ *    destinations, and one of them (the mode's own instructions) can be empty
+ *    in `code` mode, so the model was told an absent thing bound it.
  *  - The position is "later in this prompt", not "at the end": MODE is the
  *    fifth of seven tail sections, and USER'S CUSTOM INSTRUCTIONS plus the
  *    deferred-tools catalog render after it.
  *
+ * The two destinations are always there. MODE renders for every schema-valid
+ * mode, because `modeConfigSchema.roleDefinition` is trim-aware and rejects a
+ * whitespace-only value that would otherwise trim to "" and drop the section.
+ * USER'S CUSTOM INSTRUCTIONS renders unconditionally too, because the Language
+ * Preference entry is always pushed into it (sections/custom-instructions.ts);
+ * `prefix-stability.spec.ts` carries a guard test that fails if anyone puts
+ * that entry behind a setting.
+ *
  * Change this only with the "one-time prefix invalidation" note in the commit.
  */
-export const STABLE_PROMPT_OPENER = `You are Tumble Code, an AI coding agent. Your mode is defined later in this prompt: the MODE section states your role, and any mode-specific rules for you appear inside USER'S CUSTOM INSTRUCTIONS. Both are binding on you.`
+export const STABLE_PROMPT_OPENER = `You are Tumble Code, an AI coding agent. Your mode is defined later in this prompt and is binding on you: the MODE section states your role, and your mode's own instructions, if it has any, appear inside USER'S CUSTOM INSTRUCTIONS.`
 
 /**
  * Wrap the mode's role definition in the MODE section the opener points at.
