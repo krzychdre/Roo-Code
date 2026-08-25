@@ -2,6 +2,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 
 import { claudePlansDir } from "./locate.js"
+import { escapeMarkdownTableCell } from "./markdown.js"
 
 /**
  * Plan documents, from wherever each agent leaves them.
@@ -110,7 +111,9 @@ export function renderPlanList(docs: PlanDoc[]): string {
 
 	for (const doc of docs) {
 		lines.push(
-			`| ${doc.source} | ${new Date(doc.updatedAt).toISOString().slice(0, 10)} | ${doc.title.replace(/\|/g, "\\|")} | \`${doc.path}\` |`,
+			`| ${escapeMarkdownTableCell(doc.source)} | ${new Date(doc.updatedAt).toISOString().slice(0, 10)} | ${escapeMarkdownTableCell(
+				doc.title,
+			)} | \`${escapeMarkdownTableCell(doc.path)}\` |`,
 		)
 	}
 

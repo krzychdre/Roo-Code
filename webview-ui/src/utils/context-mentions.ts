@@ -4,7 +4,7 @@ import type { ModeConfig, Command } from "@roo-code/types"
 
 import { mentionRegex } from "@roo/context-mentions"
 
-import { escapeSpaces } from "./path-mentions"
+import { escapeSpacesForMention } from "./path-mentions"
 
 /**
  * Gets the description for a mode, prioritizing description > whenToUse > roleDefinition
@@ -44,12 +44,14 @@ export function insertMention(
 	// Find the position of the last '@' symbol before the cursor
 	const lastAtIndex = beforeCursor.lastIndexOf("@")
 
-	// Process the value - escape spaces if it's a file path
+	// Process the value - escape spaces if it's a file path mention.
+	// escapeSpacesForMention is a DISPLAY/transport formatter for the @-mention
+	// grammar (see src/shared/context-mentions.ts), NOT a shell escaper.
 	let processedValue = value
 	if (value && value.startsWith("/")) {
 		// Only escape if the path contains spaces that aren't already escaped
 		if (value.includes(" ") && !value.includes("\\ ")) {
-			processedValue = escapeSpaces(value)
+			processedValue = escapeSpacesForMention(value)
 		}
 	}
 

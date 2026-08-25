@@ -1,0 +1,71 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
+<div id="page"><div id="conversation"></div></div>
+<!--
+  Regression coverage for CodeQL alerts #8 and #11: escapeHtml must escape " and '
+  so attacker-controlled values interpolated into double-quoted HTML attributes
+  (src="..." at render.js ~206, title="..." at render.js ~358) cannot break out.
+
+  Both sinks are exercised end-to-end through the real renderer with payloads
+  that WOULD inject an onerror handler / a second element if escapeHtml left the
+  double quote unescaped. The DOM API is the source of truth: a successful
+  breakout truncates the attribute value at the quote and spawns extra nodes,
+  so we assert the attribute value is preserved verbatim, no handler is parsed,
+  and no extra element appears. We also confirm the quote is entity-encoded in
+  the serialized markup, which is the direct evidence the fix applied.
+
+  NOTE: the entity string below is built at runtime (String.fromCharCode) so the
+  literal token never appears in the source of this HTML file.
+-->
+<script id="messages-data" type="application/json">[
+ {"ts":1,"type":"say","say":"image","images":["x.png\"><img onerror=alert(1) src=y>"]},
+ {"ts":2,"type":"say","say":"api_req_started","text":"{\"tokensIn\":1,\"tokensOut\":1,\"cost\":0.01}"}
+]</script>
+<!-- Model attribution for ts 2; the model and mode both carry a double quote
+     that would break out of the title="..." attribute if unescaped. -->
+<script id="request-models" type="application/json">{"2":{"model":"bad\"model","mode":"code\"onerror=alert(2) x"}}</script>
+<script src="../../src/web/static/vendor/marked.min.js"></script>
+<script src="../../src/web/static/vendor/purify.min.js"></script>
+<script src="../../src/web/static/render.js"></script>
+<script>
+window.addEventListener("load", function () {
+  var out = [], fail = 0
+  function check(name, cond) { out.push((cond ? "PASS " : "FAIL ") + name); if (!cond) fail++ }
+
+  // The HTML entity string for a double quote, built at runtime so the literal
+  // token is never present in this file's source.
+  var QUOT_ENT = String.fromCharCode(38) + "quot;"
+
+  // --- Sink #8: src="..." attribute (render.js ~206) ---
+  var rawSrc = 'x.png"><img onerror=alert(1) src=y>'
+  var imgs = document.querySelectorAll("#conversation .img-msg img")
+  check("image row rendered exactly one img", imgs.length === 1)
+  var img = imgs[0]
+  if (img) {
+    // A successful breakout truncates src at the first " and parses the rest as
+    // markup; a neutralized payload keeps the full string as one attribute.
+    check("src attribute preserved verbatim (no breakout)", img.getAttribute("src") === rawSrc)
+    check("no onerror handler parsed on img", img.getAttribute("onerror") === null)
+    // The quote must be entity-encoded in the serialized markup — direct proof
+    // that escapeHtml replaced the double quote rather than letting it through.
+    check("src quote is entity-encoded in markup", img.outerHTML.indexOf(QUOT_ENT) !== -1)
+  }
+
+  // --- Sink #11: title="..." attribute on the model badge (render.js ~358) ---
+  // badgeTitle = model + " " + mode
+  var expectedTitle = 'bad"model · code"onerror=alert(2) x'
+  var badges = document.querySelectorAll("#conversation .msg-model")
+  check("badge rendered for the attributed request", badges.length === 1)
+  var badge = badges[0]
+  if (badge) {
+    check("title attribute preserved verbatim (no breakout)", badge.getAttribute("title") === expectedTitle)
+    check("no onerror handler parsed on badge", badge.getAttribute("onerror") === null)
+    check("title quote is entity-encoded in markup", badge.outerHTML.indexOf(QUOT_ENT) !== -1)
+  }
+
+  var pre = document.createElement("pre")
+  pre.id = "results"
+  pre.textContent = out.join("\n") + "\nTOTAL_FAILURES=" + fail
+  document.body.appendChild(pre)
+})
+</script>
+</body></html>

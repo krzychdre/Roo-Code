@@ -74,7 +74,7 @@ describe("compileHistoryQuery", () => {
 	})
 
 	it("refuses a pattern that can backtrack exponentially and searches literally", () => {
-		const compiled = compileHistoryQuery("(a+)+b")
+		const compiled = compileHistoryQuery("(a+)+b") // codeql[js/redos] — deliberate ReDoS-rejection test fixture: "(a+)+b" is the QUERY input; asserts compileHistoryQuery REFUSES it (mode "unsafe", usedRegex=false) and searches literally. Never compiled/executed as a regex against uncontrolled input; haystack is test data. Prior feat/31 review confirmed these guards are legitimate.
 
 		expect(compiled.mode).toBe("unsafe")
 		expect(compiled.usedRegex).toBe(false)
@@ -439,7 +439,7 @@ describe("cost control", () => {
 		const messages = [message("user", "a".repeat(2_000), 1_000), message("user", "a".repeat(2_000), 2_000)]
 
 		const started = Date.now()
-		const result = search(messages, [], "(a+)+b")
+		const result = search(messages, [], "(a+)+b") // codeql[js/redos] — deliberate ReDoS-rejection test fixture: "(a+)+b" is the QUERY input; asserts the engine REFUSES it (result contains "exponential time") and finishes <1s. Never compiled/executed as a regex; the "a".repeat(2_000) haystack is test data, not attacker input.
 		const elapsed = Date.now() - started
 
 		expect(elapsed).toBeLessThan(1_000)
@@ -460,7 +460,7 @@ describe("cost control", () => {
 		const messages = [message("user", "a".repeat(2_000), 1_000)]
 
 		const started = Date.now()
-		const result = search(messages, [], "((a+))+b")
+		const result = search(messages, [], "((a+))+b") // codeql[js/redos] — deliberate ReDoS-rejection test fixture: "((a+))+b" is the QUERY input; asserts the engine REFUSES the nested-group variant (result contains "exponential time") and finishes <1s. Never compiled/executed as a regex; the "a".repeat(2_000) haystack is test data.
 		const elapsed = Date.now() - started
 
 		expect(elapsed).toBeLessThan(1_000)

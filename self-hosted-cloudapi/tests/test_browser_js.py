@@ -34,6 +34,10 @@ _MIN_CHECKS = {
     "render_checks.html": 26,
     "resume_span_checks.html": 6,
     "tasklist_checks.html": 18,
+    # escapeHtml must escape " and ' so values interpolated into double-quoted
+    # src="..."/title="..." attributes cannot break out (CodeQL #8/#11).
+    # 4 per sink: row rendered, attribute verbatim, no onerror, quote entity-encoded.
+    "xss_attribute_checks.html": 8,
 }
 
 

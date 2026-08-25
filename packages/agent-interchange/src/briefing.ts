@@ -1,5 +1,6 @@
 import * as path from "node:path"
 
+import { escapeMarkdownTableCell } from "./markdown.js"
 import { oneLine, textOf } from "./normalize.js"
 import { extractActions } from "./tools.js"
 import { AGENT_LABELS, type InterchangeMessage, type Session, type SessionSummary, type ToolAction } from "./types.js"
@@ -45,11 +46,27 @@ export interface BriefingFacts {
  * wraps the prompt in `<task>`/`<user_message>`/`<feedback>` and appends an
  * `<environment_details>` block the size of a directory listing. None of it is
  * the request, and all of it drowns the briefing if left in.
+ *
+ * The three block wrappers that pair an open and close tag (`<system-reminder>`,
+ * `<ide_selection>`, `<environment_details>`) are stripped by
+ * `stripTaggedBlocks` — a linear single-pass scanner — rather than by the
+ * regexes that originally lived here. Those regexes (`/<tag>[\s\S]*?<\/tag>/g`)
+ * were catastrophically vulnerable to polynomial backtracking on inputs made of
+ * many unmatched open tags: a timing probe showed 3000 orphan
+ * `<environment_details>` opens (63 KB) took ~95 ms with the regex (quadratic
+ * growth: 100→3000 opens scaled 0.19→95 ms), versus <1 ms with the linear
+ * scanner. See ai_plans/fix-code-alerts.md alert #15.
+ *
+ * Only the bare tag-name alternation remains as a regex: it has no quantifier
+ * over a sub-pattern and is empirically linear (5000 complete pairs / 90 KB →
+ * 1.2 ms), so it is suppressed below with that evidence.
  */
 const SYSTEM_NOISE = [
-	/<system-reminder>[\s\S]*?<\/system-reminder>/g,
-	/<ide_selection>[\s\S]*?<\/ide_selection>/g,
-	/<environment_details>[\s\S]*?<\/environment_details>/g,
+	// codeql[js/polynomial-redos]: flat alternation of literal tag names with no
+	// quantifier applied to a sub-pattern. Verified linear via a timing probe on
+	// adversarial inputs up to 90 KB (5000 complete pairs in 1.2 ms; 3000 orphan
+	// opens in 0.25 ms) — no nested quantifiers are reachable, so catastrophic
+	// backtracking is impossible.
 	/<\/?(?:task|user_message|feedback|answer)>/g,
 ]
 
@@ -245,9 +262,9 @@ export function renderSessionList(summaries: SessionSummary[]): string {
 
 	for (const summary of summaries) {
 		lines.push(
-			`| ${AGENT_LABELS[summary.agent]} | \`${summary.id}\` | ${formatTime(summary.updatedAt)} | ${escapeCell(
-				summary.title,
-			)} |`,
+			`| ${escapeMarkdownTableCell(AGENT_LABELS[summary.agent])} | \`${escapeMarkdownTableCell(
+				summary.id,
+			)}\` | ${formatTime(summary.updatedAt)} | ${escapeMarkdownTableCell(summary.title)} |`,
 		)
 	}
 
@@ -318,8 +335,80 @@ function tally(actions: ToolAction[]): Array<{ tool: string; count: number }> {
 		.sort((a, b) => b.count - a.count || a.tool.localeCompare(b.tool))
 }
 
+const TAGGED_BLOCKS: ReadonlyArray<{ open: string; close: string }> = [
+	{ open: "<system-reminder>", close: "</system-reminder>" },
+	{ open: "<ide_selection>", close: "</ide_selection>" },
+	{ open: "<environment_details>", close: "</environment_details>" },
+]
+
+/**
+ * Strips every well-formed `<open>...</close>` block from `text` using linear
+ * `indexOf` scans instead of the `/<tag>[\s\S]*?<\/tag>/g` regexes that
+ * originally lived here. Those regexes were vulnerable to polynomial
+ * backtracking on inputs made of many unmatched open tags: the lazy `[\s\S]*?`
+ * scanned to end-of-string once per orphan open → O(n²). A timing probe showed
+ * 3000 orphan `<environment_details>` opens (63 KB) took ~95 ms with the regex
+ * (100→3000 opens scaled 0.19→95 ms), versus <1 ms with this scanner.
+ *
+ * To be byte-for-byte equivalent to the original three SEQUENTIAL regexes
+ * (including pathological crossed-tag inputs), this runs one monotonic
+ * single-kind scan per tag — three passes total, O(n) overall. Each pass is
+ * exactly equivalent to `text.replace(/<tag>[\s\S]*?<\/tag>/g, "")`:
+ *  - lazy: an open is paired with the FIRST following close of the same kind;
+ *  - an orphan open with no following close is left in place and the rest of
+ *    the string is kept verbatim (the regex's no-match behaviour);
+ *  - nested same-kind opens inside a matched span are consumed by that span,
+ *    matching the lazy `[\s\S]*?`.
+ */
+function stripTaggedBlocks(text: string): string {
+	let result = text
+
+	for (const { open, close } of TAGGED_BLOCKS) {
+		result = stripOneTag(result, open, close)
+	}
+
+	return result
+}
+
+/** Linear equivalent of `text.replace(/<open>[\s\S]*?<\/close>/g, "")`. */
+function stripOneTag(text: string, open: string, close: string): string {
+	if (text.length === 0) {
+		return text
+	}
+
+	let out = ""
+	let cursor = 0
+
+	while (cursor < text.length) {
+		const nextOpen = text.indexOf(open, cursor)
+
+		if (nextOpen === -1) {
+			out += text.slice(cursor)
+			break
+		}
+
+		out += text.slice(cursor, nextOpen)
+
+		const afterOpen = nextOpen + open.length
+		const closeAt = text.indexOf(close, afterOpen)
+
+		if (closeAt === -1) {
+			// No matching close: the original regex finds no match starting at
+			// this open, so the open tag and everything after are left in place.
+			out += text.slice(nextOpen)
+			break
+		}
+
+		// Drop the matched block (open ... close) and continue after it.
+		cursor = closeAt + close.length
+	}
+
+	return out
+}
+
 function clean(text: string): string {
-	let cleaned = text
+	const stripped = stripTaggedBlocks(text)
+	let cleaned = stripped
 
 	for (const pattern of SYSTEM_NOISE) {
 		cleaned = cleaned.replace(pattern, "")
@@ -340,10 +429,6 @@ function capped<T>(values: T[], limit: number): T[] {
 
 function unique(values: string[]): string[] {
 	return values.filter((value, index) => values.indexOf(value) === index)
-}
-
-function escapeCell(text: string): string {
-	return text.replace(/\|/g, "\\|").replace(/\n/g, " ")
 }
 
 export function formatTime(epochMs: number): string {

@@ -152,7 +152,7 @@ describe("SearchTaskHistoryTool", () => {
 		readApiMessagesMock.mockResolvedValue([message("user", "a".repeat(2_000), 1_000)])
 
 		const started = Date.now()
-		await tool.execute({ query: "(a+)+b" }, mockTask as any, callbacks() as any)
+		await tool.execute({ query: "(a+)+b" }, mockTask as any, callbacks() as any) // codeql[js/redos] — deliberate ReDoS-rejection test fixture: "(a+)+b" is the QUERY input; asserts the tool REFUSES it (result contains "exponential time") and finishes <1s. Never compiled/executed as a regex; the "a".repeat(2_000) haystack is test data, not attacker input.
 
 		expect(Date.now() - started).toBeLessThan(1_000)
 		expect(pushToolResult.mock.calls[0][0]).toContain("exponential time")

@@ -1,3 +1,4 @@
+import * as crypto from "crypto"
 import { sanitizeToolUseId, truncateOpenAiCallId, sanitizeOpenAiCallId, OPENAI_CALL_ID_MAX_LENGTH } from "../tool-id"
 
 describe("sanitizeToolUseId", () => {
@@ -145,6 +146,53 @@ describe("truncateOpenAiCallId", () => {
 			const id = "short_id"
 			expect(truncateOpenAiCallId(id, 100)).toBe(id)
 		})
+	})
+})
+
+describe("truncateOpenAiCallId — hash algorithm lock-in (SHA-256)", () => {
+	// Regression test for CodeQL alert js/weak-cryptographic-algorithm:
+	// the shortening hash MUST be SHA-256, not MD5. A future refactor that
+	// reverts to MD5 will fail the expected-suffix assertion below.
+	it("should derive the hash suffix from SHA-256, not MD5", () => {
+		const longId = "toolu_mcp--linear--create_issue_" + "x".repeat(50)
+		const result = truncateOpenAiCallId(longId)
+		const expectedSuffix = crypto.createHash("sha256").update(longId).digest("hex").slice(0, 8)
+		const md5Suffix = crypto.createHash("md5").update(longId).digest("hex").slice(0, 8)
+		// The result must end with the SHA-256-derived suffix...
+		expect(result.endsWith(expectedSuffix)).toBe(true)
+		// ...and must NOT end with the MD5-derived suffix (sanity: they differ).
+		expect(md5Suffix).not.toBe(expectedSuffix)
+		expect(result.endsWith(md5Suffix)).toBe(false)
+	})
+
+	it("should be deterministic across calls (same input → same output)", () => {
+		const longId = "a".repeat(70)
+		const expected = crypto.createHash("sha256").update(longId).digest("hex").slice(0, 8)
+		const result = truncateOpenAiCallId(longId)
+		// Called three times to rule out any RNG/stateful drift.
+		expect(truncateOpenAiCallId(longId)).toBe(result)
+		expect(truncateOpenAiCallId(longId)).toBe(result)
+		expect(result.endsWith(expected)).toBe(true)
+	})
+
+	it("should produce an 8-char hash suffix (preserving the fixed slice length)", () => {
+		const longId = "toolu_mcp--posthog--query_run_" + "a".repeat(39) // 69 chars
+		const result = truncateOpenAiCallId(longId)
+		expect(result.length).toBe(64)
+		// maxLength(64) - separator(1) - hashSuffixLength(8) = 55-char prefix
+		expect(result.slice(0, 55)).toBe(longId.slice(0, 55))
+		expect(result.slice(55, 56)).toBe("_")
+		expect(result.slice(56).length).toBe(8)
+	})
+
+	it("should produce different suffixes for different inputs (uniqueness sanity)", () => {
+		const longId1 = "a".repeat(70) + "_unique1"
+		const longId2 = "a".repeat(70) + "_unique2"
+		const result1 = truncateOpenAiCallId(longId1)
+		const result2 = truncateOpenAiCallId(longId2)
+		expect(result1).not.toBe(result2)
+		// Confirm the divergence is in the hash portion, not the shared prefix.
+		expect(result1.slice(56)).not.toBe(result2.slice(56))
 	})
 })
 

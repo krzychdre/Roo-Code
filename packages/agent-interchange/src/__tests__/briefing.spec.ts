@@ -161,6 +161,86 @@ describe("briefing facts", () => {
 		expect(facts.delegations).toEqual(["reviewer: Review the diff"])
 	})
 
+	it("strips every system-noise token from user text", () => {
+		const golden: Array<{ label: string; raw: string; expected: string }> = [
+			{
+				label: "system-reminder block",
+				raw: "Keep<system-reminder>drop me</system-reminder>End",
+				expected: "KeepEnd",
+			},
+			{ label: "ide_selection block", raw: "A<ide_selection>noise</ide_selection>B", expected: "AB" },
+			{
+				label: "environment_details block",
+				raw: "C<environment_details>noise</environment_details>D",
+				expected: "CD",
+			},
+			{ label: "task open tag", raw: "<task>Port</task>", expected: "Port" },
+			{ label: "task close tag", raw: "<task>Port</task>", expected: "Port" },
+			{ label: "user_message tag", raw: "<user_message>Follow up</user_message>", expected: "Follow up" },
+			{ label: "feedback tag", raw: "<feedback>Note</feedback>", expected: "Note" },
+			{ label: "answer tag", raw: "<answer>Yes</answer>", expected: "Yes" },
+			// Lazy [\s\S]*? pairs the first open with the FIRST close, so the
+			// inner open is consumed but "tail</system-reminder>" survives —
+			// this matches the original regex exactly (verified via equiv probe).
+			{
+				label: "nested same-kind block",
+				raw: "x<system-reminder>outer<system-reminder>inner</system-reminder>tail</system-reminder>y",
+				expected: "xtail</system-reminder>y",
+			},
+			{
+				label: "two same-kind blocks",
+				raw: "a<system-reminder>1</system-reminder>b<system-reminder>2</system-reminder>c",
+				expected: "abc",
+			},
+			{
+				label: "orphan open kept, later valid block stripped",
+				raw: "<system-reminder>x<ide_selection>y</ide_selection>z",
+				expected: "<system-reminder>xz",
+			},
+			{
+				label: "adjacent different blocks",
+				raw: "<system-reminder>s</system-reminder><ide_selection>i</ide_selection><environment_details>e</environment_details>",
+				expected: "",
+			},
+			{
+				label: "block with newlines",
+				raw: "a<system-reminder>line1\nline2\nline3</system-reminder>b",
+				expected: "ab",
+			},
+			{ label: "plain text unchanged", raw: "hello world", expected: "hello world" },
+		]
+
+		for (const { label, raw, expected } of golden) {
+			const facts = collectFacts(
+				session({ messages: [{ role: "user", ts: 1, blocks: [{ type: "text", text: raw }] }] }),
+			)
+
+			expect(facts.request, label).toBe(expected)
+		}
+	})
+
+	it("does not catastrophically backtrack on many unmatched open tags", () => {
+		// Regression guard for CodeQL alert #15 (polynomial ReDoS). The original
+		// regexes (/<tag>[\s\S]*?<\/tag>/g) took ~95 ms on 3000 orphan
+		// <environment_details> opens (63 KB) due to quadratic rescan-per-open.
+		// The linear stripTaggedBlocks scanner must finish well under a generous
+		// bound; this asserts < 100 ms for 10000 opens (210 KB), which is far
+		// beyond any realistic message size.
+		// The sentinel is placed at the START because truncate() keeps the first
+		// maxRequestChars chars; orphan opens have no close, so cleaning leaves
+		// them in place and the sentinel survives at the head of the request.
+		const adversarial = "SENTINEL_BEFORE" + "<environment_details>".repeat(10000)
+		const before = Date.now()
+		const facts = collectFacts(
+			session({ messages: [{ role: "user", ts: 1, blocks: [{ type: "text", text: adversarial }] }] }),
+			{ maxRequestChars: 100000 },
+		)
+		const elapsed = Date.now() - before
+
+		expect(facts.request).toContain("SENTINEL_BEFORE")
+		expect(elapsed).toBeLessThan(100)
+	})
+
 	it("falls back to the recorded completion summary when there is no result tool call", () => {
 		const facts = collectFacts(session({ agent: "tumble-code", messages: [], resultSummary: "Child finished" }))
 
