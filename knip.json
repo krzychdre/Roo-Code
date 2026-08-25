@@ -1,6 +1,14 @@
 {
 	"$schema": "https://unpkg.com/knip@5/schema.json",
-	"ignore": ["**/__tests__/**", "apps/vscode-e2e/**", "scripts/**", "apps/cli/scripts/**", "self-hosted-cloudapi/**"],
+	"ignore": [
+		"**/__tests__/**",
+		"apps/vscode-e2e/**",
+		"scripts/**",
+		"apps/cli/scripts/**",
+		"self-hosted-cloudapi/**",
+		"packages/agent-interchange/src/mcp/index.ts"
+	],
+	"ignoreBinaries": ["scripts/check-services.sh"],
 	"ignoreDependencies": ["lint-staged", "only-allow", "ovsx"],
 	"ignoreExportsUsedInFile": true,
 	"workspaces": {
@@ -21,6 +29,7 @@
 				"@types/node-cache",
 				"@types/vscode",
 				"@vscode/codicons",
+				"@vscode/ripgrep",
 				"esbuild-wasm",
 				"sambanova-ai-provider",
 				"tree-sitter-wasms",
@@ -49,7 +58,7 @@
 			"ignoreDependencies": ["@vscode/ripgrep", "cross-spawn"]
 		},
 		"packages/config-typescript": {
-			"ignoreUnresolved": ["vitest/globals"]
+			"ignoreUnresolved": ["vitest/globals", "next"]
 		},
 		"packages/core": {
 			"project": ["src/**/*.ts"],
@@ -68,6 +77,16 @@
 		},
 		"packages/{build,ipc,types}": {
 			"project": ["src/**/*.ts"]
+		},
+		"apps/web-evals": {
+			"entry": [
+				"src/app/**/*.{ts,tsx}",
+				"src/lib/**/*.{ts,tsx}",
+				"src/hooks/**/*.{ts,tsx}",
+				"src/actions/**/*.{ts,tsx}"
+			],
+			"project": ["src/**/*.{ts,tsx}"],
+			"ignoreDependencies": ["tailwindcss", "tailwindcss-animate"]
 		}
 	},
 	"rules": {
