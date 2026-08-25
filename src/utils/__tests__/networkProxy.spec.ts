@@ -304,5 +304,36 @@ describe("networkProxy", () => {
 
 			expect(process.env.NODE_TLS_REJECT_UNAUTHORIZED).toBeUndefined()
 		})
+
+		// Regression for CodeQL alert #7: the global NODE_TLS_REJECT_UNAUTHORIZED
+		// relaxation is debug-gated. Even with tlsInsecure=true, it must NOT leak
+		// into a production-mode extension process.
+		it("must not set NODE_TLS_REJECT_UNAUTHORIZED in production mode even when tlsInsecure is enabled", () => {
+			mockConfig.get.mockImplementation((key: string) => {
+				if (key === "debugProxy.enabled") return true
+				if (key === "debugProxy.serverUrl") return "http://localhost:8080"
+				if (key === "debugProxy.tlsInsecure") return true
+				return ""
+			})
+			const context = createMockContext(vscode.ExtensionMode.Production)
+
+			void initializeNetworkProxy(context, mockOutputChannel)
+
+			expect(process.env.NODE_TLS_REJECT_UNAUTHORIZED).toBeUndefined()
+		})
+
+		// Regression guard: the source uses the current codeql[] suppression syntax
+		// (not the legacy lgtm[] annotation CodeQL no longer honours).
+		it("source uses the codeql[] suppression, not the legacy lgtm[] annotation", async () => {
+			const source = await import("node:fs/promises").then((fs) => fs.readFile("utils/networkProxy.ts", "utf8"))
+			// The flagged site (applyTlsVerificationOverride) now uses codeql[].
+			expect(source).toContain("codeql[js/disabling-certificate-validation]")
+			// The exact old flagged line (global env-var assignment with lgtm comment) is gone.
+			// (Scoped per-agent lgtm[] annotations in configureUndiciProxy are a separate,
+			// already-scoped concern and intentionally not asserted here.)
+			expect(source).not.toContain(
+				'NODE_TLS_REJECT_UNAUTHORIZED = "0" // lgtm[js/disabling-certificate-validation]',
+			)
+		})
 	})
 })

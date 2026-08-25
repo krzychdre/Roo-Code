@@ -100,8 +100,22 @@ function applyTlsVerificationOverride(config: ProxyConfig): void {
 		originalNodeTlsRejectUnauthorized = process.env.NODE_TLS_REJECT_UNAUTHORIZED
 	}
 
-	// CodeQL: debug-only opt-in for MITM debugging.
-	process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0" // lgtm[js/disabling-certificate-validation]
+	// codeql[js/disabling-certificate-validation]: debug-only MITM proxy inspection.
+	// Gated by `isDebugMode && debugProxy.enabled && debugProxy.tlsInsecure` (above),
+	// i.e. only active in an F5 dev session with an explicitly opt-in TLS-insecure
+	// debug proxy, and restored on disable/deactivate (see restoreTlsVerificationOverride).
+	//
+	// A scoped per-https.Agent `rejectUnauthorized:false` is INFEASIBLE here because
+	// global-agent v3.0.0 reads NODE_TLS_REJECT_UNAUTHORIZED directly inside
+	// Agent.addRequest (node_modules/.pnpm/global-agent@3.0.0/.../dist/classes/Agent.js)
+	// and exposes no per-agent TLS option in createGlobalProxyAgent's config
+	// (only environmentVariableNamespace/forceGlobalAgent/socketConnectionTimeout).
+	// Per global-agent's own comment, this indirection exists because clients such
+	// as `got` pre-configure rejectUnauthorized, making a per-request global override
+	// impossible. The undici/fetch path (configureUndiciProxy) IS scoped via
+	// ProxyAgent requestTls/proxyTls, so only the global-agent (axios/SDK) path needs
+	// the process-wide flag, confined to the debug gate above.
+	process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
 	tlsVerificationOverridden = true
 }
 
