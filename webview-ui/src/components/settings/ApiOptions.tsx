@@ -1,7 +1,7 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from "react"
 import { convertHeadersToObject } from "./utils/headers"
 import { useDebounce } from "react-use"
-import { VSCodeLink, VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
+import { VSCodeLink } from "@vscode/webview-ui-toolkit/react"
 import { ExternalLinkIcon } from "@radix-ui/react-icons"
 
 import {
@@ -13,8 +13,6 @@ import {
 	isRetiredProvider,
 	DEFAULT_CONSECUTIVE_MISTAKE_LIMIT,
 	openRouterDefaultModelId,
-	poeDefaultModelId,
-	requestyDefaultModelId,
 	litellmDefaultModelId,
 	openAiNativeDefaultModelId,
 	openAiCodexDefaultModelId,
@@ -25,16 +23,11 @@ import {
 	moonshotDefaultModelId,
 	mistralDefaultModelId,
 	xaiDefaultModelId,
-	basetenDefaultModelId,
 	bedrockDefaultModelId,
 	vertexDefaultModelId,
-	sambaNovaDefaultModelId,
 	internationalZAiDefaultModelId,
 	mainlandZAiDefaultModelId,
-	fireworksDefaultModelId,
-	vercelAiGatewayDefaultModelId,
 	minimaxDefaultModelId,
-	unboundDefaultModelId,
 } from "@roo-code/types"
 
 import {
@@ -215,15 +208,12 @@ const ApiOptions = ({
 		250,
 		[
 			selectedProvider,
-			apiConfiguration?.requestyApiKey,
 			apiConfiguration?.openAiBaseUrl,
 			apiConfiguration?.openAiApiKey,
 			apiConfiguration?.ollamaBaseUrl,
 			apiConfiguration?.lmStudioBaseUrl,
 			apiConfiguration?.litellmBaseUrl,
 			apiConfiguration?.litellmApiKey,
-			apiConfiguration?.poeApiKey,
-			apiConfiguration?.poeBaseUrl,
 			providerMetadata,
 			refetchRouterModels,
 		],
@@ -304,8 +294,6 @@ const ApiOptions = ({
 				>
 			> = {
 				openrouter: { field: "openRouterModelId", default: openRouterDefaultModelId },
-				requesty: { field: "requestyModelId", default: requestyDefaultModelId },
-				unbound: { field: "unboundModelId", default: unboundDefaultModelId },
 				litellm: { field: "litellmModelId", default: litellmDefaultModelId },
 				anthropic: { field: "apiModelId", default: anthropicDefaultModelId },
 				"openai-codex": { field: "apiModelId", default: openAiCodexDefaultModelId },
@@ -317,10 +305,8 @@ const ApiOptions = ({
 				minimax: { field: "apiModelId", default: minimaxDefaultModelId },
 				mistral: { field: "apiModelId", default: mistralDefaultModelId },
 				xai: { field: "apiModelId", default: xaiDefaultModelId },
-				baseten: { field: "apiModelId", default: basetenDefaultModelId },
 				bedrock: { field: "apiModelId", default: bedrockDefaultModelId },
 				vertex: { field: "apiModelId", default: vertexDefaultModelId },
-				sambanova: { field: "apiModelId", default: sambaNovaDefaultModelId },
 				zai: {
 					field: "apiModelId",
 					default:
@@ -328,9 +314,6 @@ const ApiOptions = ({
 							? mainlandZAiDefaultModelId
 							: internationalZAiDefaultModelId,
 				},
-				fireworks: { field: "apiModelId", default: fireworksDefaultModelId },
-				poe: { field: "apiModelId", default: poeDefaultModelId },
-				"vercel-ai-gateway": { field: "vercelAiGatewayModelId", default: vercelAiGatewayDefaultModelId },
 				openai: { field: "openAiModelId" },
 				ollama: { field: "ollamaModelId" },
 				lmstudio: { field: "lmStudioModelId" },
@@ -549,17 +532,6 @@ const ApiOptions = ({
 									}
 									onChange={(value) => setApiConfigurationField("consecutiveMistakeLimit", value)}
 								/>
-								{selectedProvider === "poe" && (
-									<VSCodeTextField
-										value={apiConfiguration?.poeBaseUrl || ""}
-										onInput={handleInputChange("poeBaseUrl")}
-										placeholder="https://api.poe.com/v1"
-										className="w-full">
-										<label className="block font-medium mb-1">
-											{t("settings:providers.poeBaseUrl")}
-										</label>
-									</VSCodeTextField>
-								)}
 								{selectedProvider === "openrouter" &&
 									openRouterModelProviders &&
 									Object.keys(openRouterModelProviders).length > 0 && (

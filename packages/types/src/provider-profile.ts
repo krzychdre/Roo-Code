@@ -155,20 +155,13 @@ export const providerFieldOwnership = {
 	"openai-native": ["apiModelId", "openAiNativeBaseUrl", "openAiNativeServiceTier"],
 	mistral: ["apiModelId", "mistralCodestralUrl"],
 	deepseek: ["apiModelId", "deepSeekBaseUrl"],
-	poe: ["apiModelId", "poeBaseUrl"],
 	moonshot: ["apiModelId", "moonshotBaseUrl"],
 	minimax: ["apiModelId", "minimaxBaseUrl"],
-	requesty: ["requestyBaseUrl", "requestyModelId"],
-	unbound: ["unboundModelId"],
 	"fake-ai": ["fakeAi"],
 	xai: ["apiModelId"],
-	baseten: ["apiModelId"],
 	litellm: ["litellmBaseUrl", "litellmModelId", "litellmUsePromptCache"],
-	sambanova: ["apiModelId"],
 	zai: ["apiModelId", "zaiApiLine"],
-	fireworks: ["apiModelId"],
 	"qwen-code": ["apiModelId", "qwenCodeOauthPath"],
-	"vercel-ai-gateway": ["vercelAiGatewayModelId"],
 } satisfies { [K in KnownProviderId]: readonly (keyof ProviderSettings)[] }
 
 const pickPresent = (value: Record<string, unknown>, keys: readonly PropertyKey[]): Record<string, unknown> => {

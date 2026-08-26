@@ -17,10 +17,6 @@ import type { GetModelsOptions } from "../../../shared/api"
 import { fileExistsAtPath } from "../../../utils/fs"
 
 import { getOpenRouterModels } from "./openrouter"
-import { getVercelAiGatewayModels } from "./vercel-ai-gateway"
-import { getPoeModels } from "./poe"
-import { getRequestyModels } from "./requesty"
-import { getUnboundModels } from "./unbound"
 import { getLiteLLMModels } from "./litellm"
 import { getOllamaModels } from "./ollama"
 import { getLMStudioModels } from "./lmstudio"
@@ -67,13 +63,6 @@ async function fetchModelsFromProvider(options: GetModelsOptions): Promise<Model
 		case "openrouter":
 			models = await getOpenRouterModels()
 			break
-		case "requesty":
-			// Requesty models endpoint requires an API key for per-user custom policies.
-			models = await getRequestyModels(options.baseUrl, options.apiKey)
-			break
-		case "unbound":
-			models = await getUnboundModels(options.apiKey)
-			break
 		case "litellm":
 			// Type safety ensures apiKey and baseUrl are always provided for LiteLLM.
 			models = await getLiteLLMModels(options.apiKey, options.baseUrl)
@@ -83,12 +72,6 @@ async function fetchModelsFromProvider(options: GetModelsOptions): Promise<Model
 			break
 		case "lmstudio":
 			models = await getLMStudioModels(options.baseUrl)
-			break
-		case "vercel-ai-gateway":
-			models = await getVercelAiGatewayModels()
-			break
-		case "poe":
-			models = await getPoeModels(options.apiKey, options.baseUrl)
 			break
 		case "deepseek":
 			models = await getDeepSeekModels(options.baseUrl, options.apiKey)

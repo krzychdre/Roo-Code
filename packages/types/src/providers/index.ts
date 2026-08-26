@@ -1,8 +1,6 @@
 export * from "./anthropic.js"
-export * from "./baseten.js"
 export * from "./bedrock.js"
 export * from "./deepseek.js"
-export * from "./fireworks.js"
 export * from "./gemini.js"
 export * from "./lite-llm.js"
 export * from "./lm-studio.js"
@@ -13,38 +11,26 @@ export * from "./openai.js"
 export * from "./openai-codex.js"
 export * from "./openai-codex-rate-limits.js"
 export * from "./openrouter.js"
-export * from "./poe.js"
 export * from "./qwen-code.js"
-export * from "./requesty.js"
-export * from "./sambanova.js"
-export * from "./unbound.js"
 export * from "./vertex.js"
 export * from "./vscode-llm.js"
 export * from "./xai.js"
-export * from "./vercel-ai-gateway.js"
 export * from "./zai.js"
 export * from "./minimax.js"
 
 import { anthropicDefaultModelId } from "./anthropic.js"
-import { basetenDefaultModelId } from "./baseten.js"
 import { bedrockDefaultModelId } from "./bedrock.js"
 import { deepSeekDefaultModelId } from "./deepseek.js"
-import { fireworksDefaultModelId } from "./fireworks.js"
 import { geminiDefaultModelId } from "./gemini.js"
 import { litellmDefaultModelId } from "./lite-llm.js"
 import { mistralDefaultModelId } from "./mistral.js"
 import { moonshotDefaultModelId } from "./moonshot.js"
 import { openAiCodexDefaultModelId } from "./openai-codex.js"
 import { openRouterDefaultModelId } from "./openrouter.js"
-import { poeDefaultModelId } from "./poe.js"
 import { qwenCodeDefaultModelId } from "./qwen-code.js"
-import { requestyDefaultModelId } from "./requesty.js"
-import { sambaNovaDefaultModelId } from "./sambanova.js"
-import { unboundDefaultModelId } from "./unbound.js"
 import { vertexDefaultModelId } from "./vertex.js"
 import { vscodeLlmDefaultModelId } from "./vscode-llm.js"
 import { xaiDefaultModelId } from "./xai.js"
-import { vercelAiGatewayDefaultModelId } from "./vercel-ai-gateway.js"
 import { internationalZAiDefaultModelId, mainlandZAiDefaultModelId } from "./zai.js"
 import { minimaxDefaultModelId } from "./minimax.js"
 
@@ -63,14 +49,10 @@ export function getProviderDefaultModelId(
 	switch (provider) {
 		case "openrouter":
 			return openRouterDefaultModelId
-		case "requesty":
-			return requestyDefaultModelId
 		case "litellm":
 			return litellmDefaultModelId
 		case "xai":
 			return xaiDefaultModelId
-		case "baseten":
-			return basetenDefaultModelId
 		case "bedrock":
 			return bedrockDefaultModelId
 		case "vertex":
@@ -99,18 +81,8 @@ export function getProviderDefaultModelId(
 			return "" // LMStudio uses dynamic model selection
 		case "vscode-lm":
 			return vscodeLlmDefaultModelId
-		case "sambanova":
-			return sambaNovaDefaultModelId
-		case "fireworks":
-			return fireworksDefaultModelId
 		case "qwen-code":
 			return qwenCodeDefaultModelId
-		case "poe":
-			return poeDefaultModelId
-		case "unbound":
-			return unboundDefaultModelId
-		case "vercel-ai-gateway":
-			return vercelAiGatewayDefaultModelId
 		case "anthropic":
 		case "gemini-cli":
 		case "fake-ai":

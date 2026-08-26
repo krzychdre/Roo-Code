@@ -12,11 +12,8 @@ import {
 	qwenCodeModels,
 	vertexModels,
 	xaiModels,
-	sambaNovaModels,
 	internationalZAiModels,
-	fireworksModels,
 	minimaxModels,
-	basetenModels,
 	getSelectableProviderDefinitions,
 } from "@roo-code/types"
 
@@ -32,11 +29,8 @@ export const MODELS_BY_PROVIDER: Partial<Record<ProviderName, Record<string, Mod
 	"qwen-code": qwenCodeModels,
 	vertex: vertexModels,
 	xai: xaiModels,
-	sambanova: sambaNovaModels,
 	zai: internationalZAiModels,
-	fireworks: fireworksModels,
 	minimax: minimaxModels,
-	baseten: basetenModels,
 }
 
 const PROXY_PROVIDER_IDS = new Set<ProviderName>(["openai", "lmstudio", "ollama", "litellm"])

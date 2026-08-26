@@ -54,17 +54,7 @@ export const providerRegistry = [
 		featured: true,
 		modelSource: "openrouter",
 	},
-	{
-		id: "vercel-ai-gateway",
-		lifecycle: "active",
-		label: "Vercel AI Gateway",
-		displayOrder: 22,
-		modelSource: "vercel-ai-gateway",
-	},
 	{ id: "litellm", lifecycle: "active", label: "LiteLLM", displayOrder: 7, modelSource: "litellm" },
-	{ id: "poe", lifecycle: "active", label: "Poe", displayOrder: 17, modelSource: "poe" },
-	{ id: "requesty", lifecycle: "active", label: "Requesty", displayOrder: 19, modelSource: "requesty" },
-	{ id: "unbound", lifecycle: "active", label: "Unbound", displayOrder: 21, modelSource: "unbound" },
 	{ id: "deepseek", lifecycle: "active", label: "DeepSeek", displayOrder: 3, modelSource: "deepseek" },
 	{ id: "ollama", lifecycle: "active", label: "Ollama", displayOrder: 12, modelSource: "ollama" },
 	{ id: "lmstudio", lifecycle: "active", label: "LM Studio", displayOrder: 8, modelSource: "lmstudio" },
@@ -85,8 +75,6 @@ export const providerRegistry = [
 	{ id: "fake-ai", lifecycle: "hidden" },
 	{ id: "anthropic", lifecycle: "active", label: "Anthropic", displayOrder: 1 },
 	{ id: "bedrock", lifecycle: "active", label: "Amazon Bedrock", displayOrder: 0 },
-	{ id: "baseten", lifecycle: "active", label: "Baseten", displayOrder: 2 },
-	{ id: "fireworks", lifecycle: "active", label: "Fireworks AI", displayOrder: 4 },
 	{ id: "gemini", lifecycle: "active", label: "Google Gemini", displayOrder: 6 },
 	{ id: "gemini-cli", lifecycle: "hidden" },
 	{ id: "mistral", lifecycle: "active", label: "Mistral", displayOrder: 10 },
@@ -95,7 +83,6 @@ export const providerRegistry = [
 	{ id: "openai-codex", lifecycle: "active", label: "OpenAI - ChatGPT Plus/Pro", displayOrder: 13 },
 	{ id: "openai-native", lifecycle: "active", label: "OpenAI", displayOrder: 14 },
 	{ id: "qwen-code", lifecycle: "active", label: "Qwen Code", displayOrder: 18 },
-	{ id: "sambanova", lifecycle: "active", label: "SambaNova", displayOrder: 20 },
 	{ id: "vertex", lifecycle: "active", label: "GCP Vertex AI", displayOrder: 5 },
 	{ id: "xai", lifecycle: "active", label: "xAI (Grok)", displayOrder: 24 },
 	{ id: "zai", lifecycle: "active", label: "Z.ai", displayOrder: 25 },
@@ -107,6 +94,13 @@ export const providerRegistry = [
 	{ id: "groq", lifecycle: "retired" },
 	{ id: "huggingface", lifecycle: "retired" },
 	{ id: "io-intelligence", lifecycle: "retired" },
+	{ id: "baseten", lifecycle: "retired" },
+	{ id: "fireworks", lifecycle: "retired" },
+	{ id: "poe", lifecycle: "retired" },
+	{ id: "requesty", lifecycle: "retired" },
+	{ id: "sambanova", lifecycle: "retired" },
+	{ id: "unbound", lifecycle: "retired" },
+	{ id: "vercel-ai-gateway", lifecycle: "retired" },
 ] as const satisfies readonly ProviderDefinition[]
 
 export type ProviderRegistryEntry = (typeof providerRegistry)[number]
@@ -193,9 +187,11 @@ export const providerIds = selectProviderIds(providerRegistry)
 
 /**
  * Preserves the historical public array value, where `deepseek` occurred twice.
- * New consumers should prefer the unique registry definitions and selectors.
+ * The duplicate was originally anchored after `baseten`; with `baseten` retired,
+ * the duplicate now follows `bedrock` (the adjacent active provider). New
+ * consumers should prefer the unique registry definitions and selectors.
  */
-export const activeProviderIdsForPublicApi = insertProviderIdAfter(activeProviderIds, "baseten", "deepseek")
+export const activeProviderIdsForPublicApi = insertProviderIdAfter(activeProviderIds, "bedrock", "deepseek")
 export const providerIdsForPublicApi = concatenateProviderIds(activeProviderIdsForPublicApi, retiredProviderIds)
 
 export const getProviderDefinition = (id: string): ProviderRegistryEntry | undefined =>

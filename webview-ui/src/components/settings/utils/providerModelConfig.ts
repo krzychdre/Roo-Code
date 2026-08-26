@@ -10,12 +10,9 @@ import {
 	qwenCodeDefaultModelId,
 	vertexDefaultModelId,
 	xaiDefaultModelId,
-	sambaNovaDefaultModelId,
 	internationalZAiDefaultModelId,
 	mainlandZAiDefaultModelId,
-	fireworksDefaultModelId,
 	minimaxDefaultModelId,
-	basetenDefaultModelId,
 	getProviderDefinition,
 	modelSources,
 } from "@roo-code/types"
@@ -38,11 +35,8 @@ export const PROVIDER_SERVICE_CONFIG: Partial<Record<ProviderName, ProviderServi
 	"qwen-code": { serviceName: "Qwen Code", serviceUrl: "https://dashscope.console.aliyun.com" },
 	vertex: { serviceName: "GCP Vertex AI", serviceUrl: "https://console.cloud.google.com/vertex-ai" },
 	xai: { serviceName: "xAI", serviceUrl: "https://x.ai" },
-	sambanova: { serviceName: "SambaNova", serviceUrl: "https://sambanova.ai" },
 	zai: { serviceName: "Z.ai", serviceUrl: "https://z.ai" },
-	fireworks: { serviceName: "Fireworks AI", serviceUrl: "https://fireworks.ai" },
 	minimax: { serviceName: "MiniMax", serviceUrl: "https://minimax.chat" },
-	baseten: { serviceName: "Baseten", serviceUrl: "https://baseten.co" },
 	ollama: { serviceName: "Ollama", serviceUrl: "https://ollama.ai" },
 	lmstudio: { serviceName: "LM Studio", serviceUrl: "https://lmstudio.ai/docs" },
 	"vscode-lm": {
@@ -62,11 +56,8 @@ export const PROVIDER_DEFAULT_MODEL_IDS: Partial<Record<ProviderName, string>> =
 	"qwen-code": qwenCodeDefaultModelId,
 	vertex: vertexDefaultModelId,
 	xai: xaiDefaultModelId,
-	sambanova: sambaNovaDefaultModelId,
 	zai: internationalZAiDefaultModelId,
-	fireworks: fireworksDefaultModelId,
 	minimax: minimaxDefaultModelId,
-	baseten: basetenDefaultModelId,
 }
 
 export const getProviderServiceConfig = (provider: ProviderName): ProviderServiceConfig => {
@@ -139,12 +130,6 @@ export const getProviderModelSourceOptions = (apiConfiguration: ProviderSettings
 				liteLlmBaseUrl: apiConfiguration.litellmBaseUrl,
 				liteLlmApiKey: apiConfiguration.litellmApiKey,
 			}
-		case "poe":
-			return { baseUrl: apiConfiguration.poeBaseUrl, apiKey: apiConfiguration.poeApiKey }
-		case "requesty":
-			return { baseUrl: apiConfiguration.requestyBaseUrl, apiKey: apiConfiguration.requestyApiKey }
-		case "unbound":
-			return { apiKey: apiConfiguration.unboundApiKey }
 		case "deepseek":
 			return { baseUrl: apiConfiguration.deepSeekBaseUrl, apiKey: apiConfiguration.deepSeekApiKey }
 		default:
@@ -158,12 +143,9 @@ export const getProviderModelSourceOptions = (apiConfiguration: ProviderSettings
  */
 export const PROVIDERS_WITH_CUSTOM_MODEL_UI: ProviderName[] = [
 	"openrouter",
-	"requesty",
-	"unbound",
 	"openai", // OpenAI Compatible
 	"openai-codex", // OpenAI Codex has custom UI with auth and rate limits
 	"litellm",
-	"vercel-ai-gateway",
 	"ollama",
 	"lmstudio",
 	"vscode-lm",

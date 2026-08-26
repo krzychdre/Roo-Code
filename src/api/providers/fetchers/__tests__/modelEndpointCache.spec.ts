@@ -134,7 +134,7 @@ describe("modelEndpointCache", () => {
 
 		it("should return empty object for non-openrouter providers", async () => {
 			const result = await getModelEndpoints({
-				router: "vercel-ai-gateway",
+				router: "litellm",
 				modelId: "claude-sonnet-4",
 				endpoint: "default",
 			})

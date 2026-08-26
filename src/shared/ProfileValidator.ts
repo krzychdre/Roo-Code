@@ -61,8 +61,6 @@ export class ProfileValidator {
 			case "mistral":
 			case "deepseek":
 			case "xai":
-			case "sambanova":
-			case "fireworks":
 				return profile.apiModelId
 			case "litellm":
 				return profile.litellmModelId
@@ -75,10 +73,6 @@ export class ProfileValidator {
 				return profile.openRouterModelId
 			case "ollama":
 				return profile.ollamaModelId
-			case "requesty":
-				return profile.requestyModelId
-			case "unbound":
-				return profile.unboundModelId
 			case "fake-ai":
 			default:
 				return undefined

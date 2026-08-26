@@ -24,7 +24,7 @@ export type ApiHandlerOptions = Omit<ProviderSettings, "apiProvider"> & {
 
 export type FetchableModelSourceId = Extract<
 	ModelSourceId,
-	"openrouter" | "vercel-ai-gateway" | "litellm" | "poe" | "requesty" | "unbound" | "ollama" | "lmstudio" | "deepseek"
+	"openrouter" | "litellm" | "ollama" | "lmstudio" | "deepseek"
 >
 
 // Reasoning
@@ -165,11 +165,7 @@ type CommonFetchParams = {
 // until a corresponding entry is added here.
 const dynamicProviderExtras = {
 	openrouter: {} as {}, // eslint-disable-line @typescript-eslint/no-empty-object-type
-	"vercel-ai-gateway": {} as {}, // eslint-disable-line @typescript-eslint/no-empty-object-type
 	litellm: {} as { apiKey: string; baseUrl: string },
-	poe: {} as { apiKey?: string; baseUrl?: string },
-	requesty: {} as { apiKey?: string; baseUrl?: string },
-	unbound: {} as { apiKey?: string },
 	ollama: {} as {}, // eslint-disable-line @typescript-eslint/no-empty-object-type
 	lmstudio: {} as {}, // eslint-disable-line @typescript-eslint/no-empty-object-type
 	deepseek: {} as { apiKey?: string; baseUrl?: string },

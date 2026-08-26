@@ -4,11 +4,7 @@ import { modelInfoSchema } from "./model.js"
 
 export const modelSourceIds = [
 	"openrouter",
-	"requesty",
-	"unbound",
 	"litellm",
-	"vercel-ai-gateway",
-	"poe",
 	"deepseek",
 	"ollama",
 	"lmstudio",
@@ -42,11 +38,7 @@ export type RequestableModelSource = z.infer<typeof requestableModelSourceSchema
 
 export const modelSources = {
 	openrouter: { id: "openrouter", kind: "remote", payload: "models" },
-	requesty: { id: "requesty", kind: "remote", payload: "models" },
-	unbound: { id: "unbound", kind: "remote", payload: "models" },
 	litellm: { id: "litellm", kind: "remote", payload: "models" },
-	"vercel-ai-gateway": { id: "vercel-ai-gateway", kind: "remote", payload: "models" },
-	poe: { id: "poe", kind: "remote", payload: "models" },
 	deepseek: { id: "deepseek", kind: "remote", payload: "models" },
 	ollama: { id: "ollama", kind: "local", payload: "models" },
 	lmstudio: { id: "lmstudio", kind: "local", payload: "models" },

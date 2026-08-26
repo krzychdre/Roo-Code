@@ -38,13 +38,9 @@ describe("Model Validation Functions", () => {
 				outputPrice: 5.0,
 			},
 		},
-		requesty: {},
-		unbound: {},
 		litellm: {},
-		poe: {},
 		ollama: {},
 		lmstudio: {},
-		"vercel-ai-gateway": {},
 		deepseek: {},
 	}
 

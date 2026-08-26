@@ -259,22 +259,6 @@ const minimaxSchema = apiModelIdProviderModelSchema.extend({
 	minimaxApiKey: z.string().optional(),
 })
 
-const poeSchema = apiModelIdProviderModelSchema.extend({
-	poeApiKey: z.string().optional(),
-	poeBaseUrl: z.string().optional(),
-})
-
-const requestySchema = baseProviderSettingsSchema.extend({
-	requestyBaseUrl: z.string().optional(),
-	requestyApiKey: z.string().optional(),
-	requestyModelId: z.string().optional(),
-})
-
-const unboundSchema = baseProviderSettingsSchema.extend({
-	unboundApiKey: z.string().optional(),
-	unboundModelId: z.string().optional(),
-})
-
 const fakeAiSchema = baseProviderSettingsSchema.extend({
 	fakeAi: z.unknown().optional(),
 })
@@ -290,8 +274,8 @@ const litellmSchema = baseProviderSettingsSchema.extend({
 	litellmUsePromptCache: z.boolean().optional(),
 })
 
-const sambaNovaSchema = apiModelIdProviderModelSchema.extend({
-	sambaNovaApiKey: z.string().optional(),
+const qwenCodeSchema = apiModelIdProviderModelSchema.extend({
+	qwenCodeOauthPath: z.string().optional(),
 })
 
 export const zaiApiLineSchema = z.enum(["international_coding", "china_coding", "international_api", "china_api"])
@@ -301,23 +285,6 @@ export type ZaiApiLine = z.infer<typeof zaiApiLineSchema>
 const zaiSchema = apiModelIdProviderModelSchema.extend({
 	zaiApiKey: z.string().optional(),
 	zaiApiLine: zaiApiLineSchema.optional(),
-})
-
-const fireworksSchema = apiModelIdProviderModelSchema.extend({
-	fireworksApiKey: z.string().optional(),
-})
-
-const qwenCodeSchema = apiModelIdProviderModelSchema.extend({
-	qwenCodeOauthPath: z.string().optional(),
-})
-
-const vercelAiGatewaySchema = baseProviderSettingsSchema.extend({
-	vercelAiGatewayApiKey: z.string().optional(),
-	vercelAiGatewayModelId: z.string().optional(),
-})
-
-const basetenSchema = apiModelIdProviderModelSchema.extend({
-	basetenApiKey: z.string().optional(),
 })
 
 const defaultSchema = z.object({
@@ -339,20 +306,13 @@ export const providerSettingsSchemaDiscriminated = z.discriminatedUnion("apiProv
 	openAiNativeSchema.merge(z.object({ apiProvider: z.literal("openai-native") })),
 	mistralSchema.merge(z.object({ apiProvider: z.literal("mistral") })),
 	deepSeekSchema.merge(z.object({ apiProvider: z.literal("deepseek") })),
-	poeSchema.merge(z.object({ apiProvider: z.literal("poe") })),
 	moonshotSchema.merge(z.object({ apiProvider: z.literal("moonshot") })),
 	minimaxSchema.merge(z.object({ apiProvider: z.literal("minimax") })),
-	requestySchema.merge(z.object({ apiProvider: z.literal("requesty") })),
-	unboundSchema.merge(z.object({ apiProvider: z.literal("unbound") })),
 	fakeAiSchema.merge(z.object({ apiProvider: z.literal("fake-ai") })),
 	xaiSchema.merge(z.object({ apiProvider: z.literal("xai") })),
-	basetenSchema.merge(z.object({ apiProvider: z.literal("baseten") })),
 	litellmSchema.merge(z.object({ apiProvider: z.literal("litellm") })),
-	sambaNovaSchema.merge(z.object({ apiProvider: z.literal("sambanova") })),
 	zaiSchema.merge(z.object({ apiProvider: z.literal("zai") })),
-	fireworksSchema.merge(z.object({ apiProvider: z.literal("fireworks") })),
 	qwenCodeSchema.merge(z.object({ apiProvider: z.literal("qwen-code") })),
-	vercelAiGatewaySchema.merge(z.object({ apiProvider: z.literal("vercel-ai-gateway") })),
 	defaultSchema,
 ])
 
@@ -372,21 +332,13 @@ export const providerSettingsSchema = z.object({
 	...openAiNativeSchema.shape,
 	...mistralSchema.shape,
 	...deepSeekSchema.shape,
-	...poeSchema.shape,
 	...moonshotSchema.shape,
 	...minimaxSchema.shape,
-	...poeSchema.shape,
-	...requestySchema.shape,
-	...unboundSchema.shape,
 	...fakeAiSchema.shape,
 	...xaiSchema.shape,
-	...basetenSchema.shape,
 	...litellmSchema.shape,
-	...sambaNovaSchema.shape,
 	...zaiSchema.shape,
-	...fireworksSchema.shape,
 	...qwenCodeSchema.shape,
-	...vercelAiGatewaySchema.shape,
 	...codebaseIndexProviderSchema.shape,
 })
 
@@ -413,10 +365,7 @@ export const modelIdKeys = [
 	"ollamaModelId",
 	"lmStudioModelId",
 	"lmStudioDraftModelId",
-	"requestyModelId",
-	"unboundModelId",
 	"litellmModelId",
-	"vercelAiGatewayModelId",
 ] as const satisfies readonly (keyof ProviderSettings)[]
 
 export type ModelIdKey = (typeof modelIdKeys)[number]
@@ -450,17 +399,10 @@ export const modelIdKeysByProvider: Record<TypicalProvider, ModelIdKey> = {
 	moonshot: "apiModelId",
 	minimax: "apiModelId",
 	deepseek: "apiModelId",
-	poe: "apiModelId",
 	"qwen-code": "apiModelId",
-	requesty: "requestyModelId",
-	unbound: "unboundModelId",
 	xai: "apiModelId",
-	baseten: "apiModelId",
 	litellm: "litellmModelId",
-	sambanova: "apiModelId",
 	zai: "apiModelId",
-	fireworks: "apiModelId",
-	"vercel-ai-gateway": "vercelAiGatewayModelId",
 }
 
 /**
@@ -476,11 +418,6 @@ export const getApiProtocol = (provider: ProviderName | undefined, modelId?: str
 	}
 
 	if (provider && provider === "vertex" && modelId && modelId.toLowerCase().includes("claude")) {
-		return "anthropic"
-	}
-
-	// Vercel AI Gateway uses anthropic protocol for anthropic models.
-	if (provider === "vercel-ai-gateway" && modelId && modelId.toLowerCase().startsWith("anthropic/")) {
 		return "anthropic"
 	}
 

@@ -4,10 +4,8 @@ import { providerValidationRegistry, type ProviderValidationStrategy } from "@sr
 
 import {
 	Anthropic,
-	Baseten,
 	Bedrock,
 	DeepSeek,
-	Fireworks,
 	Gemini,
 	LMStudio,
 	LiteLLM,
@@ -19,12 +17,7 @@ import {
 	OpenAICompatible,
 	OpenAICodex,
 	OpenRouter,
-	Poe,
 	QwenCode,
-	Requesty,
-	SambaNova,
-	Unbound,
-	VercelAiGateway,
 	Vertex,
 	VSCodeLM,
 	XAI,
@@ -53,10 +46,8 @@ export type ProviderFormRenderContext = {
 
 export type ProviderFormId =
 	| "anthropic"
-	| "baseten"
 	| "bedrock"
 	| "deepseek"
-	| "fireworks"
 	| "gemini"
 	| "lmstudio"
 	| "litellm"
@@ -68,12 +59,7 @@ export type ProviderFormId =
 	| "openai-compatible"
 	| "openai-native"
 	| "openrouter"
-	| "poe"
 	| "qwen-code"
-	| "requesty"
-	| "sambanova"
-	| "unbound"
-	| "vercel-ai-gateway"
 	| "vertex"
 	| "vscode-lm"
 	| "xai"
@@ -125,52 +111,10 @@ export const providerUiRegistry = {
 			modelValidationError={context.modelValidationError}
 		/>
 	)),
-	"vercel-ai-gateway": simpleForm("vercel-ai-gateway", "vercel-ai-gateway", (context) => (
-		<VercelAiGateway
-			apiConfiguration={context.apiConfiguration}
-			setApiConfigurationField={context.setApiConfigurationField}
-			routerModels={context.routerModels}
-			organizationAllowList={context.organizationAllowList}
-			modelValidationError={context.modelValidationError}
-			simplifySettings={context.simplifySettings}
-		/>
-	)),
 	litellm: simpleForm("litellm", "litellm", (context) => (
 		<LiteLLM
 			apiConfiguration={context.apiConfiguration}
 			setApiConfigurationField={context.setApiConfigurationField}
-			organizationAllowList={context.organizationAllowList}
-			modelValidationError={context.modelValidationError}
-			simplifySettings={context.simplifySettings}
-		/>
-	)),
-	poe: simpleForm("poe", "poe", (context) => (
-		<Poe
-			apiConfiguration={context.apiConfiguration}
-			setApiConfigurationField={context.setApiConfigurationField}
-			organizationAllowList={context.organizationAllowList}
-			modelValidationError={context.modelValidationError}
-			simplifySettings={context.simplifySettings}
-		/>
-	)),
-	requesty: simpleForm("requesty", "requesty", (context) => (
-		<Requesty
-			uriScheme={context.uriScheme}
-			apiConfiguration={context.apiConfiguration}
-			setApiConfigurationField={context.setApiConfigurationField}
-			routerModels={context.routerModels}
-			refetchRouterModels={context.refetchRouterModels}
-			organizationAllowList={context.organizationAllowList}
-			modelValidationError={context.modelValidationError}
-			simplifySettings={context.simplifySettings}
-		/>
-	)),
-	unbound: simpleForm("unbound", "unbound", (context) => (
-		<Unbound
-			apiConfiguration={context.apiConfiguration}
-			setApiConfigurationField={context.setApiConfigurationField}
-			routerModels={context.routerModels}
-			refetchRouterModels={context.refetchRouterModels}
 			organizationAllowList={context.organizationAllowList}
 			modelValidationError={context.modelValidationError}
 			simplifySettings={context.simplifySettings}
@@ -226,19 +170,6 @@ export const providerUiRegistry = {
 			simplifySettings={context.simplifySettings}
 		/>
 	)),
-	baseten: simpleForm("baseten", "baseten", (context) => (
-		<Baseten
-			apiConfiguration={context.apiConfiguration}
-			setApiConfigurationField={context.setApiConfigurationField}
-			simplifySettings={context.simplifySettings}
-		/>
-	)),
-	fireworks: simpleForm("fireworks", "fireworks", (context) => (
-		<Fireworks
-			apiConfiguration={context.apiConfiguration}
-			setApiConfigurationField={context.setApiConfigurationField}
-		/>
-	)),
 	gemini: simpleForm("gemini", "gemini", (context) => (
 		<Gemini
 			apiConfiguration={context.apiConfiguration}
@@ -287,12 +218,6 @@ export const providerUiRegistry = {
 			apiConfiguration={context.apiConfiguration}
 			setApiConfigurationField={context.setApiConfigurationField}
 			simplifySettings={context.simplifySettings}
-		/>
-	)),
-	sambanova: simpleForm("sambanova", "sambanova", (context) => (
-		<SambaNova
-			apiConfiguration={context.apiConfiguration}
-			setApiConfigurationField={context.setApiConfigurationField}
 		/>
 	)),
 	vertex: simpleForm("vertex", "vertex", (context) => (

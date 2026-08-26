@@ -21,14 +21,6 @@ export const handleUri = async (uri: vscode.Uri) => {
 			}
 			break
 		}
-		case "/requesty": {
-			const code = query.get("code")
-			const baseUrl = query.get("baseUrl")
-			if (code) {
-				await visibleProvider.handleRequestyCallback(code, baseUrl)
-			}
-			break
-		}
 		case "/auth/clerk/callback": {
 			const code = query.get("code")
 			const state = query.get("state")

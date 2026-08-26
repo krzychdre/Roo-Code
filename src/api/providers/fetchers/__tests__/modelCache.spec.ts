@@ -40,7 +40,7 @@ vi.mock("fs", () => ({
 // Mock all the model fetchers
 vi.mock("../litellm")
 vi.mock("../openrouter")
-vi.mock("../requesty")
+vi.mock("../deepseek")
 
 // Mock ContextProxy with a simple static instance
 vi.mock("../../../core/config/ContextProxy", () => ({
@@ -60,13 +60,13 @@ import NodeCache from "node-cache"
 import { getModels, getModelsFromCache } from "../modelCache"
 import { getLiteLLMModels } from "../litellm"
 import { getOpenRouterModels } from "../openrouter"
-import { getRequestyModels } from "../requesty"
+import { getDeepSeekModels } from "../deepseek"
 
 const mockGetLiteLLMModels = getLiteLLMModels as Mock<typeof getLiteLLMModels>
 const mockGetOpenRouterModels = getOpenRouterModels as Mock<typeof getOpenRouterModels>
-const mockGetRequestyModels = getRequestyModels as Mock<typeof getRequestyModels>
+const mockGetDeepSeekModels = getDeepSeekModels as Mock<typeof getDeepSeekModels>
 
-const DUMMY_REQUESTY_KEY = "requesty-key-for-testing"
+const DUMMY_DEEPSEEK_KEY = "deepseek-key-for-testing"
 
 describe("getModels with new GetModelsOptions", () => {
 	beforeEach(() => {
@@ -111,20 +111,20 @@ describe("getModels with new GetModelsOptions", () => {
 		expect(result).toEqual(mockModels)
 	})
 
-	it("calls getRequestyModels with optional API key", async () => {
+	it("calls getDeepSeekModels with optional API key and base URL", async () => {
 		const mockModels = {
-			"requesty/model": {
+			"deepseek/model": {
 				maxTokens: 4096,
 				contextWindow: 8192,
 				supportsPromptCache: false,
-				description: "Requesty model",
+				description: "DeepSeek model",
 			},
 		}
-		mockGetRequestyModels.mockResolvedValue(mockModels)
+		mockGetDeepSeekModels.mockResolvedValue(mockModels)
 
-		const result = await getModels({ provider: "requesty", apiKey: DUMMY_REQUESTY_KEY })
+		const result = await getModels({ provider: "deepseek", apiKey: DUMMY_DEEPSEEK_KEY })
 
-		expect(mockGetRequestyModels).toHaveBeenCalledWith(undefined, DUMMY_REQUESTY_KEY)
+		expect(mockGetDeepSeekModels).toHaveBeenCalledWith(undefined, DUMMY_DEEPSEEK_KEY)
 		expect(result).toEqual(mockModels)
 	})
 

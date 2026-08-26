@@ -408,8 +408,6 @@ export const SECRET_STATE_KEYS = [
 	"moonshotApiKey",
 	"mistralApiKey",
 	"minimaxApiKey",
-	"requestyApiKey",
-	"unboundApiKey",
 	"xaiApiKey",
 	"litellmApiKey",
 	"codeIndexOpenAiKey",
@@ -419,11 +417,7 @@ export const SECRET_STATE_KEYS = [
 	"codebaseIndexMistralApiKey",
 	"codebaseIndexVercelAiGatewayApiKey",
 	"codebaseIndexOpenRouterApiKey",
-	"sambaNovaApiKey",
 	"zaiApiKey",
-	"fireworksApiKey",
-	"vercelAiGatewayApiKey",
-	"basetenApiKey",
 ] as const
 
 // Global secrets that are part of GlobalSettings (not ProviderSettings)
