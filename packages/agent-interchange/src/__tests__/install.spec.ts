@@ -61,8 +61,13 @@ function expectRestored(before: Map<string, Buffer | undefined>): void {
 
 describe("agent-interchange installer helpers", () => {
 	it("uses durable user storage rather than the checkout", () => {
-		expect(durableBundlePath("/home/me", "")).toBe("/home/me/.local/share/agent-interchange/mcp-server.mjs")
-		expect(claudeConfigPath("/home/me")).toBe("/home/me/.claude.json")
+		// Build expected paths with the same node:path functions the production
+		// code uses, so the assertion matches on both POSIX and Windows
+		// (path.join produces backslashes + drive roots on Windows).
+		expect(durableBundlePath("/home/me", "")).toBe(
+			path.join("/home/me", ".local", "share", "agent-interchange", "mcp-server.mjs"),
+		)
+		expect(claudeConfigPath("/home/me")).toBe(path.join("/home/me", ".claude.json"))
 	})
 
 	it("preserves unrelated config and servers when registering", () => {
@@ -71,7 +76,13 @@ describe("agent-interchange installer helpers", () => {
 
 		expect(updated.theme).toBe("dark")
 		expect(updated.mcpServers?.other).toEqual({ command: "other" })
-		expect(updated.mcpServers?.[SERVER_NAME]).toMatchObject({ command: "node", args: ["/durable/server.mjs"] })
+		// registration() calls path.resolve on the bundle path; on Windows
+		// path.resolve("/durable/server.mjs") yields "D:\\durable\\server.mjs",
+		// so assert against the resolved value rather than a literal POSIX path.
+		expect(updated.mcpServers?.[SERVER_NAME]).toMatchObject({
+			command: "node",
+			args: [path.resolve("/durable/server.mjs")],
+		})
 	})
 
 	it("removes only the owned registration", () => {
@@ -92,11 +103,14 @@ describe("agent-interchange installer helpers", () => {
 			],
 			"/home/me",
 		)
+		// parseArgs calls path.resolve on every path option; on Windows
+		// path.resolve("/tmp/x") resolves against the current drive root
+		// ("D:\\tmp\\x"), so assert the resolved values, not literal POSIX paths.
 		expect(args).toMatchObject({
 			action: "install",
-			claudeConfig: "/tmp/claude.json",
-			tumbleConfig: "/tmp/tumble.json",
-			destination: "/tmp/server.mjs",
+			claudeConfig: path.resolve("/tmp/claude.json"),
+			tumbleConfig: path.resolve("/tmp/tumble.json"),
+			destination: path.resolve("/tmp/server.mjs"),
 		})
 	})
 
@@ -144,7 +158,11 @@ describe("agent-interchange installer helpers", () => {
 				}),
 			).rejects.toThrow("injected update failure")
 			expectRestored(fixture.before)
-			expect(fs.statSync(fixture.args.destination).mode & 0o777).toBe(0o700)
+			// Windows ignores the mode option on fs.open/writeFileSync and always
+			// reports 0o666; only assert the Unix permission bits on POSIX.
+			if (process.platform !== "win32") {
+				expect(fs.statSync(fixture.args.destination).mode & 0o777).toBe(0o700)
+			}
 		} finally {
 			fs.rmSync(fixture.dir, { recursive: true, force: true })
 		}

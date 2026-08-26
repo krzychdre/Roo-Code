@@ -38,7 +38,10 @@ describe("handoff lifecycle", () => {
 
 	afterEach(() => {
 		delete process.env.AGENT_INTERCHANGE_DIR
-		fs.rmSync(dir, { recursive: true, force: true })
+		// On Windows, orphaned child handles (e.g. a timed-out crashed-writer
+		// child) release asynchronously after kill; maxRetries lets rmSync
+		// retry through ENOTEMPTY / EBUSY / EPERM instead of failing the hook.
+		fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
 	})
 
 	it("writes a document that carries the briefing and the next steps", async () => {
@@ -329,6 +332,10 @@ describe("handoff lifecycle", () => {
 		expect(fs.existsSync(`${created.path}.updates`)).toBe(false)
 	})
 
+	// These two integration tests bundle a worker with esbuild and spawn child
+	// Node processes; on Windows CI (antivirus scanning + slower process
+	// startup) this routinely exceeds the 5000ms default timeout. 30s gives
+	// generous headroom — the actual work completes in under 10s.
 	it("serializes updates made by independent Node processes", async () => {
 		const created = await createHandoff({ session: source, to: "claude-code" })
 		const worker = path.join(dir, "handoff-update-worker.mjs")
@@ -362,7 +369,7 @@ describe("handoff lifecycle", () => {
 		expect(final.status).toBe("done")
 		expect(final.body).toContain("first process note")
 		expect(final.body).toContain("second process note")
-	})
+	}, 30_000)
 
 	it("does not let a crashed paused writer block or erase a later process update", async () => {
 		const created = await createHandoff({ session: source, to: "claude-code" })
@@ -401,7 +408,7 @@ describe("handoff lifecycle", () => {
 		expect(final.body).toContain("surviving process note")
 		expect(final.body).not.toContain("crashed process note")
 		expect(fs.readdirSync(`${created.path}.updates`).some((name) => name.endsWith(".tmp"))).toBe(true)
-	})
+	}, 30_000)
 
 	it("keeps the previous complete file when atomic replacement fails", async () => {
 		const created = await createHandoff({ session: source, to: "claude-code" })
