@@ -120,7 +120,16 @@ interface FoldResult {
 
 const REGISTER_KEYS = ["status", "pickedUpBy", "pickedUpSessionId"] as const
 
-const defaultIo: HandoffIo = { rename: fsPromises.rename, syncDirectory }
+// Resolve `rename` lazily (via a getter) rather than at module load. The
+// `@roo-code/agent-interchange` entry is pulled transitively by `core/memory/paths`
+// → `ContextProxy`, so this module loads in many unit tests that mock
+// `fs/promises` with a partial factory. Capturing `fsPromises.rename` at load
+// time reads `undefined` under those partial mocks and throws before any test
+// runs. The getter reads the live module binding on first use instead.
+const defaultIo: HandoffIo = {
+	rename: (source, destination) => fsPromises.rename(source, destination),
+	syncDirectory,
+}
 
 /** How many times a read restarts because a compaction replaced the base under it. */
 const READ_ATTEMPTS = 3

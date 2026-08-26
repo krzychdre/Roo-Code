@@ -408,7 +408,7 @@ describe("editTool", () => {
 
 			await executeEditTool()
 
-			expect(mockHandleError).toHaveBeenCalledWith("edit", expect.any(Error))
+			expect(mockHandleError).toHaveBeenCalledWith("edit", expect.any(Error), "edit")
 			expect(mockTask.diffViewProvider.reset).toHaveBeenCalled()
 		})
 	})
