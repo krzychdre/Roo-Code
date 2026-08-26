@@ -1607,6 +1607,32 @@ describe("GLM Thinking Mode", () => {
 		})
 	})
 
+	describe("GLM-5.3 forced thinking", () => {
+		it("should keep thinking enabled when reasoning is turned off", async () => {
+			const glmHandler = new OpenAiHandler({
+				...baseGlmOptions,
+				openAiModelId: "glm-5.3",
+				enableReasoningEffort: false,
+				openAiCustomModelInfo: {
+					contextWindow: 1_000_000,
+					maxTokens: 131_072,
+					supportsPromptCache: false,
+					supportsReasoningEffort: ["low", "high", "max"],
+				},
+			})
+
+			const stream = glmHandler.createMessage("system", [])
+			for await (const _chunk of stream) {
+				// consume stream
+			}
+
+			// GLM-5.3 rejects thinking:{type:"disabled"} with an API error, so the
+			// disabled branch must not be taken for this model.
+			const callArgs = mockCreate.mock.calls[0][0]
+			expect(callArgs.thinking).toEqual({ type: "enabled" })
+		})
+	})
+
 	describe("Non-GLM models", () => {
 		it("should NOT add thinking parameter for non-GLM models", async () => {
 			const gptHandler = new OpenAiHandler({

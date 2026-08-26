@@ -32,13 +32,13 @@ describe("ZAiHandler", () => {
 	})
 
 	describe("Default model ids", () => {
-		it("should default the international Z AI line to glm-4.7", () => {
-			expect(internationalZAiDefaultModelId).toBe("glm-4.7")
+		it("should default the international Z AI line to glm-5.3", () => {
+			expect(internationalZAiDefaultModelId).toBe("glm-5.3")
 			expect(internationalZAiModels[internationalZAiDefaultModelId]).toBeDefined()
 		})
 
-		it("should default the mainland Z AI line to glm-4.7", () => {
-			expect(mainlandZAiDefaultModelId).toBe("glm-4.7")
+		it("should default the mainland Z AI line to glm-5.3", () => {
+			expect(mainlandZAiDefaultModelId).toBe("glm-5.3")
 			expect(mainlandZAiModels[mainlandZAiDefaultModelId]).toBeDefined()
 		})
 	})
@@ -263,9 +263,9 @@ describe("ZAiHandler", () => {
 			expect(model.info.reasoningEffort).toBe("high")
 			expect(model.info.preserveReasoning).toBe(true)
 			expect(model.info.supportsMaxTokens).toBe(true)
-			expect(model.info.inputPrice).toBe(0.68)
-			expect(model.info.outputPrice).toBe(2.28)
-			expect(model.info.cacheReadsPrice).toBe(0.13)
+			expect(model.info.inputPrice).toBe(1.14)
+			expect(model.info.outputPrice).toBe(4.0)
+			expect(model.info.cacheReadsPrice).toBe(0.29)
 		})
 
 		it("should return GLM-4.7 China model with thinking support", () => {
@@ -801,6 +801,175 @@ describe("ZAiHandler", () => {
 			// For GLM-4.6 (no thinking support), thinking parameter should not be present
 			const callArgs = mockCreate.mock.calls[0][0]
 			expect(callArgs.thinking).toBeUndefined()
+		})
+	})
+
+	describe("GLM-5.3 forced thinking", () => {
+		const mockEmptyStream = () =>
+			mockCreate.mockImplementationOnce(() => ({
+				[Symbol.asyncIterator]: () => ({
+					async next() {
+						return { done: true }
+					},
+				}),
+			}))
+
+		it("should omit 'disable' from the supported effort list on both lines", () => {
+			// The absence of "disable" is what tells the handler this model cannot be
+			// asked to stop reasoning, so it is a contract, not a cosmetic detail.
+			expect(internationalZAiModels["glm-5.3"].supportsReasoningEffort).toEqual(["low", "high", "max"])
+			expect(mainlandZAiModels["glm-5.3"].supportsReasoningEffort).toEqual(["low", "high", "max"])
+			expect(internationalZAiModels["glm-5.3"].reasoningEffort).toBe("max")
+			expect(mainlandZAiModels["glm-5.3"].reasoningEffort).toBe("max")
+		})
+
+		it("should send reasoning_effort:max by default for GLM-5.3", async () => {
+			const handlerWithModel = new ZAiHandler({
+				apiModelId: "glm-5.3",
+				zaiApiKey: "test-zai-api-key",
+				zaiApiLine: "international_coding",
+			})
+
+			mockEmptyStream()
+			await handlerWithModel.createMessage("system prompt", []).next()
+
+			expect(mockCreate).toHaveBeenCalledWith(
+				expect.objectContaining({
+					model: "glm-5.3",
+					thinking: { type: "enabled" },
+					reasoning_effort: "max",
+				}),
+			)
+		})
+
+		it("should keep thinking enabled for GLM-5.3 when reasoning is globally turned off", async () => {
+			const handlerWithModel = new ZAiHandler({
+				apiModelId: "glm-5.3",
+				zaiApiKey: "test-zai-api-key",
+				zaiApiLine: "international_coding",
+				enableReasoningEffort: false,
+			})
+
+			mockEmptyStream()
+			await handlerWithModel.createMessage("system prompt", []).next()
+
+			// The API rejects thinking:{type:"disabled"} for this model, so the toggle
+			// must be ignored rather than passed through.
+			expect(mockCreate).toHaveBeenCalledWith(
+				expect.objectContaining({
+					model: "glm-5.3",
+					thinking: { type: "enabled" },
+					reasoning_effort: "max",
+				}),
+			)
+		})
+
+		it("should fall back to max when a stale 'disable' effort is carried over from another model", async () => {
+			const handlerWithModel = new ZAiHandler({
+				apiModelId: "glm-5.3",
+				zaiApiKey: "test-zai-api-key",
+				zaiApiLine: "international_coding",
+				reasoningEffort: "disable" as never,
+			})
+
+			mockEmptyStream()
+			await handlerWithModel.createMessage("system prompt", []).next()
+
+			expect(mockCreate).toHaveBeenCalledWith(
+				expect.objectContaining({
+					model: "glm-5.3",
+					thinking: { type: "enabled" },
+					reasoning_effort: "max",
+				}),
+			)
+		})
+
+		it("should fall back to max when the stored effort is one GLM-5.3 does not accept", async () => {
+			const handlerWithModel = new ZAiHandler({
+				apiModelId: "glm-5.3",
+				zaiApiKey: "test-zai-api-key",
+				zaiApiLine: "international_coding",
+				// "medium" is valid for GLM-4.7/GLM-5 but an error for GLM-5.3.
+				reasoningEffort: "medium",
+			})
+
+			mockEmptyStream()
+			await handlerWithModel.createMessage("system prompt", []).next()
+
+			expect(mockCreate).toHaveBeenCalledWith(
+				expect.objectContaining({
+					model: "glm-5.3",
+					thinking: { type: "enabled" },
+					reasoning_effort: "max",
+				}),
+			)
+		})
+
+		it("should still honor a supported effort the user picked explicitly", async () => {
+			const handlerWithModel = new ZAiHandler({
+				apiModelId: "glm-5.3",
+				zaiApiKey: "test-zai-api-key",
+				zaiApiLine: "international_coding",
+				reasoningEffort: "low",
+			})
+
+			mockEmptyStream()
+			await handlerWithModel.createMessage("system prompt", []).next()
+
+			expect(mockCreate).toHaveBeenCalledWith(
+				expect.objectContaining({
+					model: "glm-5.3",
+					thinking: { type: "enabled" },
+					reasoning_effort: "low",
+				}),
+			)
+		})
+
+		it("should still allow disabling thinking for models that support it", async () => {
+			const handlerWithModel = new ZAiHandler({
+				apiModelId: "glm-4.7",
+				zaiApiKey: "test-zai-api-key",
+				zaiApiLine: "international_coding",
+				enableReasoningEffort: false,
+			})
+
+			mockEmptyStream()
+			await handlerWithModel.createMessage("system prompt", []).next()
+
+			expect(mockCreate).toHaveBeenCalledWith(
+				expect.objectContaining({
+					model: "glm-4.7",
+					thinking: { type: "disabled" },
+				}),
+			)
+		})
+	})
+
+	describe("Newly added Z AI models", () => {
+		it("should expose GLM-5-Turbo on both lines with a 128k output budget", () => {
+			expect(internationalZAiModels["glm-5-turbo"].contextWindow).toBe(200_000)
+			expect(mainlandZAiModels["glm-5-turbo"].contextWindow).toBe(204_800)
+			expect(internationalZAiModels["glm-5-turbo"].maxTokens).toBe(131_072)
+			expect(mainlandZAiModels["glm-5-turbo"].maxTokens).toBe(131_072)
+			expect(internationalZAiModels["glm-5-turbo"].supportsImages).toBe(false)
+		})
+
+		it("should expose GLM-5V-Turbo as a vision model on both lines", () => {
+			expect(internationalZAiModels["glm-5v-turbo"].supportsImages).toBe(true)
+			expect(mainlandZAiModels["glm-5v-turbo"].supportsImages).toBe(true)
+			expect(internationalZAiModels["glm-5v-turbo"].maxTokens).toBe(131_072)
+			expect(mainlandZAiModels["glm-5v-turbo"].maxTokens).toBe(131_072)
+		})
+
+		it("should price GLM-5.3 and GLM-5 from the published rate card", () => {
+			// International line, USD per million tokens.
+			expect(internationalZAiModels["glm-5.3"].inputPrice).toBe(1.4)
+			expect(internationalZAiModels["glm-5.3"].outputPrice).toBe(4.4)
+			expect(internationalZAiModels["glm-5.3"].cacheReadsPrice).toBe(0.26)
+			// GLM-5 used to carry GLM-4.6's rate card by mistake.
+			expect(internationalZAiModels["glm-5"].inputPrice).toBe(1.0)
+			expect(internationalZAiModels["glm-5"].outputPrice).toBe(3.2)
+			expect(internationalZAiModels["glm-5"].cacheReadsPrice).toBe(0.2)
 		})
 	})
 })
