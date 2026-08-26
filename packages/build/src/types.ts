@@ -79,6 +79,7 @@ const configurationPropertySchema = z.object({
 		z.literal("object"),
 		z.literal("boolean"),
 		z.literal("number"),
+		z.literal("integer"),
 	]),
 	items: z
 		.object({

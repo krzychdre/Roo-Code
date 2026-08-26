@@ -100,6 +100,11 @@ describe("generatePackageJson", () => {
 								default: "",
 								description: "%settings.customStoragePath.description%",
 							},
+							"tumble-code.apiRequestTimeout": {
+								type: "integer",
+								default: 600,
+								description: "%settings.apiRequestTimeout.description%",
+							},
 						},
 					},
 				},
@@ -212,6 +217,11 @@ describe("generatePackageJson", () => {
 							type: "string",
 							default: "",
 							description: "%settings.customStoragePath.description%",
+						},
+						"tumble-code-nightly.apiRequestTimeout": {
+							type: "integer",
+							default: 600,
+							description: "%settings.apiRequestTimeout.description%",
 						},
 					},
 				},
