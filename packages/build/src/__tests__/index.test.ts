@@ -103,7 +103,16 @@ describe("generatePackageJson", () => {
 							"tumble-code.apiRequestTimeout": {
 								type: "integer",
 								default: 600,
+								minimum: 1,
+								maximum: 3600,
 								description: "%settings.apiRequestTimeout.description%",
+							},
+							"tumble-code.cloudApiUrl": {
+								type: "string",
+								default: "",
+								description: "%settings.cloudApiUrl.description%",
+								markdownDescription: "%settings.cloudApiUrl.description%",
+								order: 100,
 							},
 						},
 					},
@@ -221,7 +230,16 @@ describe("generatePackageJson", () => {
 						"tumble-code-nightly.apiRequestTimeout": {
 							type: "integer",
 							default: 600,
+							minimum: 1,
+							maximum: 3600,
 							description: "%settings.apiRequestTimeout.description%",
+						},
+						"tumble-code-nightly.cloudApiUrl": {
+							type: "string",
+							default: "",
+							description: "%settings.cloudApiUrl.description%",
+							markdownDescription: "%settings.cloudApiUrl.description%",
+							order: 100,
 						},
 					},
 				},

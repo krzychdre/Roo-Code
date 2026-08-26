@@ -65,19 +65,28 @@ set of types VS Code actually supports for configuration properties.
   `tumble-code-nightly.apiRequestTimeout` with `"type": "integer"` and the
   name substitution applied correctly.
 
-## Separate known issue (not fixed here)
+## Separate known issue (fixed in stacked follow-up)
 
-The `configurationPropertySchema` is a plain `z.object({...})` without
-`.passthrough()`, so Zod strips keys it does not explicitly declare. The real
+The `configurationPropertySchema` was a plain `z.object({...})` without
+`.passthrough()`, so Zod stripped keys it did not explicitly declare. The real
 `src/package.json` declares `minimum`, `maximum`, `markdownDescription`, and
 `order` on several configuration properties (lines 359-478), and all of these
-are dropped from the generated nightly `package.json`. This is a pre-existing
-lossy behavior that predates the crash and degrades the nightly extension's
-settings UI (no range validation, no rich descriptions, no sort order). It is
-out of scope for this crash fix and left for a follow-up.
+were dropped from the generated nightly `package.json`, degrading the nightly
+extension's settings UI (no range validation, no rich descriptions, no sort
+order).
+
+**Fix (branch `fix/build-schema-preserve-config-fields`, stacked on this
+branch):** added `.passthrough()` to `configurationPropertySchema`. The schema
+still validates the shape the transform depends on (the `type` union and the
+required `description`), but now preserves every other VS Code field
+untouched. Verified that all 21 configuration properties have identical field
+sets between source and generated `package.json` after the name substitution.
 
 ## Files changed
 
-- `packages/build/src/types.ts` - add `z.literal("integer")` to the union.
-- `packages/build/src/__tests__/index.test.ts` - regression test for the
-  `integer` configuration type through `generatePackageJson`.
+- `packages/build/src/types.ts` - add `z.literal("integer")` to the union;
+  add `.passthrough()` to preserve VS Code configuration fields the transform
+  does not inspect.
+- `packages/build/src/__tests__/index.test.ts` - regression tests for the
+  `integer` configuration type and for field preservation (`minimum`,
+  `maximum`, `markdownDescription`, `order`) through `generatePackageJson`.
