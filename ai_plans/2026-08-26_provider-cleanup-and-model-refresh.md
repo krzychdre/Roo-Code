@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-26
 **Branch:** `chore/provider-cleanup-model-refresh`
-**Status:** planned
+**Status:** done (nie zmergowane; 5 commitow, `16b476113`..`aa99dc006`)
 
 ## Cel
 
