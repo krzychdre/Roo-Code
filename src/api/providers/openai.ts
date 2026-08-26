@@ -55,6 +55,20 @@ function isGLMThinkingModel(modelId: string): boolean {
 	)
 }
 
+/**
+ * Detects GLM models that always reason. These reject `thinking: { type: "disabled" }`
+ * with an API error, so reasoning must stay enabled even when the user turns it off.
+ *
+ * Matched by model ID rather than by `supportsReasoningEffort`, because on this
+ * OpenAI-compatible path the model metadata is supplied by the user and often carries
+ * no capability flags at all.
+ *
+ * @see https://docs.z.ai/guides/capabilities/thinking
+ */
+function isGLMForcedThinkingModel(modelId: string): boolean {
+	return modelId.toLowerCase().includes("glm-5.3")
+}
+
 // TODO: Rename this to OpenAICompatibleHandler. Also, I think the
 // `OpenAINativeHandler` can subclass from this, since it's obviously
 // compatible with the OpenAI API. We can also rename it to `OpenAIHandler`.
@@ -711,6 +725,10 @@ export class OpenAiHandler extends BaseProvider implements SingleCompletionHandl
 				// LOW budget: basic thinking
 				requestOptions.thinking = { type: "enabled" }
 			}
+		} else if (isGLMForcedThinkingModel(modelId)) {
+			// Reasoning was turned off, but this model has no off switch: sending
+			// "disabled" would fail the request outright, so keep thinking enabled.
+			requestOptions.thinking = { type: "enabled" }
 		} else {
 			// Reasoning is explicitly disabled
 			// For GLM-4.7 and GLM-5, thinking is ON by default in the API,

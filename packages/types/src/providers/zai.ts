@@ -6,11 +6,18 @@ import { ZaiApiLine } from "../provider-settings.js"
 // https://docs.z.ai/guides/llm/glm-4.5
 // https://docs.z.ai/guides/llm/glm-4.6
 // https://docs.z.ai/guides/llm/glm-5.1
+// https://docs.z.ai/guides/llm/glm-5.3
+// https://docs.z.ai/guides/llm/glm-5-turbo
+// https://docs.z.ai/guides/vlm/glm-5v-turbo
+// https://docs.z.ai/guides/capabilities/thinking
 // https://docs.z.ai/guides/overview/pricing
 // https://bigmodel.cn/pricing
+//
+// Mainland prices are converted from the CNY list price at 7.0 CNY/USD, using the
+// base tier (input length below 32k tokens) for models with tiered pricing.
 
 export type InternationalZAiModelId = keyof typeof internationalZAiModels
-export const internationalZAiDefaultModelId: InternationalZAiModelId = "glm-4.7"
+export const internationalZAiDefaultModelId: InternationalZAiModelId = "glm-5.3"
 export const internationalZAiModels = {
 	"glm-4.5": {
 		maxTokens: 16_384,
@@ -129,12 +136,28 @@ export const internationalZAiModels = {
 		supportsReasoningEffort: ["disable", "medium"],
 		reasoningEffort: "medium",
 		preserveReasoning: true,
-		inputPrice: 0.6,
-		outputPrice: 2.2,
+		inputPrice: 1.0,
+		outputPrice: 3.2,
 		cacheWritesPrice: 0,
-		cacheReadsPrice: 0.11,
+		cacheReadsPrice: 0.2,
 		description:
 			"GLM-5 is Zhipu's next-generation model with a 202k context window and built-in thinking capabilities. It delivers state-of-the-art reasoning, coding, and agentic performance.",
+	},
+	"glm-5-turbo": {
+		maxTokens: 131_072,
+		contextWindow: 200_000,
+		supportsImages: false,
+		supportsPromptCache: true,
+		supportsMaxTokens: true,
+		supportsReasoningEffort: ["disable", "medium"],
+		reasoningEffort: "medium",
+		preserveReasoning: true,
+		inputPrice: 1.2,
+		outputPrice: 4.0,
+		cacheWritesPrice: 0,
+		cacheReadsPrice: 0.24,
+		description:
+			"GLM-5-Turbo is a foundation model optimized for agent workflows, with a 200k context window and 128k max output. It is tuned for reliable tool calling, instruction following, and long-horizon task execution.",
 	},
 	"glm-5.1": {
 		maxTokens: 131_072,
@@ -150,7 +173,7 @@ export const internationalZAiModels = {
 		cacheWritesPrice: 0,
 		cacheReadsPrice: 0.26,
 		description:
-			"GLM-5.1 is Zhipu's most capable model with a 200k context window, 128k max output, and built-in thinking capabilities. It delivers top-tier reasoning, coding, and agentic performance.",
+			"GLM-5.1 has a 200k context window, 128k max output, and built-in thinking capabilities. It delivers strong reasoning, coding, and agentic performance.",
 	},
 	"glm-5.2": {
 		maxTokens: 131_072,
@@ -161,13 +184,30 @@ export const internationalZAiModels = {
 		supportsReasoningEffort: ["disable", "high", "max"],
 		reasoningEffort: "high",
 		preserveReasoning: true,
-		// TODO: Pricing is from GLM-5.1, should update later.
 		inputPrice: 1.4,
 		outputPrice: 4.4,
 		cacheWritesPrice: 0,
 		cacheReadsPrice: 0.26,
 		description:
-			"GLM-5.2 is Zhipu's flagship model with a 1M context window, 128k max output, and dual thinking-effort modes (High/Max). It delivers top-tier long-context reasoning, coding, and agentic performance for extended engineering sessions.",
+			"GLM-5.2 has a 1M context window, 128k max output, and dual thinking-effort modes (High/Max). It delivers strong long-context reasoning, coding, and agentic performance for extended engineering sessions.",
+	},
+	"glm-5.3": {
+		maxTokens: 131_072,
+		contextWindow: 1_000_000,
+		supportsImages: false,
+		supportsPromptCache: true,
+		supportsMaxTokens: true,
+		// GLM-5.3 always reasons: the API rejects `thinking: { type: "disabled" }`, so
+		// "disable" is deliberately absent here. It also only accepts low/high/max.
+		supportsReasoningEffort: ["low", "high", "max"],
+		reasoningEffort: "max",
+		preserveReasoning: true,
+		inputPrice: 1.4,
+		outputPrice: 4.4,
+		cacheWritesPrice: 0,
+		cacheReadsPrice: 0.26,
+		description:
+			"GLM-5.3 is Zhipu's flagship model, built on the GLM-5.2 base with post-training focused on complex software engineering and long-horizon agent tasks. It has a 1M context window, 128k max output, and always-on reasoning with low/high/max effort levels.",
 	},
 	"glm-4.7-flash": {
 		maxTokens: 16_384,
@@ -217,6 +257,22 @@ export const internationalZAiModels = {
 		description:
 			"GLM-4.6V-FlashX is an ultra-fast multimodal vision model optimized for high-speed visual processing at low cost.",
 	},
+	"glm-5v-turbo": {
+		maxTokens: 131_072,
+		contextWindow: 200_000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsMaxTokens: true,
+		supportsReasoningEffort: ["disable", "medium"],
+		reasoningEffort: "medium",
+		preserveReasoning: true,
+		inputPrice: 1.2,
+		outputPrice: 4.0,
+		cacheWritesPrice: 0,
+		cacheReadsPrice: 0.24,
+		description:
+			"GLM-5V-Turbo is Z.AI's multimodal coding model, built for vision-based coding and GUI agent workflows. It accepts image, video, text, and file input, with a 200k context window and 128k max output.",
+	},
 	"glm-4-32b-0414-128k": {
 		maxTokens: 16_384,
 		contextWindow: 131_072,
@@ -231,7 +287,7 @@ export const internationalZAiModels = {
 } as const satisfies Record<string, ModelInfo>
 
 export type MainlandZAiModelId = keyof typeof mainlandZAiModels
-export const mainlandZAiDefaultModelId: MainlandZAiModelId = "glm-4.7"
+export const mainlandZAiDefaultModelId: MainlandZAiModelId = "glm-5.3"
 export const mainlandZAiModels = {
 	"glm-4.5": {
 		maxTokens: 16_384,
@@ -338,12 +394,28 @@ export const mainlandZAiModels = {
 		supportsReasoningEffort: ["disable", "medium"],
 		reasoningEffort: "medium",
 		preserveReasoning: true,
-		inputPrice: 0.29,
-		outputPrice: 1.14,
+		inputPrice: 0.57,
+		outputPrice: 2.57,
 		cacheWritesPrice: 0,
-		cacheReadsPrice: 0.057,
+		cacheReadsPrice: 0.14,
 		description:
 			"GLM-5 is Zhipu's next-generation model with a 202k context window and built-in thinking capabilities. It delivers state-of-the-art reasoning, coding, and agentic performance.",
+	},
+	"glm-5-turbo": {
+		maxTokens: 131_072,
+		contextWindow: 204_800,
+		supportsImages: false,
+		supportsPromptCache: true,
+		supportsMaxTokens: true,
+		supportsReasoningEffort: ["disable", "medium"],
+		reasoningEffort: "medium",
+		preserveReasoning: true,
+		inputPrice: 0.71,
+		outputPrice: 3.14,
+		cacheWritesPrice: 0,
+		cacheReadsPrice: 0.17,
+		description:
+			"GLM-5-Turbo is a foundation model optimized for agent workflows, with a 200k context window and 128k max output. It is tuned for reliable tool calling, instruction following, and long-horizon task execution.",
 	},
 	"glm-5.1": {
 		maxTokens: 131_072,
@@ -354,12 +426,12 @@ export const mainlandZAiModels = {
 		supportsReasoningEffort: ["disable", "medium"],
 		reasoningEffort: "medium",
 		preserveReasoning: true,
-		inputPrice: 0.68,
-		outputPrice: 2.28,
+		inputPrice: 0.86,
+		outputPrice: 3.43,
 		cacheWritesPrice: 0,
-		cacheReadsPrice: 0.13,
+		cacheReadsPrice: 0.19,
 		description:
-			"GLM-5.1 is Zhipu's most capable model with a 200k context window, 128k max output, and built-in thinking capabilities. It delivers top-tier reasoning, coding, and agentic performance.",
+			"GLM-5.1 has a 200k context window, 128k max output, and built-in thinking capabilities. It delivers strong reasoning, coding, and agentic performance.",
 	},
 	"glm-5.2": {
 		maxTokens: 131_072,
@@ -370,13 +442,30 @@ export const mainlandZAiModels = {
 		supportsReasoningEffort: ["disable", "high", "max"],
 		reasoningEffort: "high",
 		preserveReasoning: true,
-		// TODO: Pricing is from GLM-5.1, should update later.
-		inputPrice: 0.68,
-		outputPrice: 2.28,
+		inputPrice: 1.14,
+		outputPrice: 4.0,
 		cacheWritesPrice: 0,
-		cacheReadsPrice: 0.13,
+		cacheReadsPrice: 0.29,
 		description:
-			"GLM-5.2 is Zhipu's flagship model with a 1M context window, 128k max output, and dual thinking-effort modes (High/Max). It delivers top-tier long-context reasoning, coding, and agentic performance for extended engineering sessions.",
+			"GLM-5.2 has a 1M context window, 128k max output, and dual thinking-effort modes (High/Max). It delivers strong long-context reasoning, coding, and agentic performance for extended engineering sessions.",
+	},
+	"glm-5.3": {
+		maxTokens: 131_072,
+		contextWindow: 1_000_000,
+		supportsImages: false,
+		supportsPromptCache: true,
+		supportsMaxTokens: true,
+		// GLM-5.3 always reasons: the API rejects `thinking: { type: "disabled" }`, so
+		// "disable" is deliberately absent here. It also only accepts low/high/max.
+		supportsReasoningEffort: ["low", "high", "max"],
+		reasoningEffort: "max",
+		preserveReasoning: true,
+		inputPrice: 1.14,
+		outputPrice: 4.0,
+		cacheWritesPrice: 0,
+		cacheReadsPrice: 0.29,
+		description:
+			"GLM-5.3 is Zhipu's flagship model, built on the GLM-5.2 base with post-training focused on complex software engineering and long-horizon agent tasks. It has a 1M context window, 128k max output, and always-on reasoning with low/high/max effort levels.",
 	},
 	"glm-4.7-flash": {
 		maxTokens: 16_384,
@@ -437,6 +526,22 @@ export const mainlandZAiModels = {
 		cacheReadsPrice: 0.002,
 		description:
 			"GLM-4.6V-FlashX is an ultra-fast multimodal vision model optimized for high-speed visual processing at low cost.",
+	},
+	"glm-5v-turbo": {
+		maxTokens: 131_072,
+		contextWindow: 204_800,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsMaxTokens: true,
+		supportsReasoningEffort: ["disable", "medium"],
+		reasoningEffort: "medium",
+		preserveReasoning: true,
+		inputPrice: 0.71,
+		outputPrice: 3.14,
+		cacheWritesPrice: 0,
+		cacheReadsPrice: 0.17,
+		description:
+			"GLM-5V-Turbo is Z.AI's multimodal coding model, built for vision-based coding and GUI agent workflows. It accepts image, video, text, and file input, with a 200k context window and 128k max output.",
 	},
 } as const satisfies Record<string, ModelInfo>
 

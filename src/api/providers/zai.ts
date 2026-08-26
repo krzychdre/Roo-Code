@@ -45,9 +45,10 @@ export class ZAiHandler extends BaseOpenAiCompatibleProvider<string> {
 	}
 
 	/**
-	 * Override createStream to handle GLM-4.7's thinking mode.
-	 * GLM-4.7 has thinking enabled by default in the API, so we need to
-	 * explicitly send { type: "disabled" } when the user turns off reasoning.
+	 * Override createStream to handle GLM thinking mode.
+	 * GLM-4.7 and the GLM-5 family have thinking enabled by default in the API, so we
+	 * need to explicitly send { type: "disabled" } when the user turns off reasoning.
+	 * GLM-5.3 is the exception: it cannot be turned off at all.
 	 */
 	protected override createStream(
 		systemPrompt: string,
@@ -70,7 +71,7 @@ export class ZAiHandler extends BaseOpenAiCompatibleProvider<string> {
 	}
 
 	/**
-	 * Creates a stream with explicit thinking control for GLM-4.7
+	 * Creates a stream with explicit thinking control for the GLM thinking models.
 	 */
 	private createStreamWithThinking(
 		systemPrompt: string,
@@ -79,18 +80,28 @@ export class ZAiHandler extends BaseOpenAiCompatibleProvider<string> {
 	) {
 		const { id: model, info } = this.getModel()
 
-		// Fall back to the model default when the resolved effort isn't supported by the model.
+		// Some models always reason and reject `thinking: { type: "disabled" }` outright
+		// (GLM-5.3). We detect them by the absence of "disable" in the supported effort
+		// list, and then ignore both the global reasoning toggle and any stale "disable"
+		// value still sitting in the user's settings from a previously selected model.
+		// @see https://docs.z.ai/guides/capabilities/thinking
 		const supported = info.supportsReasoningEffort
+		const canDisableReasoning = !Array.isArray(supported) || supported.includes("disable")
+
+		// Fall back to the model default when the resolved effort isn't supported by the model.
 		const raw =
-			this.options.enableReasoningEffort === false
+			canDisableReasoning && this.options.enableReasoningEffort === false
 				? undefined
 				: (this.options.reasoningEffort ?? info.reasoningEffort)
 		const effort =
 			raw && raw !== "disable" && Array.isArray(supported) && !supported.includes(raw)
 				? info.reasoningEffort
 				: raw
-		const reasoningEffort = effort && effort !== "disable" ? effort : undefined
-		const useReasoning = reasoningEffort !== undefined
+		const resolvedEffort = effort && effort !== "disable" ? effort : undefined
+		// A model that cannot turn reasoning off falls back to its default effort rather
+		// than sending an effort-less "disabled" request that the API would reject.
+		const reasoningEffort = canDisableReasoning ? resolvedEffort : (resolvedEffort ?? info.reasoningEffort)
+		const useReasoning = !canDisableReasoning || reasoningEffort !== undefined
 
 		// Honor an explicit user override (the configurable max-output slider); otherwise
 		// fall back to getModelMaxOutputTokens, which clamps to 20% of the context window by
@@ -117,7 +128,8 @@ export class ZAiHandler extends BaseOpenAiCompatibleProvider<string> {
 			messages: [{ role: "system", content: systemPrompt }, ...convertedMessages],
 			stream: true,
 			stream_options: { include_usage: true },
-			// For GLM-4.7: thinking is ON by default, so we explicitly disable when needed
+			// Thinking is ON by default for these models, so we explicitly disable when the
+			// user asked for it and the model actually allows it.
 			thinking: useReasoning ? { type: "enabled" } : { type: "disabled" },
 			reasoning_effort: reasoningEffort,
 			tools: this.convertToolsForOpenAI(metadata?.tools),
