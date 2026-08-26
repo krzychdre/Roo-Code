@@ -33,7 +33,10 @@ describe("Claude Code reader", () => {
 
 	afterEach(() => {
 		delete process.env.CLAUDE_CONFIG_DIR
-		fs.rmSync(configDir, { recursive: true, force: true })
+		// On Windows, external scanners (antivirus, indexer) may briefly hold
+		// handles on freshly written files; maxRetries lets rmSync retry
+		// through ENOTEMPTY / EBUSY / EPERM instead of failing the hook.
+		fs.rmSync(configDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
 	})
 
 	it("summarizes a session without reading it whole", () => {
@@ -127,7 +130,8 @@ describe("Tumble Code reader", () => {
 
 	afterEach(() => {
 		delete process.env.AGENT_INTERCHANGE_TUMBLE_STORAGE
-		fs.rmSync(storageDir, { recursive: true, force: true })
+		// Retries for the same Windows handle races as in the Claude block above.
+		fs.rmSync(storageDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
 	})
 
 	it("summarizes from history_item.json", () => {
@@ -192,8 +196,9 @@ describe("unified facade", () => {
 	afterEach(() => {
 		delete process.env.CLAUDE_CONFIG_DIR
 		delete process.env.AGENT_INTERCHANGE_TUMBLE_STORAGE
-		fs.rmSync(configDir, { recursive: true, force: true })
-		fs.rmSync(storageDir, { recursive: true, force: true })
+		// Retries for the same Windows handle races as in the Claude block above.
+		fs.rmSync(configDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+		fs.rmSync(storageDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
 	})
 
 	it("lists both stores newest first", () => {
