@@ -4,9 +4,45 @@ import type { ModelInfo } from "../model.js"
 // https://platform.claude.com/docs/en/about-claude/pricing
 
 export type AnthropicModelId = keyof typeof anthropicModels
-export const anthropicDefaultModelId: AnthropicModelId = "claude-sonnet-4-5"
+export const anthropicDefaultModelId: AnthropicModelId = "claude-opus-5"
 
 export const anthropicModels = {
+	"claude-opus-5": {
+		maxTokens: 128_000, // Overridden to 8k if `enableReasoningEffort` is false.
+		contextWindow: 1_000_000, // 1M native, both the default and the maximum.
+		supportsImages: true,
+		supportsPromptCache: true,
+		inputPrice: 5.0, // $5 per million input tokens
+		outputPrice: 25.0, // $25 per million output tokens
+		cacheWritesPrice: 6.25, // $6.25 per million tokens
+		cacheReadsPrice: 0.5, // $0.50 per million tokens
+		// Thinking is on by default on Opus 5 (omitting the parameter runs adaptive),
+		// and disabling it is only accepted at effort `high` or below. Keep the
+		// existing token-cap handling and expose reasoning as a binary toggle, the
+		// same convention Opus 4.7+ uses on the direct Anthropic provider path.
+		supportsReasoningBudget: true,
+		supportsReasoningBinary: true,
+		supportsTemperature: false,
+		description:
+			"Claude Opus 5 is Anthropic's model for complex agentic coding and enterprise work, strongest on deep reasoning and long-horizon tasks.",
+	},
+	"claude-sonnet-5": {
+		maxTokens: 128_000, // Overridden to 8k if `enableReasoningEffort` is false.
+		contextWindow: 1_000_000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		inputPrice: 3.0, // $3 per million input tokens
+		outputPrice: 15.0, // $15 per million output tokens
+		cacheWritesPrice: 3.75, // $3.75 per million tokens
+		cacheReadsPrice: 0.3, // $0.30 per million tokens
+		// Adaptive thinking is on by default; manual budget_tokens payloads are
+		// rejected, so the UI presents a binary toggle here too.
+		supportsReasoningBudget: true,
+		supportsReasoningBinary: true,
+		supportsTemperature: false,
+		description:
+			"Claude Sonnet 5 offers the best combination of speed and intelligence in the Sonnet tier, reaching near-Opus quality on coding and agentic work.",
+	},
 	"claude-sonnet-4-6": {
 		maxTokens: 64_000, // Overridden to 8k if `enableReasoningEffort` is false.
 		contextWindow: 200_000, // Default 200K, extendable to 1M with beta flag 'context-1m-2025-08-07'
