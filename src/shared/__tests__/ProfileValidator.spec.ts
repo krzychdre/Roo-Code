@@ -176,8 +176,6 @@ describe("ProfileValidator", () => {
 			"mistral",
 			"deepseek",
 			"xai",
-			"sambanova",
-			"fireworks",
 		]
 
 		apiModelProviders.forEach((provider) => {
@@ -258,16 +256,16 @@ describe("ProfileValidator", () => {
 			expect(ProfileValidator.isProfileAllowed(profile, allowList)).toBe(true)
 		})
 
-		it("should extract requestyModelId for requesty provider", () => {
+		it("should extract litellmModelId for litellm provider", () => {
 			const allowList: OrganizationAllowList = {
 				allowAll: false,
 				providers: {
-					requesty: { allowAll: false, models: ["requesty-model"] },
+					litellm: { allowAll: false, models: ["litellm-model"] },
 				},
 			}
 			const profile: ProviderSettings = {
-				apiProvider: "requesty",
-				requestyModelId: "requesty-model",
+				apiProvider: "litellm",
+				litellmModelId: "litellm-model",
 			}
 
 			expect(ProfileValidator.isProfileAllowed(profile, allowList)).toBe(true)

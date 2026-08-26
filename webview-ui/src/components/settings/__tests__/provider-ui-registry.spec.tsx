@@ -12,11 +12,7 @@ import {
 
 const expectedFormIds = {
 	openrouter: "openrouter",
-	"vercel-ai-gateway": "vercel-ai-gateway",
 	litellm: "litellm",
-	poe: "poe",
-	requesty: "requesty",
-	unbound: "unbound",
 	deepseek: "deepseek",
 	ollama: "ollama",
 	lmstudio: "lmstudio",
@@ -24,8 +20,6 @@ const expectedFormIds = {
 	openai: "openai-compatible",
 	anthropic: "anthropic",
 	bedrock: "bedrock",
-	baseten: "baseten",
-	fireworks: "fireworks",
 	gemini: "gemini",
 	mistral: "mistral",
 	moonshot: "moonshot",
@@ -33,7 +27,6 @@ const expectedFormIds = {
 	"openai-codex": "openai-codex",
 	"openai-native": "openai-native",
 	"qwen-code": "qwen-code",
-	sambanova: "sambanova",
 	vertex: "vertex",
 	xai: "xai",
 	zai: "zai",

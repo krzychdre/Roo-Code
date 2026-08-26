@@ -54,7 +54,6 @@ describe("checkExistKey", () => {
 			moonshotApiKey: undefined,
 			mistralApiKey: undefined,
 			vsCodeLmModelSelector: undefined,
-			requestyApiKey: undefined,
 		}
 		expect(checkExistKey(config)).toBe(false)
 	})

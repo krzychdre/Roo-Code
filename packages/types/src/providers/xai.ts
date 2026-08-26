@@ -1,11 +1,81 @@
 import type { ModelInfo } from "../model.js"
 
-// https://docs.x.ai/docs/api-reference
+// https://docs.x.ai/developers/models
+// https://docs.x.ai/developers/pricing
 export type XAIModelId = keyof typeof xaiModels
 
-export const xaiDefaultModelId: XAIModelId = "grok-4.20"
+export const xaiDefaultModelId: XAIModelId = "grok-4.6"
 
+// xAI applies a long-context surcharge to the WHOLE request once the prompt
+// reaches 200K tokens, rather than only to the excess. The prices below are the
+// sub-200K rates, with `longContextPricing` carrying the doubling that kicks in
+// at the threshold — which is exactly the whole-request semantics that field has.
+//
+// xAI does not publish a max output token limit for any Grok model, so the
+// existing conservative defaults are kept rather than inventing a figure.
 export const xaiModels = {
+	"grok-4.6": {
+		maxTokens: 65_536,
+		contextWindow: 500_000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		inputPrice: 2.0,
+		outputPrice: 6.0,
+		cacheWritesPrice: 0.5,
+		cacheReadsPrice: 0.5,
+		description:
+			"xAI's flagship Grok 4.6 model with a 500K context window and configurable reasoning effort. Not available via Batch API.",
+		supportsReasoningEffort: true,
+		includedTools: ["search_replace"],
+		excludedTools: ["apply_diff"],
+		longContextPricing: {
+			thresholdTokens: 200_000,
+			inputPriceMultiplier: 2,
+			outputPriceMultiplier: 2,
+			cacheWritesPriceMultiplier: 2,
+			cacheReadsPriceMultiplier: 2,
+		},
+	},
+	"grok-4.5": {
+		maxTokens: 65_536,
+		contextWindow: 500_000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		inputPrice: 2.0,
+		outputPrice: 6.0,
+		cacheWritesPrice: 0.3,
+		cacheReadsPrice: 0.3,
+		description: "xAI's Grok 4.5 model with a 500K context window.",
+		includedTools: ["search_replace"],
+		excludedTools: ["apply_diff"],
+		longContextPricing: {
+			thresholdTokens: 200_000,
+			inputPriceMultiplier: 2,
+			outputPriceMultiplier: 2,
+			cacheWritesPriceMultiplier: 2,
+			cacheReadsPriceMultiplier: 2,
+		},
+	},
+	"grok-4.3": {
+		maxTokens: 65_536,
+		contextWindow: 1_000_000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		inputPrice: 1.25,
+		outputPrice: 2.5,
+		cacheWritesPrice: 0.2,
+		cacheReadsPrice: 0.2,
+		description: "xAI's Grok 4.3 model with a 1M context window.",
+		includedTools: ["search_replace"],
+		excludedTools: ["apply_diff"],
+		longContextPricing: {
+			thresholdTokens: 200_000,
+			inputPriceMultiplier: 2,
+			outputPriceMultiplier: 2,
+			cacheWritesPriceMultiplier: 2,
+			cacheReadsPriceMultiplier: 2,
+		},
+	},
 	"grok-4.20": {
 		maxTokens: 65_536,
 		contextWindow: 2_000_000,

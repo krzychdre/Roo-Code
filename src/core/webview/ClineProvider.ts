@@ -38,7 +38,6 @@ import {
 	type ExtensionState,
 	type MarketplaceInstalledMetadata,
 	RooCodeEventName,
-	requestyDefaultModelId,
 	openRouterDefaultModelId,
 	DEFAULT_WRITE_DELAY_MS,
 	ORGANIZATION_ALLOW_ALL,
@@ -115,7 +114,6 @@ import { readTaskMessages } from "../task-persistence/taskMessages"
 import { getNonce } from "./getNonce"
 import { getUri } from "./getUri"
 import { SubagentRegistry } from "./SubagentRegistry"
-import { REQUESTY_BASE_URL } from "../../shared/utils/requesty"
 import { validateAndFixToolResultIds } from "../task/validateToolResultIds"
 
 /**
@@ -1951,30 +1949,6 @@ export class ClineProvider
 		}
 
 		await this.upsertProviderProfile(currentApiConfigName, newConfiguration)
-	}
-
-	// Requesty
-
-	async handleRequestyCallback(code: string, baseUrl: string | null) {
-		let { apiConfiguration } = await this.getState()
-
-		const newConfiguration: ProviderSettings = {
-			...apiConfiguration,
-			apiProvider: "requesty",
-			requestyApiKey: code,
-			requestyModelId: apiConfiguration?.requestyModelId || requestyDefaultModelId,
-		}
-
-		// set baseUrl as undefined if we don't provide one
-		// or if it is the default requesty url
-		if (!baseUrl || baseUrl === REQUESTY_BASE_URL) {
-			newConfiguration.requestyBaseUrl = undefined
-		} else {
-			newConfiguration.requestyBaseUrl = baseUrl
-		}
-
-		const profileName = `Requesty (${new Date().toLocaleString()})`
-		await this.upsertProviderProfile(profileName, newConfiguration)
 	}
 
 	// Task history

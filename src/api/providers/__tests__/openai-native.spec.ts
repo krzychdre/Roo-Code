@@ -229,9 +229,9 @@ describe("OpenAiNativeHandler", () => {
 
 	describe("getModel", () => {
 		it.each([
-			["gpt-5.6-sol", 5, 30],
-			["gpt-5.6-terra", 2.5, 15],
-			["gpt-5.6-luna", 1, 6],
+			["gpt-5.6-sol", 4, 20],
+			["gpt-5.6-terra", 2, 12],
+			["gpt-5.6-luna", 0.2, 1.2],
 		] as const)("should return current GPT-5.6 model info for %s", (apiModelId, inputPrice, outputPrice) => {
 			const currentHandler = new OpenAiNativeHandler({
 				...mockOptions,

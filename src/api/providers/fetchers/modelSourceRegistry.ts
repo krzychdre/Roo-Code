@@ -30,23 +30,17 @@ const getCachedModels = async (request: ModelSourceRequest, context: ModelSource
 					apiKey: request.options?.liteLlmApiKey ?? context.apiConfiguration.litellmApiKey ?? "",
 					baseUrl: request.options?.liteLlmBaseUrl ?? context.apiConfiguration.litellmBaseUrl ?? "",
 				}
-			: sourceId === "poe"
-				? { provider: sourceId, apiKey: request.options?.apiKey ?? "", baseUrl: request.options?.baseUrl }
-				: sourceId === "ollama"
-					? { provider: sourceId, baseUrl: request.options?.baseUrl, apiKey: request.options?.apiKey }
-					: sourceId === "lmstudio"
-						? { provider: sourceId, baseUrl: request.options?.baseUrl }
-						: sourceId === "requesty"
-							? { provider: sourceId, baseUrl: request.options?.baseUrl, apiKey: request.options?.apiKey }
-							: sourceId === "unbound"
-								? { provider: sourceId, apiKey: request.options?.apiKey }
-								: sourceId === "deepseek"
-									? {
-											provider: sourceId,
-											baseUrl: request.options?.baseUrl,
-											apiKey: request.options?.apiKey,
-										}
-									: { provider: sourceId }
+			: sourceId === "ollama"
+				? { provider: sourceId, baseUrl: request.options?.baseUrl, apiKey: request.options?.apiKey }
+				: sourceId === "lmstudio"
+					? { provider: sourceId, baseUrl: request.options?.baseUrl }
+					: sourceId === "deepseek"
+						? {
+								provider: sourceId,
+								baseUrl: request.options?.baseUrl,
+								apiKey: request.options?.apiKey,
+							}
+						: { provider: sourceId }
 
 	if (request.refresh) {
 		await flushModels(options, true)
@@ -58,19 +52,7 @@ export const modelSourceRegistry = {
 	openrouter: {
 		fetch: async (request, context) => wrapModels(await getCachedModels(request, context)),
 	},
-	requesty: {
-		fetch: async (request, context) => wrapModels(await getCachedModels(request, context)),
-	},
-	unbound: {
-		fetch: async (request, context) => wrapModels(await getCachedModels(request, context)),
-	},
 	litellm: {
-		fetch: async (request, context) => wrapModels(await getCachedModels(request, context)),
-	},
-	"vercel-ai-gateway": {
-		fetch: async (request, context) => wrapModels(await getCachedModels(request, context)),
-	},
-	poe: {
 		fetch: async (request, context) => wrapModels(await getCachedModels(request, context)),
 	},
 	deepseek: {

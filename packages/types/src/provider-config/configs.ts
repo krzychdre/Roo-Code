@@ -99,15 +99,8 @@ export const minimaxConfigSchema = apiModelConfigSchema.extend({
 		.union([z.literal("https://api.minimax.io/v1"), z.literal("https://api.minimaxi.com/v1")])
 		.optional(),
 })
-export const poeConfigSchema = apiModelConfigSchema.extend({ poeBaseUrl: z.string().optional() })
-
-export const requestyConfigSchema = z
-	.object({ requestyBaseUrl: z.string().optional(), requestyModelId: z.string().optional() })
-	.strict()
-export const unboundConfigSchema = z.object({ unboundModelId: z.string().optional() }).strict()
 export const fakeAiConfigSchema = z.object({ fakeAi: z.unknown().optional() }).strict()
 export const xaiConfigSchema = apiModelConfigSchema
-export const basetenConfigSchema = apiModelConfigSchema
 export const litellmConfigSchema = z
 	.object({
 		litellmBaseUrl: z.string().optional(),
@@ -115,12 +108,9 @@ export const litellmConfigSchema = z
 		litellmUsePromptCache: z.boolean().optional(),
 	})
 	.strict()
-export const sambaNovaConfigSchema = apiModelConfigSchema
 
 export const zaiConfigSchema = apiModelConfigSchema.extend({ zaiApiLine: zaiApiLineSchema.optional() })
-export const fireworksConfigSchema = apiModelConfigSchema
 export const qwenCodeConfigSchema = apiModelConfigSchema.extend({ qwenCodeOauthPath: z.string().optional() })
-export const vercelAiGatewayConfigSchema = z.object({ vercelAiGatewayModelId: z.string().optional() }).strict()
 
 export const rooConfigSchema = apiModelConfigSchema
 export const humanRelayConfigSchema = emptyProviderConfigSchema

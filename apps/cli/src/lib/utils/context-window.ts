@@ -44,14 +44,8 @@ function getModelIdForProvider(config: ProviderSettings): string | undefined {
 			return config.lmStudioModelId
 		case "openai":
 			return config.openAiModelId
-		case "requesty":
-			return config.requestyModelId
-		case "unbound":
-			return config.unboundModelId
 		case "litellm":
 			return config.litellmModelId
-		case "vercel-ai-gateway":
-			return config.vercelAiGatewayModelId
 		default:
 			// For anthropic, bedrock, vertex, gemini, xai, etc.
 			return config.apiModelId

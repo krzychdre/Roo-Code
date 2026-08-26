@@ -244,7 +244,7 @@ describe("webviewMessageHandler - requestProviderModels", () => {
 			type: "requestProviderModels",
 			modelSourceRequest: {
 				requestId: "request-2",
-				source: { id: "requesty", kind: "remote", payload: "models" },
+				source: { id: "litellm", kind: "remote", payload: "models" },
 			},
 		})
 
@@ -252,7 +252,7 @@ describe("webviewMessageHandler - requestProviderModels", () => {
 			type: "providerModels",
 			modelSourceResult: {
 				requestId: "request-2",
-				sourceId: "requesty",
+				sourceId: "litellm",
 				error: "unavailable",
 			},
 		})

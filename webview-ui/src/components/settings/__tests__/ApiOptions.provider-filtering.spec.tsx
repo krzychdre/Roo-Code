@@ -121,9 +121,7 @@ describe("ApiOptions Provider Filtering", () => {
 		{ value: "openrouter", label: "OpenRouter" },
 		{ value: "bedrock", label: "Amazon Bedrock" },
 		{ value: "anthropic", label: "Anthropic" },
-		{ value: "baseten", label: "Baseten" },
 		{ value: "deepseek", label: "DeepSeek" },
-		{ value: "fireworks", label: "Fireworks AI" },
 		{ value: "vertex", label: "GCP Vertex AI" },
 		{ value: "gemini", label: "Google Gemini" },
 		{ value: "litellm", label: "LiteLLM" },
@@ -135,12 +133,7 @@ describe("ApiOptions Provider Filtering", () => {
 		{ value: "openai-codex", label: "OpenAI - ChatGPT Plus/Pro" },
 		{ value: "openai-native", label: "OpenAI" },
 		{ value: "openai", label: "OpenAI Compatible" },
-		{ value: "poe", label: "Poe" },
 		{ value: "qwen-code", label: "Qwen Code" },
-		{ value: "requesty", label: "Requesty" },
-		{ value: "sambanova", label: "SambaNova" },
-		{ value: "unbound", label: "Unbound" },
-		{ value: "vercel-ai-gateway", label: "Vercel AI Gateway" },
 		{ value: "vscode-lm", label: "VS Code LM API" },
 		{ value: "xai", label: "xAI (Grok)" },
 		{ value: "zai", label: "Z.ai" },
@@ -217,7 +210,7 @@ describe("ApiOptions Provider Filtering", () => {
 		expect(providerValues).toContain("ollama")
 		expect(providerValues).toContain("lmstudio")
 		expect(providerValues).toContain("litellm")
-		expect(providerValues).toContain("requesty")
+		expect(providerValues).toContain("deepseek")
 	})
 
 	it("should filter static providers based on organization allow list", () => {

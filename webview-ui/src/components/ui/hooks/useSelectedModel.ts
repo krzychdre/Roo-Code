@@ -18,11 +18,8 @@ import {
 	vscodeLlmModels,
 	vscodeLlmDefaultModelId,
 	openAiCodexModels,
-	sambaNovaModels,
 	internationalZAiModels,
 	mainlandZAiModels,
-	fireworksModels,
-	basetenModels,
 	qwenCodeModels,
 	litellmDefaultModelInfo,
 	lMStudioDefaultModelInfo,
@@ -159,35 +156,15 @@ function getSelectedModel({
 
 			return { id, info }
 		}
-		case "requesty": {
-			const id = getValidatedModelId(apiConfiguration.requestyModelId, routerModels.requesty, defaultModelId)
-			const routerInfo = routerModels.requesty?.[id]
-			return { id, info: routerInfo }
-		}
-		case "unbound": {
-			const id = getValidatedModelId(apiConfiguration.unboundModelId, routerModels.unbound, defaultModelId)
-			const routerInfo = routerModels.unbound?.[id]
-			return { id, info: routerInfo }
-		}
 		case "litellm": {
 			const id = getValidatedModelId(apiConfiguration.litellmModelId, routerModels.litellm, defaultModelId)
 			const routerInfo = routerModels.litellm?.[id]
 			return { id, info: routerInfo ?? litellmDefaultModelInfo }
 		}
-		case "poe": {
-			const id = getValidatedModelId(apiConfiguration.apiModelId, routerModels.poe, defaultModelId)
-			const routerInfo = routerModels.poe?.[id]
-			return { id, info: routerInfo }
-		}
 		case "xai": {
 			const id = apiConfiguration.apiModelId ?? defaultModelId
 			const info = xaiModels[id as keyof typeof xaiModels]
 			return info ? { id, info } : { id, info: undefined }
-		}
-		case "baseten": {
-			const id = apiConfiguration.apiModelId ?? defaultModelId
-			const info = basetenModels[id as keyof typeof basetenModels]
-			return { id, info }
 		}
 		case "bedrock": {
 			const id = apiConfiguration.apiModelId ?? defaultModelId
@@ -316,16 +293,6 @@ function getSelectedModel({
 			const info = vscodeLlmModels[modelFamily as keyof typeof vscodeLlmModels]
 			return { id, info: { ...openAiModelInfoSaneDefaults, ...info, supportsImages: false } } // VSCode LM API currently doesn't support images.
 		}
-		case "sambanova": {
-			const id = apiConfiguration.apiModelId ?? defaultModelId
-			const info = sambaNovaModels[id as keyof typeof sambaNovaModels]
-			return { id, info }
-		}
-		case "fireworks": {
-			const id = apiConfiguration.apiModelId ?? defaultModelId
-			const info = fireworksModels[id as keyof typeof fireworksModels]
-			return { id, info }
-		}
 		case "qwen-code": {
 			const id = apiConfiguration.apiModelId ?? defaultModelId
 			const info = qwenCodeModels[id as keyof typeof qwenCodeModels]
@@ -334,15 +301,6 @@ function getSelectedModel({
 		case "openai-codex": {
 			const id = apiConfiguration.apiModelId ?? defaultModelId
 			const info = openAiCodexModels[id as keyof typeof openAiCodexModels]
-			return { id, info }
-		}
-		case "vercel-ai-gateway": {
-			const id = getValidatedModelId(
-				apiConfiguration.vercelAiGatewayModelId,
-				routerModels["vercel-ai-gateway"],
-				defaultModelId,
-			)
-			const info = routerModels["vercel-ai-gateway"]?.[id]
 			return { id, info }
 		}
 		// case "anthropic":

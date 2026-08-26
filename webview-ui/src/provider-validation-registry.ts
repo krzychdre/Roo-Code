@@ -25,11 +25,7 @@ const apiKeyValidation = (field: keyof ProviderSettings) =>
 
 export const providerValidationRegistry = {
 	openrouter: apiKeyValidation("openRouterApiKey"),
-	"vercel-ai-gateway": apiKeyValidation("vercelAiGatewayApiKey"),
 	litellm: apiKeyValidation("litellmApiKey"),
-	poe: noValidation,
-	requesty: apiKeyValidation("requestyApiKey"),
-	unbound: apiKeyValidation("unboundApiKey"),
 	deepseek: noValidation,
 	ollama: { kind: "required-fields", fields: ["ollamaModelId"], message: "settings:validation.modelId" },
 	lmstudio: { kind: "required-fields", fields: ["lmStudioModelId"], message: "settings:validation.modelId" },
@@ -46,8 +42,6 @@ export const providerValidationRegistry = {
 	"fake-ai": noValidation,
 	anthropic: apiKeyValidation("apiKey"),
 	bedrock: { kind: "required-fields", fields: ["awsRegion"], message: "settings:validation.awsRegion" },
-	baseten: apiKeyValidation("basetenApiKey"),
-	fireworks: apiKeyValidation("fireworksApiKey"),
 	gemini: apiKeyValidation("geminiApiKey"),
 	"gemini-cli": noValidation,
 	mistral: apiKeyValidation("mistralApiKey"),
@@ -60,7 +54,6 @@ export const providerValidationRegistry = {
 		fields: ["qwenCodeOauthPath"],
 		message: "settings:validation.qwenCodeOauthPath",
 	},
-	sambanova: noValidation,
 	vertex: {
 		kind: "required-fields",
 		fields: ["vertexProjectId", "vertexRegion"],

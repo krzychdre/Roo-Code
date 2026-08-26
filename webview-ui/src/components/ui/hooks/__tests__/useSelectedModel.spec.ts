@@ -373,7 +373,7 @@ describe("useSelectedModel", () => {
 			const { result } = renderHook(() => useSelectedModel(), { wrapper })
 
 			expect(result.current.provider).toBe("anthropic")
-			expect(result.current.id).toBe("claude-sonnet-4-5")
+			expect(result.current.id).toBe("claude-opus-5")
 			expect(result.current.info).toBeUndefined()
 		})
 	})
