@@ -51,6 +51,11 @@ logs
 # Qdrant
 qdrant_storage/
 
+# Local docker bind-mount volumes (root-owned data dirs).
+# Must stay in the root .gitignore: knip only prunes its file crawl with root-level
+# gitignore rules, so a nested rule lets it descend and crash on EACCES.
+.vol/
+
 # Architect plans
 plans/
 

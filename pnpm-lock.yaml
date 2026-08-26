@@ -599,9 +599,6 @@ importers:
 
   packages/types:
     dependencies:
-      ai-sdk-provider-poe:
-        specifier: 2.0.18
-        version: 2.0.18(ai@6.0.77(zod@3.25.76))(zod@3.25.76)
       zod:
         specifier: 3.25.76
         version: 3.25.76
@@ -720,9 +717,6 @@ importers:
       '@vscode/codicons':
         specifier: ^0.0.36
         version: 0.0.36
-      ai-sdk-provider-poe:
-        specifier: 2.0.18
-        version: 2.0.18(ai@6.0.77(zod@3.25.76))(zod@3.25.76)
       async-mutex:
         specifier: ^0.5.0
         version: 0.5.0
@@ -1235,12 +1229,6 @@ packages:
     peerDependencies:
       zod: 3.25.76
 
-  '@ai-sdk/anthropic@3.0.42':
-    resolution: {integrity: sha512-snoLXB9DmvAmmngbPN/Io8IGzZ9zWpC208EgIIztYf1e1JhwuMkgKCYkL30vGhSen4PrBafu2+sO4G/17wu45A==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      zod: 3.25.76
-
   '@ai-sdk/anthropic@3.0.78':
     resolution: {integrity: sha512-0OY12G20cUt6iU6htpEA1491Oz++NVxZxlmWGX4B7rSbeZ5pnDmOu6YtW9BKzdZlNx5Gn23i6WMxyZFoMKNcgA==}
     engines: {node: '>=18'}
@@ -1301,20 +1289,8 @@ packages:
     peerDependencies:
       zod: 3.25.76
 
-  '@ai-sdk/openai-compatible@2.0.37':
-    resolution: {integrity: sha512-+POSFVcgiu47BK64dhsI6OpcDC0/VAE2ZSaXdXGNNhpC/ava++uSRJYks0k2bpfY0wwCTgpAWZsXn/dG2Yppiw==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      zod: 3.25.76
-
   '@ai-sdk/openai-compatible@2.0.48':
     resolution: {integrity: sha512-z9MC6M4Oh/yUY/F/eszOtO8wc2nMz99XmZQKd2gWTtyIfe716xTfrKe3aYZKg20NZDtyjqPPKPSR+wqz7q1T7Q==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      zod: 3.25.76
-
-  '@ai-sdk/openai@3.0.27':
-    resolution: {integrity: sha512-pLMxWOypwroXiK9dxNpn60/HGhWWWDEOJ3lo9vZLoxvpJNtKnLKojwVIvlW3yEjlD7ll1+jUO2uzsABNTaP5Yg==}
     engines: {node: '>=18'}
     peerDependencies:
       zod: 3.25.76
@@ -1327,12 +1303,6 @@ packages:
 
   '@ai-sdk/provider-utils@4.0.14':
     resolution: {integrity: sha512-7bzKd9lgiDeXM7O4U4nQ8iTxguAOkg8LZGD9AfDVZYjO5cKYRwBPwVjboFcVrxncRHu0tYxZtXZtiLKpG4pEng==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      zod: 3.25.76
-
-  '@ai-sdk/provider-utils@4.0.21':
-    resolution: {integrity: sha512-MtFUYI1/8mgDvRmaBDjbLJPFFrMG777AvSgyIFQtZHIMzm88R/12vYBBpnk7pfiWLFE1DSZzY4WDYzGbKAcmiw==}
     engines: {node: '>=18'}
     peerDependencies:
       zod: 3.25.76
@@ -4670,11 +4640,6 @@ packages:
   agentkeepalive@4.6.0:
     resolution: {integrity: sha512-kja8j7PjmncONqaTsB8fQ+wE2mSU2DJ9D4XKoJ5PFWIdRMa6SLSN1ff4mOr4jCbfRSsxR4keIiySJU0N9T5hIQ==}
     engines: {node: '>= 8.0.0'}
-
-  ai-sdk-provider-poe@2.0.18:
-    resolution: {integrity: sha512-uzFR5Zq+PD6LfrqpYAr4dt2KmfOfS9a0Wh8QJsOaGI/vOByhW02P/0mj0NtOnOWF1RIUfBkQJo647XjrgnFjjg==}
-    peerDependencies:
-      ai: '>=6.0.0'
 
   ai@6.0.77:
     resolution: {integrity: sha512-tyyhrRpCRFVlivdNIFLK8cexSBB2jwTqO0z1qJQagk+UxZ+MW8h5V8xsvvb+xdKDY482Y8KAm0mr7TDnPKvvlw==}
@@ -10398,12 +10363,6 @@ snapshots:
       '@ai-sdk/provider-utils': 4.0.14(zod@3.25.76)
       zod: 3.25.76
 
-  '@ai-sdk/anthropic@3.0.42(zod@3.25.76)':
-    dependencies:
-      '@ai-sdk/provider': 3.0.8
-      '@ai-sdk/provider-utils': 4.0.14(zod@3.25.76)
-      zod: 3.25.76
-
   '@ai-sdk/anthropic@3.0.78(zod@3.25.76)':
     dependencies:
       '@ai-sdk/provider': 3.0.10
@@ -10473,22 +10432,10 @@ snapshots:
       '@ai-sdk/provider-utils': 4.0.14(zod@3.25.76)
       zod: 3.25.76
 
-  '@ai-sdk/openai-compatible@2.0.37(zod@3.25.76)':
-    dependencies:
-      '@ai-sdk/provider': 3.0.8
-      '@ai-sdk/provider-utils': 4.0.21(zod@3.25.76)
-      zod: 3.25.76
-
   '@ai-sdk/openai-compatible@2.0.48(zod@3.25.76)':
     dependencies:
       '@ai-sdk/provider': 3.0.10
       '@ai-sdk/provider-utils': 4.0.27(zod@3.25.76)
-      zod: 3.25.76
-
-  '@ai-sdk/openai@3.0.27(zod@3.25.76)':
-    dependencies:
-      '@ai-sdk/provider': 3.0.8
-      '@ai-sdk/provider-utils': 4.0.14(zod@3.25.76)
       zod: 3.25.76
 
   '@ai-sdk/provider-utils@3.0.5(zod@3.25.76)':
@@ -10504,13 +10451,6 @@ snapshots:
       '@ai-sdk/provider': 3.0.8
       '@standard-schema/spec': 1.1.0
       eventsource-parser: 3.0.6
-      zod: 3.25.76
-
-  '@ai-sdk/provider-utils@4.0.21(zod@3.25.76)':
-    dependencies:
-      '@ai-sdk/provider': 3.0.8
-      '@standard-schema/spec': 1.1.0
-      eventsource-parser: 3.1.0
       zod: 3.25.76
 
   '@ai-sdk/provider-utils@4.0.27(zod@3.25.76)':
@@ -14369,17 +14309,6 @@ snapshots:
   agentkeepalive@4.6.0:
     dependencies:
       humanize-ms: 1.2.1
-
-  ai-sdk-provider-poe@2.0.18(ai@6.0.77(zod@3.25.76))(zod@3.25.76):
-    dependencies:
-      '@ai-sdk/anthropic': 3.0.42(zod@3.25.76)
-      '@ai-sdk/openai': 3.0.27(zod@3.25.76)
-      '@ai-sdk/openai-compatible': 2.0.37(zod@3.25.76)
-      '@ai-sdk/provider': 3.0.8
-      '@ai-sdk/provider-utils': 4.0.14(zod@3.25.76)
-      ai: 6.0.77(zod@3.25.76)
-    transitivePeerDependencies:
-      - zod
 
   ai@6.0.77(zod@3.25.76):
     dependencies:
