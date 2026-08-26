@@ -29,6 +29,7 @@ import {
 	executeAutoDream,
 	drainPendingDreams,
 	renderTranscript,
+	isAutoMemoryEnabled,
 	type AutoDreamConfig,
 	type TranscriptMessage,
 } from "../memory"
@@ -685,6 +686,10 @@ export class TaskLifecycle {
 	 * headless, write-sandboxed background task that actually persists memories.
 	 */
 	public triggerMemoryBackgroundWriters(): void {
+		// Both writers hard-gate on the memory master switch internally, but the
+		// prep work here (renderTranscript + a getTaskHistory round-trip) is not
+		// free. Bail before doing any of it when memory is off.
+		if (!isAutoMemoryEnabled()) return
 		const provider = this.access.providerRef.deref()
 		if (!provider) return
 		// The provider's `memorySubTaskRunner` spawns a headless, write-sandboxed
