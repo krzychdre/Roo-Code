@@ -72,24 +72,33 @@ const keybindingsSchema = z.array(
 
 export type Keybindings = z.infer<typeof keybindingsSchema>
 
-const configurationPropertySchema = z.object({
-	type: z.union([
-		z.literal("string"),
-		z.literal("array"),
-		z.literal("object"),
-		z.literal("boolean"),
-		z.literal("number"),
-	]),
-	items: z
-		.object({
-			type: z.string(),
-		})
-		.optional(),
-	properties: z.record(z.string(), z.any()).optional(),
-	enum: z.array(z.any()).optional(),
-	default: z.any().optional(),
-	description: z.string(),
-})
+const configurationPropertySchema = z
+	.object({
+		type: z.union([
+			z.literal("string"),
+			z.literal("array"),
+			z.literal("object"),
+			z.literal("boolean"),
+			z.literal("number"),
+			z.literal("integer"),
+		]),
+		items: z
+			.object({
+				type: z.string(),
+			})
+			.optional(),
+		properties: z.record(z.string(), z.any()).optional(),
+		enum: z.array(z.any()).optional(),
+		default: z.any().optional(),
+		description: z.string(),
+		// VS Code configuration properties carry many fields the build transform
+		// does not need to inspect (minimum, maximum, markdownDescription, order,
+		// scope, enumDescriptions, editPresentation, ...). Strip-only parsing would
+		// silently drop them from the generated nightly package.json, so pass them
+		// through untouched. The schema still validates the shape the transform
+		// depends on (the type union and the required description).
+	})
+	.passthrough()
 
 export type ConfigurationProperty = z.infer<typeof configurationPropertySchema>
 
