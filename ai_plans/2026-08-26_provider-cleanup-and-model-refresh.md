@@ -118,3 +118,51 @@ Cutoff wiedzy modelu piszacego to maj 2026; dzis 2026-08-26. Listy wygladaja juz
 - **`RequestyBalanceDisplay.tsx`:** dodatkowy komponent UI powiazany z Requesty (wyswietlanie salda); usunac razem z `Requesty.tsx`.
 - **Knip:** po usunieciu plikow knip moze zglosic nie uzywane eksporty (lub odwrotnie, brakujace); uruchomic knip na koncu.
 - **Znane wczesniejsze awarie testow:** zapisane w pameci `project_cloud_web_gui_stack.md` - jesli te same testy nadal sa flaky, rozroznic od naszych zmian.
+
+## Wynik weryfikacji czystki (2026-08-26)
+
+Czystka zrobiona i zacommitowana jako `16b476113` na `chore/provider-cleanup-model-refresh`.
+
+- `pnpm check-types`: **14/14 pakietow zielone**.
+- `pnpm lint`: **14/14 zielone**.
+- `pnpm test`: 10/11 pakietow zielone. Jeden pakiet czerwony: `@roo-code/agent-interchange`,
+  test `src/__tests__/mcp-server.spec.ts:192` ("only permits cross-workspace listing after a
+  server startup opt-in").
+
+**Ta awaria jest wczesniejsza (pre-existing), nie spowodowana czystka.** Dowod:
+
+1. Commit `16b476113` nie dotyka katalogu `packages/agent-interchange/` (`git show --stat`).
+2. `git diff main..HEAD -- packages/agent-interchange/` jest pusty, czyli pakiet jest
+   bajt-w-bajt identyczny z main; `git status` dla tego katalogu tez jest czysty.
+3. Test nie importuje niczego zwiazanego z providerami (brak `provider` / `@roo-code/types`
+   w pliku spec).
+4. Uruchomiony z odizolowanym srodowiskiem (`CLAUDE_CONFIG_DIR`, `AGENT_INTERCHANGE_TUMBLE_STORAGE`
+   i `AGENT_INTERCHANGE_DIR` wskazujace na puste katalogi tymczasowe) pada tak samo, wiec nie jest
+   to tez zanieczyszczenie realnymi sesjami z katalogu domowego.
+
+Wniosek: naprawa tego testu nalezy do osobnej galezi i nie blokuje tej pracy. Nie ruszamy go tutaj,
+zeby nie mieszac dwoch niepowiazanych zmian w jednym branchu.
+
+### Odniesienia usuniete poza pierwotnym planem
+
+Plan nie przewidzial kilku miejsc, ktore wyszly dopiero z typechecku; wszystkie usuniete:
+
+- `packages/types/src/global-settings.ts`: 6 kluczy sekretow (`requestyApiKey`, `unboundApiKey`,
+  `sambaNovaApiKey`, `fireworksApiKey`, `vercelAiGatewayApiKey`, `basetenApiKey`) z `SECRET_STATE_KEYS`.
+  **Zachowany** `codebaseIndexVercelAiGatewayApiKey`, bo to embedder indeksu kodu, osobny subsystem.
+- `src/api/transform/caching/vercel-ai-gateway.ts` + jego spec: modul osierocony, uzywany wylacznie
+  przez usuniety handler.
+- `src/shared/utils/requesty.ts` + `webview-ui/src/components/ui/hooks/useRequestyKeyInfo.ts`:
+  osierocone po usunieciu komponentu Requesty.
+- `src/core/webview/ClineProvider.ts`: metoda `handleRequestyCallback` + import `REQUESTY_BASE_URL`,
+  oraz galaz `/requesty` w `src/activate/handleUri.ts` (callback OAuth Requesty).
+- `webview-ui/src/components/settings/constants.ts` i `utils/providerModelConfig.ts`: wpisy w
+  `MODELS_BY_PROVIDER`, `PROVIDER_SERVICE_CONFIG`, `PROVIDER_DEFAULT_MODEL_IDS`,
+  `PROVIDERS_WITH_CUSTOM_MODEL_UI` oraz `getProviderModelSourceOptions`.
+- `webview-ui/src/components/ui/hooks/useSelectedModel.ts` i `settings/ModelPicker.tsx`.
+- Kotwica historycznego duplikatu `deepseek` w `activeProviderIdsForPublicApi` przeniesiona
+  z wycofanego `baseten` na `bedrock` (invariant "deepseek wystepuje dwa razy" zachowany).
+
+**BLAD ZLAPANY I COFNIETY:** poczatkowo usunalem `src/services/code-index/embedders/__tests__/vercel-ai-gateway.spec.ts`.
+To byl blad - `VercelAiGatewayEmbedder` to provider osadzania wektorow dla indeksu kodu, calkowicie
+osobny subsystem od dostawcy czatu. Plik przywrocony przez `git checkout HEAD --`.
