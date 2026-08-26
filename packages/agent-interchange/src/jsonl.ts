@@ -1,3 +1,4 @@
+import { once } from "node:events"
 import * as fs from "node:fs"
 import { createReadStream } from "node:fs"
 import * as readline from "node:readline"
@@ -105,6 +106,14 @@ export async function streamJsonl<T = Record<string, unknown>>(
 	} finally {
 		lines.close()
 		stream.destroy()
+
+		// destroy() only begins the teardown; the descriptor closes a tick or
+		// two later. Wait for it, so a caller may delete the file the moment
+		// this resolves: on Windows an open handle keeps the directory entry
+		// alive and a subsequent rmdir of the parent fails with ENOTEMPTY.
+		if (!stream.closed) {
+			await once(stream, "close")
+		}
 	}
 }
 
