@@ -166,3 +166,61 @@ Plan nie przewidzial kilku miejsc, ktore wyszly dopiero z typechecku; wszystkie 
 **BLAD ZLAPANY I COFNIETY:** poczatkowo usunalem `src/services/code-index/embedders/__tests__/vercel-ai-gateway.spec.ts`.
 To byl blad - `VercelAiGatewayEmbedder` to provider osadzania wektorow dla indeksu kodu, calkowicie
 osobny subsystem od dostawcy czatu. Plik przywrocony przez `git checkout HEAD --`.
+
+## Wynik odswiezenia list modeli (2026-08-26)
+
+Zrodla: oficjalna dokumentacja kazdego dostawcy (dla Anthropic - referencja `claude-api`).
+Zasada: nic nie wpisane z pamieci modelu (cutoff maj 2026 < dzis 2026-08-26); braki zostawione
+jawnie zamiast zgadywania.
+
+### Anthropic (`184cf9d03`)
+
+- **Dodane:** `claude-opus-5` ($5/$25, 1M kontekstu natywnie) i `claude-sonnet-5` ($3/$15).
+- **Default:** `claude-sonnet-4-5` -> `claude-opus-5` (poprzedni byl przestarzaly).
+- Oba odrzucaja `budget_tokens`, wiec dostaja `supportsReasoningBinary: true` zgodnie z konwencja
+  wprowadzona przy Opus 4.7 na tej sciezce providera.
+
+### DeepSeek, Mistral, xAI (`91d376fa1`)
+
+- **DeepSeek:** ceny przestawione ze stawek off-peak na **standard (peak)**, zeby estymaty nigdy nie
+  byly nizsze niz realne obciazenie (DeepSeek ma ceny zalezne od pory doby; off-peak to dokladnie
+  polowa). Dodany `deepseek-v4-flash-vision-exp`. Usuniete aliasy `deepseek-chat` i `deepseek-reasoner`
+    - sam kod mial `TODO ... after DeepSeek's 2026-07-24 retirement date`, a ta data minela. Fallback w
+      `getModel()` jest lagodny, wiec stare profile nie wywala rozszerzenia.
+- **Mistral:** rodziny **Devstral** i **Magistral** oraz linia **Pixtral** zniknely z oferty dostawcy
+  (byly na naszej liscie jako 3 z 9 modeli). Zastapione realnymi nastepcami; `mistral-small-latest`
+  (Small 4) to model hybrydowy, ktory wchlonal Devstral i Magistral. Dodane Ministral 3 14B i
+  `zai-glm-5-2`. **`supportsPromptCache` zostaje `false`** - handler Mistrala nie ma zadnej obslugi
+  cache, wiec `true` byloby falszywa deklaracja psujaca liczenie kosztow (zlapane przez test).
+  Default zostaje `codestral-latest`, bo handler kieruje prefiks `codestral-` na osobny endpoint
+  `codestral.mistral.ai`; zmiana defaulta zmienilaby tez endpoint, co jest decyzja produktowa.
+- **xAI:** dodane `grok-4.6` (nowy default), `grok-4.5`, `grok-4.3`. Doplata za dlugi kontekst
+  podwaja cene **calego zapytania** po przekroczeniu 200k tokenow, wiec uzyte `longContextPricing`
+  (dokladnie ta semantyka), a nie `tiers`. `maxTokens` zostawione na dotychczasowych wartosciach,
+  bo xAI **nie publikuje** limitu wyjscia dla zadnego modelu Grok.
+
+### OpenAI i Gemini
+
+- **OpenAI:** poprawione ceny rodziny 5.6 - byly znaczaco zawyzone wzgledem publikowanych
+  (Sol 5/30 -> 4/20, Terra 2.5/15 -> 2/12, Luna 1/6 -> **0.20/1.20**, czyli 5x za duzo). Dodany
+  `cacheWritesPrice` (rodzina 5.6 ma osobna oplate za zapis do cache, 1.25x stawki wejscia);
+  handler `openai-native` faktycznie raportuje `cacheWriteTokens`, wiec pole nie jest martwe.
+- **Gemini:** dodane `gemini-3.7-flash`, `gemini-3.6-flash`, `gemini-3.5-flash-lite`. Trzy modele
+  wylaczone przez Google (`gemini-3-pro-preview`, `gemini-2.5-flash-preview-09-2025`,
+  `gemini-2.5-flash-lite-preview-09-2025`) oznaczone `deprecated: true` - ModelPicker ukrywa je z
+  listy, ale zachowuje dla istniejacych profili z czytelnym bledem. Default zostaje
+  `gemini-3.1-pro-preview`, bo Google **nie ma obecnie stabilnego Gemini 3.x Pro**.
+- **openai-codex:** nie ruszany. To logowanie subskrypcja ChatGPT, gdzie ceny sa zerowe
+  (placi abonament), a rodzine 5.6 juz ma.
+
+### Weryfikacja koncowa
+
+- `pnpm check-types`: 14/14 zielone. `pnpm lint`: 14/14 zielone.
+- `src`: **7388 testow przechodzi**, 0 czerwonych (487 plikow).
+- `webview-ui`: **1543 testy przechodza**, 0 czerwonych (137 plikow).
+- Poprawione testy przeoczone w czystce: `ProfileValidator.spec.ts` (lista sparametryzowana
+  zawierala wycofane `sambanova`/`fireworks`; dopasowana do faktycznych gałezi `case` w
+  `getModelIdFromProfile`) oraz `ApiOptions.provider-filtering.spec.tsx` (oczekiwal 26 dostawcow).
+- `ShadowCheckpointService.spec.ts` potrafi paść w pelnym przebiegu, a przechodzi w izolacji -
+  jest flaky (zalezny od czasu/kolejnosci), pakiet `services/checkpoints/` jest identyczny z main.
+- `@roo-code/agent-interchange` nadal czerwony z przyczyny wczesniejszej, opisanej wyzej.

@@ -6,6 +6,54 @@ export type GeminiModelId = keyof typeof geminiModels
 export const geminiDefaultModelId: GeminiModelId = "gemini-3.1-pro-preview"
 
 export const geminiModels = {
+	// Google currently ships no stable Gemini 3.x Pro: the Pro line exists only
+	// as `gemini-3.1-pro-preview`, and the whole stable Gemini 3 offering is
+	// Flash and Flash-Lite.
+	//
+	// The 3.7 and 3.6 Flash prices are promotional through 2026-12-31, after
+	// which they double to $1.50 / $7.50.
+	"gemini-3.7-flash": {
+		maxTokens: 65_536,
+		contextWindow: 1_048_576,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsReasoningEffort: ["minimal", "low", "medium", "high"],
+		reasoningEffort: "medium",
+		inputPrice: 0.75,
+		outputPrice: 3.75,
+		cacheReadsPrice: 0.075,
+		cacheWritesPrice: 1.0,
+		supportsReasoningBudget: false,
+		description: "Google's newest Gemini 3.7 Flash model. Promotional pricing runs through 2026-12-31.",
+	},
+	"gemini-3.6-flash": {
+		maxTokens: 65_536,
+		contextWindow: 1_048_576,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsReasoningEffort: ["minimal", "low", "medium", "high"],
+		reasoningEffort: "medium",
+		inputPrice: 0.75,
+		outputPrice: 3.75,
+		cacheReadsPrice: 0.075,
+		cacheWritesPrice: 1.0,
+		supportsReasoningBudget: false,
+		description: "Gemini 3.6 Flash. Promotional pricing runs through 2026-12-31.",
+	},
+	"gemini-3.5-flash-lite": {
+		maxTokens: 65_536,
+		contextWindow: 1_048_576,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsReasoningEffort: ["minimal", "low", "medium", "high"],
+		reasoningEffort: "medium",
+		inputPrice: 0.3,
+		outputPrice: 2.5,
+		cacheReadsPrice: 0.03,
+		cacheWritesPrice: 1.0,
+		supportsReasoningBudget: false,
+		description: "Gemini 3.5 Flash-Lite, the cheapest model in the stable Gemini 3 line.",
+	},
 	"gemini-3.5-flash": {
 		maxTokens: 65_536,
 		contextWindow: 1_048_576,
@@ -77,7 +125,10 @@ export const geminiModels = {
 			},
 		],
 	},
+	// Shut down by Google; kept so existing profiles still resolve, flagged so
+	// the model picker hides it and warns anyone still selecting it.
 	"gemini-3-pro-preview": {
+		deprecated: true,
 		maxTokens: 65_536,
 		contextWindow: 1_048_576,
 		supportsImages: true,
@@ -242,7 +293,10 @@ export const geminiModels = {
 		maxThinkingTokens: 24_576,
 		supportsReasoningBudget: true,
 	},
+	// Shut down by Google; kept so existing profiles still resolve, flagged so
+	// the model picker hides it and warns anyone still selecting it.
 	"gemini-2.5-flash-preview-09-2025": {
+		deprecated: true,
 		maxTokens: 65_536,
 		contextWindow: 1_048_576,
 		supportsImages: true,
@@ -283,7 +337,10 @@ export const geminiModels = {
 		supportsReasoningBudget: true,
 		maxThinkingTokens: 24_576,
 	},
+	// Shut down by Google; kept so existing profiles still resolve, flagged so
+	// the model picker hides it and warns anyone still selecting it.
 	"gemini-2.5-flash-lite-preview-09-2025": {
+		deprecated: true,
 		maxTokens: 65_536,
 		contextWindow: 1_048_576,
 		supportsImages: true,

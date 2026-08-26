@@ -176,8 +176,6 @@ describe("ProfileValidator", () => {
 			"mistral",
 			"deepseek",
 			"xai",
-			"sambanova",
-			"fireworks",
 		]
 
 		apiModelProviders.forEach((provider) => {
