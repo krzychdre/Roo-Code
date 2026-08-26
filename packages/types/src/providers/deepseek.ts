@@ -8,6 +8,10 @@ export type DeepSeekModelId = keyof typeof deepSeekModels
 
 export const deepSeekDefaultModelId: DeepSeekModelId = "deepseek-v4-flash"
 
+// DeepSeek prices vary by time of day: standard (peak) rates apply 01:00-04:00
+// and 06:00-10:00 UTC on weekdays, and off-peak rates are exactly half. The
+// figures below are the standard (peak) rates so cost estimates never come in
+// under what the user is actually charged.
 export const deepSeekModels = {
 	"deepseek-v4-flash": {
 		maxTokens: 384_000,
@@ -17,10 +21,10 @@ export const deepSeekModels = {
 		supportsReasoningEffort: ["disable", "low", "medium", "high", "xhigh"],
 		preserveReasoning: true,
 		reasoningEffort: "high",
-		inputPrice: 0.14, // $0.14 per million tokens (cache miss) - Updated Apr 29, 2026
-		outputPrice: 0.28, // $0.28 per million tokens - Updated Apr 29, 2026
-		cacheWritesPrice: 0.14, // $0.14 per million tokens (cache miss) - Updated Apr 29, 2026
-		cacheReadsPrice: 0.0028, // $0.0028 per million tokens (cache hit) - Updated Apr 29, 2026
+		inputPrice: 0.44, // $0.44 per million tokens (cache miss, standard rate) - Updated Aug 26, 2026
+		outputPrice: 1.32, // $1.32 per million tokens (standard rate) - Updated Aug 26, 2026
+		cacheWritesPrice: 0.44, // $0.44 per million tokens (cache miss, standard rate) - Updated Aug 26, 2026
+		cacheReadsPrice: 0.014, // $0.014 per million tokens (cache hit, standard rate) - Updated Aug 26, 2026
 		description: `DeepSeek-V4-Flash is DeepSeek's fast, cost-efficient V4 model. It supports thinking and non-thinking modes, JSON output, tool calls, chat prefix completion (beta), and FIM completion (beta) in non-thinking mode.`,
 	},
 	"deepseek-v4-pro": {
@@ -31,37 +35,25 @@ export const deepSeekModels = {
 		supportsReasoningEffort: ["disable", "low", "medium", "high", "xhigh"],
 		preserveReasoning: true,
 		reasoningEffort: "high",
-		// TODO(deepseek): Re-check V4 Pro discounted prices after DeepSeek's 2026-05-31 discount end date.
-		inputPrice: 0.435, // $0.435 per million tokens (cache miss, discounted) - Updated Apr 29, 2026
-		outputPrice: 0.87, // $0.87 per million tokens (discounted) - Updated Apr 29, 2026
-		cacheWritesPrice: 0.435, // $0.435 per million tokens (cache miss, discounted) - Updated Apr 29, 2026
-		cacheReadsPrice: 0.003625, // $0.003625 per million tokens (cache hit, discounted) - Updated Apr 29, 2026
+		inputPrice: 1.32, // $1.32 per million tokens (cache miss, standard rate) - Updated Aug 26, 2026
+		outputPrice: 3.96, // $3.96 per million tokens (standard rate) - Updated Aug 26, 2026
+		cacheWritesPrice: 1.32, // $1.32 per million tokens (cache miss, standard rate) - Updated Aug 26, 2026
+		cacheReadsPrice: 0.044, // $0.044 per million tokens (cache hit, standard rate) - Updated Aug 26, 2026
 		description: `DeepSeek-V4-Pro is DeepSeek's strongest V4 model for reasoning, coding, long-context, and agentic workloads. It supports thinking and non-thinking modes, JSON output, tool calls, chat prefix completion (beta), and FIM completion (beta) in non-thinking mode.`,
 	},
-	// TODO(deepseek): Remove this compatibility alias after DeepSeek's 2026-07-24 retirement date.
-	"deepseek-chat": {
-		maxTokens: 8192, // 8K max output
-		contextWindow: 128_000,
-		supportsImages: false,
+	"deepseek-v4-flash-vision-exp": {
+		maxTokens: 384_000,
+		contextWindow: 1_000_000,
+		supportsImages: true,
 		supportsPromptCache: true,
-		inputPrice: 0.28, // $0.28 per million tokens (cache miss) - Updated Dec 9, 2025
-		outputPrice: 0.42, // $0.42 per million tokens - Updated Dec 9, 2025
-		cacheWritesPrice: 0.28, // $0.28 per million tokens (cache miss) - Updated Dec 9, 2025
-		cacheReadsPrice: 0.028, // $0.028 per million tokens (cache hit) - Updated Dec 9, 2025
-		description: `Legacy compatibility alias for the non-thinking mode of deepseek-v4-flash. DeepSeek plans to deprecate this model name on 2026-07-24.`,
-	},
-	// TODO(deepseek): Remove this compatibility alias after DeepSeek's 2026-07-24 retirement date.
-	"deepseek-reasoner": {
-		maxTokens: 8192, // 8K max output
-		contextWindow: 128_000,
-		supportsImages: false,
-		supportsPromptCache: true,
+		supportsReasoningEffort: ["disable", "low", "medium", "high", "xhigh"],
 		preserveReasoning: true,
-		inputPrice: 0.28, // $0.28 per million tokens (cache miss) - Updated Dec 9, 2025
-		outputPrice: 0.42, // $0.42 per million tokens - Updated Dec 9, 2025
-		cacheWritesPrice: 0.28, // $0.28 per million tokens (cache miss) - Updated Dec 9, 2025
-		cacheReadsPrice: 0.028, // $0.028 per million tokens (cache hit) - Updated Dec 9, 2025
-		description: `Legacy compatibility alias for the thinking mode of deepseek-v4-flash. DeepSeek plans to deprecate this model name on 2026-07-24.`,
+		reasoningEffort: "high",
+		inputPrice: 0.44, // $0.44 per million tokens (cache miss, standard rate) - Updated Aug 26, 2026
+		outputPrice: 1.32, // $1.32 per million tokens (standard rate) - Updated Aug 26, 2026
+		cacheWritesPrice: 0.44, // $0.44 per million tokens (cache miss, standard rate) - Updated Aug 26, 2026
+		cacheReadsPrice: 0.014, // $0.014 per million tokens (cache hit, standard rate) - Updated Aug 26, 2026
+		description: `DeepSeek-V4-Flash-Vision-Exp is the experimental vision variant of V4-Flash, priced identically but able to read images. FIM completion is not available on this model.`,
 	},
 } as const satisfies Record<string, ModelInfo>
 

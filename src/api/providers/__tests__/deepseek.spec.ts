@@ -135,7 +135,7 @@ describe("DeepSeekHandler", () => {
 	beforeEach(() => {
 		mockOptions = {
 			deepSeekApiKey: "test-api-key",
-			apiModelId: "deepseek-chat",
+			apiModelId: "deepseek-v4-flash",
 			deepSeekBaseUrl: "https://api.deepseek.com",
 		}
 		handler = new DeepSeekHandler(mockOptions)
@@ -212,8 +212,8 @@ describe("DeepSeekHandler", () => {
 			const model = handler.getModel()
 			expect(model.id).toBe(mockOptions.apiModelId)
 			expect(model.info).toBeDefined()
-			expect(model.info.maxTokens).toBe(8192) // deepseek-chat has 8K max
-			expect(model.info.contextWindow).toBe(128_000)
+			expect(model.info.maxTokens).toBe(384_000)
+			expect(model.info.contextWindow).toBe(1_000_000)
 			expect(model.info.supportsImages).toBe(false)
 			expect(model.info.supportsPromptCache).toBe(true) // Should be true now
 		})
@@ -246,39 +246,40 @@ describe("DeepSeekHandler", () => {
 			expect((model.info as ModelInfo).reasoningEffort).toBe("high")
 		})
 
-		it("should return correct model info for deepseek-reasoner", () => {
-			const handlerWithReasoner = new DeepSeekHandler({
+		it("should return correct model info for deepseek-v4-pro", () => {
+			const handlerWithPro = new DeepSeekHandler({
 				...mockOptions,
-				apiModelId: "deepseek-reasoner",
+				apiModelId: "deepseek-v4-pro",
 			})
-			const model = handlerWithReasoner.getModel()
-			expect(model.id).toBe("deepseek-reasoner")
+			const model = handlerWithPro.getModel()
+			expect(model.id).toBe("deepseek-v4-pro")
 			expect(model.info).toBeDefined()
-			expect(model.info.maxTokens).toBe(8192) // deepseek-reasoner has 8K max
-			expect(model.info.contextWindow).toBe(128_000)
+			expect(model.info.maxTokens).toBe(384_000)
+			expect(model.info.contextWindow).toBe(1_000_000)
 			expect(model.info.supportsImages).toBe(false)
 			expect(model.info.supportsPromptCache).toBe(true)
 		})
 
-		it("should have preserveReasoning enabled for deepseek-reasoner to support interleaved thinking", () => {
+		it("should return correct model info for the experimental vision model", () => {
+			const handlerWithVision = new DeepSeekHandler({
+				...mockOptions,
+				apiModelId: "deepseek-v4-flash-vision-exp",
+			})
+			const model = handlerWithVision.getModel()
+			expect(model.id).toBe("deepseek-v4-flash-vision-exp")
+			// The vision variant is the only DeepSeek model that reads images.
+			expect(model.info.supportsImages).toBe(true)
+			expect(model.info.contextWindow).toBe(1_000_000)
+		})
+
+		it("should have preserveReasoning enabled on the V4 models to support interleaved thinking", () => {
 			// This is critical for DeepSeek's interleaved thinking mode with tool calls.
 			// See: https://api-docs.deepseek.com/guides/thinking_mode
 			// The reasoning_content needs to be passed back during tool call continuation
 			// within the same turn for the model to continue reasoning properly.
-			const handlerWithReasoner = new DeepSeekHandler({
-				...mockOptions,
-				apiModelId: "deepseek-reasoner",
-			})
-			const model = handlerWithReasoner.getModel()
-			// Cast to ModelInfo to access preserveReasoning which is an optional property
-			expect((model.info as ModelInfo).preserveReasoning).toBe(true)
-		})
-
-		it("should NOT have preserveReasoning enabled for deepseek-chat", () => {
-			// deepseek-chat doesn't use thinking mode, so no need to preserve reasoning
 			const model = handler.getModel()
 			// Cast to ModelInfo to access preserveReasoning which is an optional property
-			expect((model.info as ModelInfo).preserveReasoning).toBeUndefined()
+			expect((model.info as ModelInfo).preserveReasoning).toBe(true)
 		})
 
 		it("should return provided model ID with default model info if model does not exist", () => {
@@ -526,10 +527,10 @@ describe("DeepSeekHandler", () => {
 			},
 		]
 
-		it("should handle reasoning_content in streaming responses for deepseek-reasoner", async () => {
+		it("should handle reasoning_content in streaming responses for thinking models", async () => {
 			const reasonerHandler = new DeepSeekHandler({
 				...mockOptions,
-				apiModelId: "deepseek-reasoner",
+				apiModelId: "deepseek-v4-pro",
 			})
 
 			const stream = reasonerHandler.createMessage(systemPrompt, messages)
@@ -545,10 +546,10 @@ describe("DeepSeekHandler", () => {
 			expect(reasoningChunks[1].text).toBe(" I'll analyze step by step.")
 		})
 
-		it("should pass thinking parameter for deepseek-reasoner model", async () => {
+		it("should pass thinking parameter for deepseek-v4-pro model", async () => {
 			const reasonerHandler = new DeepSeekHandler({
 				...mockOptions,
-				apiModelId: "deepseek-reasoner",
+				apiModelId: "deepseek-v4-pro",
 			})
 
 			const stream = reasonerHandler.createMessage(systemPrompt, messages)
@@ -566,10 +567,11 @@ describe("DeepSeekHandler", () => {
 			)
 		})
 
-		it("should NOT pass thinking parameter for deepseek-chat model", async () => {
+		it("should send thinking disabled and omit reasoning_effort when reasoning is turned off", async () => {
 			const chatHandler = new DeepSeekHandler({
 				...mockOptions,
-				apiModelId: "deepseek-chat",
+				apiModelId: "deepseek-v4-flash",
+				enableReasoningEffort: false,
 			})
 
 			const stream = chatHandler.createMessage(systemPrompt, messages)
@@ -577,9 +579,11 @@ describe("DeepSeekHandler", () => {
 				// Consume the stream
 			}
 
-			// Verify that the thinking parameter was NOT passed to the API
+			// V4 models always carry an explicit thinking field; turning reasoning off
+			// flips it to "disabled" rather than dropping it, and drops the effort.
 			const callArgs = mockCreate.mock.calls[0][0]
-			expect(callArgs.thinking).toBeUndefined()
+			expect(callArgs.thinking).toEqual({ type: "disabled" })
+			expect(callArgs.reasoning_effort).toBeUndefined()
 		})
 
 		it("should enable thinking by default for deepseek-v4-flash", async () => {
@@ -677,7 +681,7 @@ describe("DeepSeekHandler", () => {
 		it("should handle tool calls with reasoning_content", async () => {
 			const reasonerHandler = new DeepSeekHandler({
 				...mockOptions,
-				apiModelId: "deepseek-reasoner",
+				apiModelId: "deepseek-v4-pro",
 			})
 
 			const tools: any[] = [
@@ -759,7 +763,7 @@ describe("DeepSeekHandler", () => {
 
 			const chatHandler = new DeepSeekHandler({
 				...mockOptions,
-				apiModelId: "deepseek-chat",
+				apiModelId: "deepseek-v4-flash",
 			})
 
 			const tools: any[] = [
@@ -825,7 +829,7 @@ describe("DeepSeekHandler", () => {
 
 			const chatHandler = new DeepSeekHandler({
 				...mockOptions,
-				apiModelId: "deepseek-chat",
+				apiModelId: "deepseek-v4-flash",
 			})
 
 			const tools: any[] = [
