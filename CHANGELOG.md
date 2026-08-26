@@ -1,5 +1,60 @@
 # Tumble Code Changelog
 
+## 1.0.0
+
+### Major Changes
+
+- **Tumble Code is a new tool.** This is the first release of Tumble Code, the community fork of Roo Code, rebranded and repositioned around local inference engines (Ollama, LM Studio, llama.cpp, and other locally-hosted LLMs) so you can run AI coding assistance entirely on your own hardware without paying per token. The original Roo Code team moved on to their new product; Tumble Code picks up maintenance from here. User-visible identity (extension display name, marketplace publisher, URLs, output channel) now reads "Tumble Code", while internal command and view IDs (`roo-cline.*`) are preserved so your existing keybindings keep working. Configuration property keys moved from `roo-cline.*` to `tumble-code.*`; the first launch after installing Tumble Code offers to migrate your settings from the legacy Roo Code extension.
+
+### Minor Changes
+
+- **Vision mode.** A new built-in mode that gives text-only models the ability to look at images. Any other mode can hand an image to Vision mid-task and get back a text description it can keep working with, so your daily text-only model gains eyes without you switching model entirely.
+- **Reviewer mode upgraded to a full code-review mechanism.** The reviewer no longer just checks the diff. It reviews your change against the task's intent, flags re-implemented logic and silent contradictions, proposes better solutions instead of only complaints, reads the surroundings of changed code, consults architectural decisions recorded in the memory system, and ends with a clear verdict (APPROVE, APPROVE WITH COMMENTS, or REQUEST CHANGES).
+- **Self-hosted cloud backend.** Replaces the old Roo-owned cloud with a backend you run yourself (a Dockerized Python API with Authentik authentication). You can share tasks and control the extension remotely from your own infrastructure, with no dependency on a vendor-operated cloud.
+- **Cloud web dashboard.** A web interface for your self-hosted backend: browse the task list, read per-task summaries with cost and token breakdowns, watch usage metrics (tokens, cost, duration, broken down by model and mode), and hover a prompt to preview its content.
+- **Agent interchange with Claude Code.** Tumble Code and Claude Code running on the same machine can now hand tasks to each other and read each other's task analyses, plans, and session history. Work started in one agent can be continued in the other without re-explaining from scratch, and a shared memory directory keeps long-lived facts in one place.
+- **Background model for compaction and memory.** Configure a dedicated, cheaper model for context compaction and memory writes, with automatic fallback to the main task model if the background model is offline or errors mid-call.
+- **Turn economics overhaul.** Substantial work to cut token waste on weaker and self-hosted models: fixes a compaction oscillation that re-billed the full context every other turn, reduces one-tool-per-turn behaviour, and stops re-reading the same files repeatedly. Long runs on local models are now faster and cheaper.
+- **Auto-approve: semi and fully autonomous modes.** The auto-approve control now supports semi-autonomous and fully autonomous operation, and the trigger box reflects the active mode through its icon, orange border, and label.
+- **Per-mode MCP allowlist.** Control which MCP tools each mode is allowed to use, configured per mode.
+- **Ask mode eager web search.** Ask mode proactively runs web searches to ground its answers.
+- **Architect plan approval gate.** Architect mode now produces a plan you approve before any work proceeds.
+- **Parallel subagents with worktrees.** Subagents can run in parallel in separate git worktrees and are persisted and rehydrated across sessions.
+- **Context usage bar.** Context usage is shown as a bar instead of a circle, clearer at a glance.
+- **Terminal shell override.** Choose which VS Code integrated-terminal shell profile Tumble Code uses to run commands.
+- **Microcompaction (non-destructive).** A lighter context-compaction layer that trims context without destroying information, so long tasks stay coherent longer.
+- **Custom notification sounds.** Replaced the old text-to-speech feature with custom notification sounds, localized across all supported languages.
+- **GitHub-style alerts in markdown.** The chat now renders GitHub-style alert callouts (NOTE, TIP, WARNING, and others).
+- **Multiline quoted command parsing.** Shell commands split across multiple quoted lines are now parsed correctly.
+- **Ripgrep diagnostic command.** A built-in diagnostic command to inspect ripgrep behaviour when search acts up.
+- **Assign one model to several modes at once.** A single API profile can now be assigned to multiple modes in one action.
+- **New and updated models.** Added Claude Opus 4.7 and 4.8 (across Anthropic, Bedrock, and Vertex), Fable 5, GLM-5.1 and GLM-5.2, DeepSeek V4, Gemini 3.5 Flash, GPT-5.5 and GPT-5.6, and Fireworks glm-5.1, kimi-k2.6, and deepseek-v4-pro. GLM-4.7 became the default for the Z.AI lines. LiteLLM reasoning streaming is now supported. GLM models engage retained thinking when reasoning effort is set to medium or higher, and their max output tokens are configurable. Deprecated OpenAI models were removed from the catalog.
+
+### Patch Changes
+
+- **Diff view stability.** A series of fixes for the diff view: it no longer crashes when a reset races with a streaming update, silent save failures and stranded saves are resolved, and stale dirty tabs left open after a save are closed.
+- **Terminal cancellation.** Running terminal processes are now terminated when a task is cancelled, with a retry for processes that need multiple Ctrl+C signals to stop.
+- **Checkpoint cursor.** The checkpoint cursor no longer resets on every streamed message tick.
+- **Settings import.** Settings and the marketplace stay reachable after importing a settings file that contains some invalid keys; the valid keys are still applied.
+- **Vertex AI.** Added European and US multi-region endpoints, and a warning when a file path is pasted into the Google Cloud Credentials field.
+- **Gemini.** Custom model IDs are now honored instead of falling back to defaults, and MCP tool schemas are sanitized before being sent.
+- **Grok diffs.** Truncated Grok diffs with missing markers are repaired automatically.
+- **Ripgrep.** The ripgrep binary is located correctly in the new universal package layout.
+- **Markdown.** Text wrapped in a single tilde is no longer struck through.
+- **Temperature.** The temperature parameter is omitted for models that do not support it.
+- **PowerShell.** PowerShell is correctly reported on Windows when no shell profile is configured.
+- **LM Studio.** Models load on first open even before the base URL has been saved.
+- **Code indexing.** Indexing retries on connection failures and reports a clear error when the vector dimensions do not match the configured model.
+- **Large transcripts.** The chat no longer crashes on out-of-memory with very large transcripts.
+- **Shared tasks.** Sharing a task always backfills the full task content, and time a task spent closed is no longer counted as time it ran.
+- **Approval button.** The approval button no longer flashes during auto-execution.
+- **Celebration sound.** The celebration sound no longer replays when you reopen a completed task from history.
+- **Welcome screen.** Tall welcome-screen content now scrolls instead of being clipped.
+- **Shift+Enter.** Shift+Enter keeps inserting newlines in newline mode.
+- **Translations.** Missing translations were filled in across 17 locales.
+
+> The entries below are preserved from the preceding Roo Code lineage for historical reference. Tumble Code is a community fork of [Roo Code](https://github.com/RooCodeInc/Roo-Code) and picks up maintenance where the original team left off.
+
 ## 3.53.1
 
 ### Patch Changes
@@ -11,16 +66,6 @@
 - sound effect treated as a fresh completion. The sound now only plays when
 - the `completion_result` is genuinely new — i.e. the active task did not
 - just switch and the last-message timestamp advanced within the same task.
-
-> This changelog continues the history of [Roo Code](https://github.com/RooCodeInc/Roo-Code).
-> All entries below v3.53.0 describe Roo Code releases authored by the upstream team.
-> Tumble Code is a community fork that picks up maintenance from v3.53.0 onward.
-
-## Unreleased
-
-### Major Changes
-
-- **Renamed to Tumble Code (community fork).** The original Roo Code team moved on to focus on their new product, Roomote; Tumble Code is the community fork that picks up the codebase from there. Going forward we're putting the accent on **local inference engines** (Ollama, LM Studio, llama.cpp, and other locally-hosted LLMs) so users can run AI coding assistance entirely on their own hardware without paying per-token. User-visible identity (extension displayName, marketplace publisher, URLs, output channel) now reads "Tumble Code"; internal command and view IDs (`roo-cline.*`) are preserved so existing keybindings keep working. Config property keys move from `roo-cline.*` to `tumble-code.*`; the first launch after installing Tumble Code will offer to migrate settings from the legacy Roo Code extension.
 
 ## 3.53.0
 
