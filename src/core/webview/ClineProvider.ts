@@ -194,6 +194,14 @@ export class ClineProvider
 	/** Unsubscribe for the shared store's change notifications. */
 	private taskHistoryStoreUnsubscribe?: () => void
 	/**
+	 * Last persistent storage failure, formatted as "<context>: <message>".
+	 * Empty string means storage is healthy. Sent to the webview as part of
+	 * the state so the StorageErrorBanner can surface failures (disk full,
+	 * quota, permissions, Remote SSH server storage) that would otherwise
+	 * only show up as a transient toast or a log line.
+	 */
+	private storageErrorMessage = ""
+	/**
 	 * IDs of task-history mutations this provider initiated (via
 	 * `updateTaskHistory` / `deleteTaskFromState` /
 	 * `delegateParentAndOpenChild`'s `atomicReadAndUpdate`). Used to
@@ -252,6 +260,16 @@ export class ClineProvider
 			this.subscribeToTaskHistoryStore(handle.store)
 			return handle.store
 		})
+		// Surface a rejected acquire as a persistent, user-visible storage
+		// error instead of leaving only a log entry. The message is
+		// deduplicated by reportStorageError, so the
+		// initializeTaskHistoryStore().catch below reporting the same
+		// rejection does not push state twice.
+		this.taskHistoryStoreReady.catch((error) => {
+			if (!this._disposed) {
+				this.reportStorageError("TaskHistoryStore", error)
+			}
+		})
 
 		// React to cache changes from the shared store. The store fires one
 		// event per change with `external` (filesystem/other-process origin),
@@ -282,6 +300,7 @@ export class ClineProvider
 		this.initializeTaskHistoryStore().catch((error) => {
 			if (!this._disposed) {
 				this.log(`Failed to initialize TaskHistoryStore: ${error}`)
+				this.reportStorageError("TaskHistoryStore", error)
 			}
 		})
 
@@ -470,6 +489,77 @@ export class ClineProvider
 			// legacy array was empty — nothing to migrate).
 			await this.contextProxy.clearLegacyTaskHistoryKeys()
 		}
+	}
+
+	/**
+	 * Records a persistent storage failure and makes it visible: it is
+	 * logged to the Output channel and pushed to the webview as part of the
+	 * state, where the StorageErrorBanner renders it until
+	 * {@link clearStorageError} runs.
+	 *
+	 * Reporting the same message twice is a no-op (the constructor wires two
+	 * catch sites onto the same acquire rejection), so the webview is not
+	 * spammed with identical state pushes.
+	 */
+	private reportStorageError(context: string, error: unknown): void {
+		const message = error instanceof Error ? error.message : String(error)
+		const storageErrorMessage = `${context}: ${message}`
+		this.log(`[storage error] ${storageErrorMessage}`)
+
+		if (this.storageErrorMessage === storageErrorMessage) {
+			return
+		}
+
+		this.storageErrorMessage = storageErrorMessage
+		this.postStorageErrorState()
+	}
+
+	/**
+	 * Clears the persistent storage error marker. Posts state only when an
+	 * error was actually set, so healthy paths do not trigger pushes.
+	 */
+	private clearStorageError(): void {
+		if (!this.storageErrorMessage) {
+			return
+		}
+
+		this.storageErrorMessage = ""
+		this.postStorageErrorState()
+	}
+
+	/**
+	 * Pushes the storage error flag to the webview. The full state build
+	 * awaits the TaskHistoryStore, which is often the very component that
+	 * failed here, so the full push can reject until the store recovers. In
+	 * that case fall back to a minimal partial state push (the webview
+	 * merges partial state) so the banner still appears.
+	 */
+	private postStorageErrorState(): void {
+		this.postStateToWebviewWithoutClineMessages().catch((postError) => {
+			this.log(
+				`[storage error] Failed to post full state: ${postError instanceof Error ? postError.message : String(postError)}`,
+			)
+			this.postMessageToWebview({
+				type: "state",
+				// Partial state on purpose: the webview merges it into its
+				// current state instead of replacing it.
+				state: { storageErrorMessage: this.storageErrorMessage } as ExtensionState,
+			}).catch((pushError) => {
+				this.log(
+					`[storage error] Failed to post partial state: ${pushError instanceof Error ? pushError.message : String(pushError)}`,
+				)
+			})
+		})
+	}
+
+	/**
+	 * Reveals the extension's Output channel. Used by the webview's
+	 * StorageErrorBanner so the user can inspect the log entries behind a
+	 * reported storage failure (crucial in Remote SSH windows where storage
+	 * lives on the server).
+	 */
+	public showOutputChannel(): void {
+		this.outputChannel.show(true)
 	}
 
 	private subscribeToTaskHistoryStore(taskHistoryStore: TaskHistoryStore): void {
@@ -1779,13 +1869,19 @@ export class ClineProvider
 			}
 
 			await this.postStateToWebview()
+			// A successful profile save proves storage is writable again, so
+			// drop a previously reported storage error (the banner then
+			// disappears on this state push).
+			this.clearStorageError()
 			return id
 		} catch (error) {
 			this.log(
 				`Error create new api configuration: ${JSON.stringify(error, Object.getOwnPropertyNames(error), 2)}`,
 			)
 
-			vscode.window.showErrorMessage(t("common:errors.create_api_config"))
+			const message = error instanceof Error ? error.message : String(error)
+			this.reportStorageError("ProviderProfile", error)
+			vscode.window.showErrorMessage(t("common:errors.create_api_config") + ": " + message)
 			return undefined
 		}
 	}
@@ -2533,6 +2629,10 @@ export class ClineProvider
 
 		return {
 			version: this.context.extension?.packageJSON?.version ?? "",
+			// Empty string means "no storage error" (postMessage drops
+			// undefined keys, so only an explicit value can clear the
+			// webview's banner).
+			storageErrorMessage: this.storageErrorMessage,
 			apiConfiguration,
 			customInstructions,
 			alwaysAllowReadOnly: alwaysAllowReadOnly ?? false,

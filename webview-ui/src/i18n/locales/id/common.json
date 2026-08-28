@@ -110,5 +110,9 @@
 	"costs": {
 		"own": "Sendiri",
 		"subtasks": "Subtugas"
+	},
+	"storageError": {
+		"banner": "Kesalahan penyimpanan",
+		"showLogs": "Tampilkan log"
 	}
 }

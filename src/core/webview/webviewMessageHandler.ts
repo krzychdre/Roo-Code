@@ -874,10 +874,11 @@ export const webviewMessageHandler = async (
 			break
 		case "showTaskWithId":
 			provider.showTaskWithId(message.text!).catch((error) => {
-				provider.log(
-					`[showTaskWithId] Failed to show task ${message.text}: ${error instanceof Error ? error.message : String(error)}`,
-				)
-				vscode.window.showErrorMessage(t("common:errors.task_show_failed"))
+				const errorMessage = error instanceof Error ? error.message : String(error)
+				provider.log(`[showTaskWithId] Failed to show task ${message.text}: ${errorMessage}`)
+				// Append the cause: "Task not found" and an I/O failure need
+				// very different reactions from the user.
+				vscode.window.showErrorMessage(t("common:errors.task_show_failed") + ": " + errorMessage)
 			})
 			break
 		case "condenseTaskContextRequest":
@@ -1252,6 +1253,14 @@ export const webviewMessageHandler = async (
 				openFile(mcpSettingsFilePath)
 			}
 
+			break
+		}
+		case "openExtensionLogs": {
+			// Used by the webview's StorageErrorBanner: the user needs the
+			// Output channel entries behind a reported storage failure
+			// (Remote SSH storage lives on the server, so the toast alone
+			// is rarely enough to diagnose it).
+			provider.showOutputChannel()
 			break
 		}
 		case "openProjectMcpSettings": {
@@ -1743,7 +1752,8 @@ export const webviewMessageHandler = async (
 					provider.log(
 						`Error save api configuration: ${JSON.stringify(error, Object.getOwnPropertyNames(error), 2)}`,
 					)
-					vscode.window.showErrorMessage(t("common:errors.save_api_config"))
+					const errorMessage = error instanceof Error ? error.message : String(error)
+					vscode.window.showErrorMessage(t("common:errors.save_api_config") + ": " + errorMessage)
 				}
 			}
 			break
@@ -1778,7 +1788,8 @@ export const webviewMessageHandler = async (
 						`Error rename api configuration: ${JSON.stringify(error, Object.getOwnPropertyNames(error), 2)}`,
 					)
 
-					vscode.window.showErrorMessage(t("common:errors.rename_api_config"))
+					const errorMessage = error instanceof Error ? error.message : String(error)
+					vscode.window.showErrorMessage(t("common:errors.rename_api_config") + ": " + errorMessage)
 				}
 			}
 			break
@@ -1790,7 +1801,8 @@ export const webviewMessageHandler = async (
 					provider.log(
 						`Error load api configuration: ${JSON.stringify(error, Object.getOwnPropertyNames(error), 2)}`,
 					)
-					vscode.window.showErrorMessage(t("common:errors.load_api_config"))
+					const errorMessage = error instanceof Error ? error.message : String(error)
+					vscode.window.showErrorMessage(t("common:errors.load_api_config") + ": " + errorMessage)
 				}
 			}
 			break
@@ -1802,7 +1814,8 @@ export const webviewMessageHandler = async (
 					provider.log(
 						`Error load api configuration by ID: ${JSON.stringify(error, Object.getOwnPropertyNames(error), 2)}`,
 					)
-					vscode.window.showErrorMessage(t("common:errors.load_api_config"))
+					const errorMessage = error instanceof Error ? error.message : String(error)
+					vscode.window.showErrorMessage(t("common:errors.load_api_config") + ": " + errorMessage)
 				}
 			}
 			break

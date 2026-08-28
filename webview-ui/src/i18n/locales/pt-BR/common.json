@@ -110,5 +110,9 @@
 	"costs": {
 		"own": "Próprio",
 		"subtasks": "Subtarefas"
+	},
+	"storageError": {
+		"banner": "Erro de armazenamento",
+		"showLogs": "Mostrar logs"
 	}
 }

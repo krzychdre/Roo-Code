@@ -110,5 +110,9 @@
 	"costs": {
 		"own": "Proprio",
 		"subtasks": "Sottoattività"
+	},
+	"storageError": {
+		"banner": "Errore di archiviazione",
+		"showLogs": "Mostra log"
 	}
 }

@@ -110,5 +110,9 @@
 	"costs": {
 		"own": "Własne",
 		"subtasks": "Podzadania"
+	},
+	"storageError": {
+		"banner": "Błąd magazynu",
+		"showLogs": "Pokaż logi"
 	}
 }

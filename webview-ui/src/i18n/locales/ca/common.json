@@ -110,5 +110,9 @@
 	"costs": {
 		"own": "Propi",
 		"subtasks": "Subtasques"
+	},
+	"storageError": {
+		"banner": "Error d'emmagatzematge",
+		"showLogs": "Mostra els registres"
 	}
 }

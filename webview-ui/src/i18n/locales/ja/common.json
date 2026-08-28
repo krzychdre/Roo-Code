@@ -110,5 +110,9 @@
 	"costs": {
 		"own": "自身",
 		"subtasks": "サブタスク"
+	},
+	"storageError": {
+		"banner": "ストレージエラー",
+		"showLogs": "ログを表示"
 	}
 }

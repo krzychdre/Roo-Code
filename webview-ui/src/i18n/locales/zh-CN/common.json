@@ -110,5 +110,9 @@
 	"costs": {
 		"own": "自身",
 		"subtasks": "子任务"
+	},
+	"storageError": {
+		"banner": "存储错误",
+		"showLogs": "查看日志"
 	}
 }

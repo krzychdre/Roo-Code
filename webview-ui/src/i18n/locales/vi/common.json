@@ -110,5 +110,9 @@
 	"costs": {
 		"own": "Riêng",
 		"subtasks": "Nhiệm vụ con"
+	},
+	"storageError": {
+		"banner": "Lỗi lưu trữ",
+		"showLogs": "Hiện nhật ký"
 	}
 }

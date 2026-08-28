@@ -66,6 +66,7 @@ import {
 } from "@src/components/ui"
 
 import { Tab, TabContent, TabHeader, TabList, TabTrigger } from "../common/Tab"
+import StorageErrorBanner from "../common/StorageErrorBanner"
 import { SetCachedStateField, SetExperimentEnabled } from "./types"
 import { SectionHeader } from "./SectionHeader"
 import ApiConfigManager from "./ApiConfigManager"
@@ -720,6 +721,8 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 					</StandardTooltip>
 				</div>
 			</TabHeader>
+
+			<StorageErrorBanner />
 
 			{/* Vertical tabs layout */}
 			<div ref={containerRef} className={cn(settingsTabsContainer, isCompactMode && "narrow")}>

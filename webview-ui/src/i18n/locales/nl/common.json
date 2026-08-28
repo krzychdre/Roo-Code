@@ -110,5 +110,9 @@
 	"costs": {
 		"own": "Eigen",
 		"subtasks": "Subtaken"
+	},
+	"storageError": {
+		"banner": "Opslagfout",
+		"showLogs": "Logboek tonen"
 	}
 }

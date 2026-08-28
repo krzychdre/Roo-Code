@@ -1982,11 +1982,16 @@ describe("ClineProvider", () => {
 				apiConfiguration: { apiProvider: "anthropic", apiKey: "test-key" },
 			})
 
-			// Verify error was logged and user was notified
+			// Verify error was logged and user was notified (the toast carries
+			// the underlying cause after the generic message)
 			expect(mockOutputChannel.appendLine).toHaveBeenCalledWith(
 				expect.stringContaining("Error create new api configuration"),
 			)
-			expect(vscode.window.showErrorMessage).toHaveBeenCalledWith("errors.create_api_config")
+			expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+				expect.stringContaining(
+					"errors.create_api_config: this.providerSettingsManager.saveConfig is not a function",
+				),
+			)
 		})
 
 		test("handles successful upsertApiConfiguration", async () => {
@@ -2060,11 +2065,14 @@ describe("ClineProvider", () => {
 				apiConfiguration: testApiConfig,
 			})
 
-			// Verify error handling
+			// Verify error handling (the toast carries the underlying cause
+			// after the generic message)
 			expect(mockOutputChannel.appendLine).toHaveBeenCalledWith(
 				expect.stringContaining("Error create new api configuration"),
 			)
-			expect(vscode.window.showErrorMessage).toHaveBeenCalledWith("errors.create_api_config")
+			expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+				expect.stringContaining("errors.create_api_config: task.updateApiConfiguration is not a function"),
+			)
 
 			// Verify state was still updated
 			expect(mockContext.globalState.update).toHaveBeenCalledWith("listApiConfigMeta", [
