@@ -184,7 +184,23 @@ export class ClineProvider
 
 	private recentTasksCache?: string[]
 	private readonly taskHistoryOrigin = Symbol("ClineProvider.taskHistoryOrigin")
-	private readonly taskHistoryStoreReady: Promise<TaskHistoryStore>
+	/**
+	 * In-flight (or settled-successful) {@link TaskHistoryStore} acquire.
+	 * Unlike the old `taskHistoryStoreReady` promise, a FAILED acquire clears
+	 * this field so the next caller retries the acquire instead of rethrowing
+	 * the same rejection forever (one transient I/O error at window start
+	 * used to kill all task handling until reload).
+	 */
+	private taskHistoryStorePromise: Promise<TaskHistoryStore> | null = null
+	/**
+	 * Timestamp of the last failed acquire. A retry cooldown of
+	 * {@link ClineProvider.TASK_HISTORY_STORE_RETRY_COOLDOWN_MS} keeps a
+	 * permanently broken storage path (disk full, read-only FS) from being
+	 * hammered on every state push.
+	 */
+	private taskHistoryStoreLastFailureTs = 0
+	/** The error remembered from the last failed acquire; rethrown during the cooldown window. */
+	private taskHistoryStoreLastError?: unknown
 	/**
 	 * Ref-counted handle that owns the shared {@link TaskHistoryStore} for
 	 * this storage path. Disposed in {@link dispose} so the final consumer
@@ -211,6 +227,13 @@ export class ClineProvider
 	 */
 	private pendingOperations: Map<string, PendingEditOperation> = new Map()
 	private static readonly PENDING_OPERATION_TIMEOUT_MS = 30000 // 30 seconds
+
+	/**
+	 * Minimum time between TaskHistoryStore acquire retries after a failure.
+	 * Constant on purpose (not configurable): it only guards against a
+	 * hammering loop on a permanently broken FS, it is not a tuning knob.
+	 */
+	private static readonly TASK_HISTORY_STORE_RETRY_COOLDOWN_MS = 5000
 
 	private cloudOrganizationsCache: CloudOrganizationMembership[] | null = null
 	private cloudOrganizationsCacheTimestamp: number | null = null
@@ -250,25 +273,14 @@ export class ClineProvider
 		// contexts get distinct stores. Path aliases that canonicalize to the
 		// same path (trailing separator, `.`/`..` segments, mixed separators)
 		// collapse to one store.
-		const pendingHistoryStore = TaskHistoryStore.acquire(this.contextProxy.globalStorageUri.fsPath)
-		this.taskHistoryStoreReady = pendingHistoryStore.then((handle) => {
-			if (this._disposed) {
-				handle.dispose()
-				throw new Error("ClineProvider was disposed before TaskHistoryStore became ready")
-			}
-			this.taskHistoryStoreHandle = handle
-			this.subscribeToTaskHistoryStore(handle.store)
-			return handle.store
-		})
-		// Surface a rejected acquire as a persistent, user-visible storage
-		// error instead of leaving only a log entry. The message is
-		// deduplicated by reportStorageError, so the
-		// initializeTaskHistoryStore().catch below reporting the same
-		// rejection does not push state twice.
-		this.taskHistoryStoreReady.catch((error) => {
-			if (!this._disposed) {
-				this.reportStorageError("TaskHistoryStore", error)
-			}
+		//
+		// Eager init stays, but a failure is no longer permanent:
+		// acquireTaskHistoryStore clears the remembered promise on failure so
+		// the next getTaskHistoryStore() retries, and it reports the failure
+		// as a persistent storage error (see reportStorageError).
+		void this.acquireTaskHistoryStore().catch(() => {
+			// Already reported by acquireTaskHistoryStore; the eager init
+			// must not surface as an unhandled rejection.
 		})
 
 		// React to cache changes from the shared store. The store fires one
@@ -297,12 +309,9 @@ export class ClineProvider
 		// suppress the echo for our own writes (the store has no notion of
 		// "which provider caused this" — every local mutation is
 		// `external:false`).
-		this.initializeTaskHistoryStore().catch((error) => {
-			if (!this._disposed) {
-				this.log(`Failed to initialize TaskHistoryStore: ${error}`)
-				this.reportStorageError("TaskHistoryStore", error)
-			}
-		})
+		//
+		// The legacy-history migration now runs inside acquireTaskHistoryStore
+		// (once per successful acquire), which also owns its error reporting.
 
 		// Start configuration loading (which might trigger indexing) in the background.
 		// Don't await, allowing activation to continue immediately.
@@ -455,6 +464,81 @@ export class ClineProvider
 	}
 
 	/**
+	 * Acquires the shared, ref-counted {@link TaskHistoryStore} for this
+	 * storage path, retrying after failures.
+	 *
+	 * Semantics:
+	 * - Parallel callers share one acquire (no hammering of the store
+	 *   registry).
+	 * - A failed acquire is remembered for
+	 *   {@link ClineProvider.TASK_HISTORY_STORE_RETRY_COOLDOWN_MS}; within
+	 *   that window callers get the remembered error back without a new
+	 *   acquire, after it the acquire is retried.
+	 * - On a successful acquire the legacy-history migration runs once
+	 *   (idempotent, so re-running after a reacquire is safe) and a
+	 *   previously reported storage error is cleared.
+	 * - Failures are reported as a persistent storage error (see
+	 *   {@link reportStorageError}) and rethrown; task operations must fail
+	 *   loudly, the degradation to empty history happens only in
+	 *   {@link getStateToPostToWebview}.
+	 */
+	private async acquireTaskHistoryStore(): Promise<TaskHistoryStore> {
+		// Parallel calls share one acquire attempt; it stays cached until it
+		// settles (a failure clears it below, so the next call retries).
+		if (this.taskHistoryStorePromise) {
+			return this.taskHistoryStorePromise
+		}
+
+		// Cooldown: with a permanently broken storage path every acquire is
+		// doomed, so rethrow the remembered error without touching the FS
+		// again until the window has elapsed.
+		if (Date.now() - this.taskHistoryStoreLastFailureTs < ClineProvider.TASK_HISTORY_STORE_RETRY_COOLDOWN_MS) {
+			throw this.taskHistoryStoreLastError
+		}
+
+		const acquirePromise = TaskHistoryStore.acquire(this.contextProxy.globalStorageUri.fsPath)
+			.then(async (handle) => {
+				if (this._disposed) {
+					handle.dispose()
+					throw new Error("ClineProvider was disposed before TaskHistoryStore became ready")
+				}
+				this.taskHistoryStoreHandle = handle
+				this.subscribeToTaskHistoryStore(handle.store)
+
+				// Legacy migration runs once per successful acquire. A failed
+				// migration does NOT fail the acquire: the store itself is
+				// usable and the legacy keys are retained for the next retry
+				// (the error is reported like any other storage failure).
+				try {
+					await this.initializeTaskHistoryStore(handle.store)
+					this.clearStorageError()
+				} catch (error) {
+					this.log(`Failed to initialize TaskHistoryStore: ${error}`)
+					if (!this._disposed) {
+						this.reportStorageError("TaskHistoryStore", error)
+					}
+				}
+
+				if (this._disposed) {
+					throw new Error("ClineProvider is disposed")
+				}
+				return handle.store
+			})
+			.catch((error) => {
+				this.taskHistoryStorePromise = null
+				this.taskHistoryStoreLastFailureTs = Date.now()
+				this.taskHistoryStoreLastError = error
+				if (!this._disposed) {
+					this.reportStorageError("TaskHistoryStore", error)
+				}
+				throw error
+			})
+
+		this.taskHistoryStorePromise = acquirePromise
+		return acquirePromise
+	}
+
+	/**
 	 * Initialize the shared TaskHistoryStore and, if present, migrate the
 	 * legacy `taskHistory` globalState array into per-task files before
 	 * clearing the legacy key.
@@ -469,8 +553,11 @@ export class ClineProvider
 	 * - The legacy keys are cleared only after migration reports success; on
 	 *   failure they are left intact so the next start can retry.
 	 */
-	private async initializeTaskHistoryStore(): Promise<void> {
-		const taskHistoryStore = await this.getTaskHistoryStore()
+	private async initializeTaskHistoryStore(taskHistoryStore?: TaskHistoryStore): Promise<void> {
+		// The store parameter is how acquireTaskHistoryStore runs the
+		// migration on its fresh handle; awaiting getTaskHistoryStore() from
+		// inside the acquire chain would deadlock on its own promise.
+		const store = taskHistoryStore ?? (await this.getTaskHistoryStore())
 
 		// One-time backfill from the legacy globalState array. Skipped
 		// entirely (no read, no writes) once cleanup has run.
@@ -478,7 +565,7 @@ export class ClineProvider
 			const legacy = this.contextProxy.getLegacyTaskHistory<HistoryItem>() ?? []
 			if (legacy.length > 0) {
 				this.log(`[initializeTaskHistoryStore] Migrating ${legacy.length} legacy entries`)
-				const ok = await taskHistoryStore.migrateFromLegacyHistory(legacy)
+				const ok = await store.migrateFromLegacyHistory(legacy)
 				if (!ok) {
 					this.log("[initializeTaskHistoryStore] Migration incomplete — legacy keys retained for retry")
 					return
@@ -601,7 +688,7 @@ export class ClineProvider
 		if (this._disposed) {
 			throw new Error("ClineProvider is disposed")
 		}
-		const taskHistoryStore = await this.taskHistoryStoreReady
+		const taskHistoryStore = await this.acquireTaskHistoryStore()
 		if (this._disposed) {
 			throw new Error("ClineProvider is disposed")
 		}
@@ -978,6 +1065,10 @@ export class ClineProvider
 		// detach so closing one panel never breaks the others.
 		this.taskHistoryStoreHandle?.dispose()
 		this.taskHistoryStoreHandle = undefined
+		// Hygiene: an acquire still in flight is already caught by the
+		// _disposed guard inside acquireTaskHistoryStore, but a settled
+		// promise must not survive dispose either.
+		this.taskHistoryStorePromise = null
 		this.log("Disposed all disposables")
 		ClineProvider.activeInstances.delete(this)
 
@@ -2480,7 +2571,20 @@ export class ClineProvider
 		// Ensure the store is initialized before reading task history. Even
 		// when `includeTaskHistory` is false we still await readiness so the
 		// cache is populated for `currentTaskItem` lookups below.
-		const taskHistoryStore = await this.getTaskHistoryStore()
+		//
+		// When the store is down, degrade instead of throwing: the state is
+		// built with an EMPTY history so settings, profiles and chat keep
+		// working when only the history store is unavailable. The failure was
+		// already reported as a persistent storage error by
+		// acquireTaskHistoryStore (surfaced below via `storageErrorMessage`).
+		let taskHistoryStore: TaskHistoryStore | undefined
+		try {
+			taskHistoryStore = await this.getTaskHistoryStore()
+		} catch (error) {
+			this.log(
+				`[state] TaskHistoryStore unavailable, sending empty history: ${error instanceof Error ? error.message : String(error)}`,
+			)
+		}
 
 		const {
 			apiConfiguration,
@@ -2661,7 +2765,7 @@ export class ClineProvider
 			pruneToolResultBudget: resolvePruneToolResultBudget({ pruneToolResultBudget }),
 			uriScheme: vscode.env.uriScheme,
 			currentTaskId: currentTask?.taskId,
-			currentTaskItem: currentTask?.taskId ? taskHistoryStore.get(currentTask.taskId) : undefined,
+			currentTaskItem: currentTask?.taskId ? taskHistoryStore?.get(currentTask.taskId) : undefined,
 			clineMessages: currentTask?.clineMessages || [],
 			subagents: this.subagentRegistry.list(),
 			memoryActivity: { ...this.memoryActivityCounts },
@@ -2675,9 +2779,10 @@ export class ClineProvider
 			// `getAll()`. The webview keeps its history list in sync via the
 			// targeted `taskHistoryItemUpdated` / `taskHistoryItemDeleted`
 			// messages and the full `taskHistoryUpdated` broadcast.
-			taskHistory: includeTaskHistory
-				? taskHistoryStore.getAll().filter((item: HistoryItem) => item.ts && item.task)
-				: [],
+			taskHistory:
+				includeTaskHistory && taskHistoryStore
+					? taskHistoryStore.getAll().filter((item: HistoryItem) => item.ts && item.task)
+					: [],
 			soundEnabled: soundEnabled ?? false,
 			// Send `null` (not `undefined`) so the webview merge actually clears
 			// the slot after a reset — postMessage drops undefined keys.
