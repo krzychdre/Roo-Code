@@ -110,5 +110,9 @@
 	"costs": {
 		"own": "자체",
 		"subtasks": "하위작업"
+	},
+	"storageError": {
+		"banner": "스토리지 오류",
+		"showLogs": "로그 보기"
 	}
 }

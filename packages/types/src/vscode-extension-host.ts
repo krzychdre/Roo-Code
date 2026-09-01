@@ -394,6 +394,16 @@ export type ExtensionState = Pick<
 	settingsImportedAt?: number
 	historyPreviewCollapsed?: boolean
 
+	/**
+	 * Last persistent storage failure reported by the extension host (task
+	 * history store, provider profile persistence), formatted as
+	 * "<context>: <message>". The empty string means "no error": the
+	 * postMessage channel drops undefined values, so an explicit empty
+	 * string is the only way a state push can clear the flag in the
+	 * webview merge.
+	 */
+	storageErrorMessage?: string
+
 	cloudUserInfo: CloudUserInfo | null
 	cloudIsAuthenticated: boolean
 	cloudAuthSkipModel?: boolean // Flag indicating auth completed without model selection (user should pick 3rd-party provider)
@@ -510,6 +520,7 @@ export interface WebviewMessage {
 		| "playSound"
 		| "openKeyboardShortcuts"
 		| "openMcpSettings"
+		| "openExtensionLogs"
 		| "openProjectMcpSettings"
 		| "restartMcpServer"
 		| "refreshAllMcpServers"

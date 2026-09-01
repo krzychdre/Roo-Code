@@ -110,5 +110,9 @@
 	"costs": {
 		"own": "Kendi",
 		"subtasks": "Alt görevler"
+	},
+	"storageError": {
+		"banner": "Depolama hatası",
+		"showLogs": "Günlükleri göster"
 	}
 }

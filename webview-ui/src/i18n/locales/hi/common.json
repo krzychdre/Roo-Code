@@ -110,5 +110,9 @@
 	"costs": {
 		"own": "स्वयं",
 		"subtasks": "उपकार्य"
+	},
+	"storageError": {
+		"banner": "स्टोरेज त्रुटि",
+		"showLogs": "लॉग दिखाएँ"
 	}
 }
