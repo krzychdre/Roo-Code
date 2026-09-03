@@ -9,7 +9,7 @@ vi.mock("../../../../utils/shell", () => ({
 	getShell: vi.fn(() => "/bin/bash"),
 }))
 
-import { getSystemInfoSection } from "../system-info"
+import { getSystemInfoSection, resetOsInfoCacheForTests } from "../system-info"
 import osName from "os-name"
 
 const mockOsName = osName as unknown as ReturnType<typeof vi.fn>
@@ -19,6 +19,9 @@ describe("getSystemInfoSection", () => {
 	const mockHomeDir = "/home/user"
 
 	beforeEach(() => {
+		// The OS name is memoized per process; each test wants its own os-name
+		// behavior observed.
+		resetOsInfoCacheForTests()
 		vi.spyOn(os, "homedir").mockReturnValue(mockHomeDir)
 		vi.spyOn(os, "platform").mockReturnValue("linux" as any)
 		vi.spyOn(os, "release").mockReturnValue("5.15.0")
@@ -62,5 +65,15 @@ describe("getSystemInfoSection", () => {
 		const result = getSystemInfoSection(mockCwd)
 
 		expect(result).toContain("Operating System: win32 10.0.19043")
+	})
+
+	it("resolves the OS name once per process, not on every prompt build", () => {
+		mockOsName.mockReturnValue("Windows Server 2025")
+
+		getSystemInfoSection(mockCwd)
+		const second = getSystemInfoSection(mockCwd)
+
+		expect(mockOsName).toHaveBeenCalledTimes(1)
+		expect(second).toContain("Operating System: Windows Server 2025")
 	})
 })

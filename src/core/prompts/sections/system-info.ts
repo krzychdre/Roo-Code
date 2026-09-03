@@ -3,17 +3,36 @@ import osName from "os-name"
 
 import { getShell } from "../../../utils/shell"
 
-export function getSystemInfoSection(cwd: string): string {
-	// Try to get detailed OS name, fall back to basic info if it fails
-	let osInfo: string
-	try {
-		osInfo = osName()
-	} catch (error) {
-		// Fallback when os-name fails (e.g., PowerShell not available on Windows)
-		const platform = os.platform()
-		const release = os.release()
-		osInfo = `${platform} ${release}`
+// `osName()` is not a pure lookup on Windows: `windows-release` shells out
+// synchronously (`wmic os get Caption`, and `powershell Get-CimInstance` on
+// builds where wmic is gone) to tell desktop and Server editions apart. That
+// blocks the extension host for seconds per call, and the answer cannot change
+// while the process runs, so it is resolved once instead of on every system
+// prompt build.
+let cachedOsInfo: string | undefined
+
+function resolveOsInfo(): string {
+	if (cachedOsInfo === undefined) {
+		// Try to get detailed OS name, fall back to basic info if it fails
+		try {
+			cachedOsInfo = osName()
+		} catch (error) {
+			// Fallback when os-name fails (e.g., PowerShell not available on Windows)
+			const platform = os.platform()
+			const release = os.release()
+			cachedOsInfo = `${platform} ${release}`
+		}
 	}
+	return cachedOsInfo
+}
+
+/** Drop the memoized OS name. For tests only. */
+export function resetOsInfoCacheForTests(): void {
+	cachedOsInfo = undefined
+}
+
+export function getSystemInfoSection(cwd: string): string {
+	const osInfo = resolveOsInfo()
 
 	let details = `====
 
