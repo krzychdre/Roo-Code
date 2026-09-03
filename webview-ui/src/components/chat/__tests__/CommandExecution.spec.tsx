@@ -5,10 +5,20 @@ import { render, screen, fireEvent, act } from "@testing-library/react"
 
 import { CommandExecution } from "../CommandExecution"
 import { ExtensionStateContext } from "../../../context/ExtensionStateContext"
+import { TooltipProvider } from "../../ui/tooltip"
 
 // Mock dependencies
 vi.mock("react-use", () => ({
 	useEvent: vi.fn(),
+}))
+
+// The component labels its buttons and tooltips through i18next's bare `t`.
+// i18next is not initialised under vitest and would return undefined, so
+// resolve every key to itself and assert on the keys. With real (truthy)
+// tooltip content StandardTooltip renders a Radix Tooltip, which needs a
+// TooltipProvider in the tree: every render below goes through one.
+vi.mock("i18next", () => ({
+	t: (key: string) => key,
 }))
 
 import { useEvent } from "react-use"
@@ -43,7 +53,6 @@ vi.mock("../CommandPatternSelector", () => ({
 
 // Mock ExtensionStateContext
 const mockExtensionState = {
-	terminalShellIntegrationDisabled: false,
 	allowedCommands: ["npm"],
 	deniedCommands: ["rm"],
 	setAllowedCommands: vi.fn(),
@@ -51,7 +60,9 @@ const mockExtensionState = {
 }
 
 const ExtensionStateWrapper = ({ children }: { children: React.ReactNode }) => (
-	<ExtensionStateContext.Provider value={mockExtensionState as any}>{children}</ExtensionStateContext.Provider>
+	<ExtensionStateContext.Provider value={mockExtensionState as any}>
+		<TooltipProvider>{children}</TooltipProvider>
+	</ExtensionStateContext.Provider>
 )
 
 describe("CommandExecution", () => {
@@ -72,7 +83,11 @@ describe("CommandExecution", () => {
 	it("should render command with output", () => {
 		render(
 			<ExtensionStateWrapper>
-				<CommandExecution executionId="test-1" text="npm install\nOutput:\nInstalling packages..." />
+				<CommandExecution
+					executionId="test-1"
+					text="npm install\nOutput:\nInstalling packages..."
+					isExpanded={true}
+				/>
 			</ExtensionStateWrapper>,
 		)
 
@@ -232,7 +247,7 @@ Suggested patterns: npm, npm install, npm run`
 
 		render(
 			<ExtensionStateWrapper>
-				<CommandExecution executionId="test-1" text={commandText} />
+				<CommandExecution executionId="test-1" text={commandText} isExpanded={true} />
 			</ExtensionStateWrapper>,
 		)
 
@@ -285,28 +300,78 @@ Suggested patterns: npm, npm install, npm run`
 		expect(screen.queryByTestId("command-pattern-selector")).not.toBeInTheDocument()
 	})
 
-	it("should expand output when terminal shell integration is disabled", () => {
-		const disabledState = {
-			...mockExtensionState,
-			terminalShellIntegrationDisabled: true,
-		}
-
+	describe("output collapsing", () => {
+		// Command output can run to thousands of lines, so the row must behave
+		// like every other collapsible chat row: collapsed until the user opens
+		// it, with the expand state owned by the parent (ChatView's expandedRows).
 		const commandText = `npm install
 Output:
 Output here`
 
-		render(
-			<ExtensionStateContext.Provider value={disabledState as any}>
-				<CommandExecution executionId="test-1" text={commandText} />
-			</ExtensionStateContext.Provider>,
-		)
+		it("keeps the output collapsed by default and exposes an expand button", () => {
+			render(
+				<ExtensionStateWrapper>
+					<CommandExecution executionId="test-collapsed" text={commandText} />
+				</ExtensionStateWrapper>,
+			)
 
-		// Output should be visible when shell integration is disabled
-		const codeBlocks = screen.getAllByTestId("code-block")
-		expect(codeBlocks).toHaveLength(1) // Only command block
+			// The command itself is always visible.
+			expect(screen.getByTestId("code-block")).toHaveTextContent("npm install")
 
-		const terminalOutput = screen.getByTestId("terminal-output")
-		expect(terminalOutput).toHaveTextContent("Output here")
+			// The output is not mounted at all while collapsed (no hidden DOM,
+			// no ANSI conversion work for a row nobody opened).
+			expect(screen.queryByTestId("terminal-output")).not.toBeInTheDocument()
+
+			const toggle = screen.getByRole("button", { name: "chat:commandExecution.expandOutput" })
+			expect(toggle).toHaveAttribute("aria-expanded", "false")
+		})
+
+		it("renders the output when the parent marks the row as expanded", () => {
+			render(
+				<ExtensionStateWrapper>
+					<CommandExecution executionId="test-expanded" text={commandText} isExpanded={true} />
+				</ExtensionStateWrapper>,
+			)
+
+			expect(screen.getByTestId("terminal-output")).toHaveTextContent("Output here")
+
+			const toggle = screen.getByRole("button", { name: "chat:commandExecution.collapseOutput" })
+			expect(toggle).toHaveAttribute("aria-expanded", "true")
+		})
+
+		it("delegates the toggle to the parent instead of keeping local state", () => {
+			const onToggleExpand = vi.fn()
+
+			render(
+				<ExtensionStateWrapper>
+					<CommandExecution
+						executionId="test-toggle"
+						text={commandText}
+						isExpanded={false}
+						onToggleExpand={onToggleExpand}
+					/>
+				</ExtensionStateWrapper>,
+			)
+
+			fireEvent.click(screen.getByRole("button", { name: "chat:commandExecution.expandOutput" }))
+
+			expect(onToggleExpand).toHaveBeenCalledTimes(1)
+			// Still collapsed: the parent owns the state and has not flipped it.
+			expect(screen.queryByTestId("terminal-output")).not.toBeInTheDocument()
+		})
+
+		it("does not show the expand button when there is no output", () => {
+			render(
+				<ExtensionStateWrapper>
+					<CommandExecution executionId="test-no-output" text="npm install" />
+				</ExtensionStateWrapper>,
+			)
+
+			expect(screen.queryByRole("button", { name: "chat:commandExecution.expandOutput" })).not.toBeInTheDocument()
+			expect(
+				screen.queryByRole("button", { name: "chat:commandExecution.collapseOutput" }),
+			).not.toBeInTheDocument()
+		})
 	})
 
 	it("should handle undefined allowedCommands and deniedCommands", () => {
@@ -561,7 +626,7 @@ Output:
 
 			render(
 				<ExtensionStateWrapper>
-					<CommandExecution executionId="test-16" text={commandWithNumericOutput} />
+					<CommandExecution executionId="test-16" text={commandWithNumericOutput} isExpanded={true} />
 				</ExtensionStateWrapper>,
 			)
 
@@ -589,7 +654,7 @@ Output:
 
 			render(
 				<ExtensionStateWrapper>
-					<CommandExecution executionId="test-17" text={commandWithZeroTotal} />
+					<CommandExecution executionId="test-17" text={commandWithZeroTotal} isExpanded={true} />
 				</ExtensionStateWrapper>,
 			)
 
