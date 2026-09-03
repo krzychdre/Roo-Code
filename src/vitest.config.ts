@@ -15,10 +15,19 @@ export default defineConfig({
 		testTimeout: 20_000,
 		hookTimeout: 20_000,
 		onConsoleLog,
+		// Windows CI: run test files sequentially (one fork at a time) but KEEP
+		// vitest's default per-file process isolation. The previous singleFork
+		// mode ran all ~500 files in ONE child process with no isolation; state
+		// leaked across files (deleted globals like fetch, stray timers,
+		// unbounded heap growth from undisposed providers/watchers) until the
+		// event loop starved and whole describe blocks timed out at 20s
+		// (Task.spec.ts was the usual victim). Sequential-but-isolated keeps
+		// the original cross-worker-flake fix without the accumulation.
 		poolOptions: isWindowsCI
 			? {
 					forks: {
-						singleFork: true,
+						maxForks: 1,
+						minForks: 1,
 					},
 				}
 			: undefined,

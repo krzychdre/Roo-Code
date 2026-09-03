@@ -24,6 +24,9 @@ vi.mock("../../memory", () => ({
 	drainPendingExtraction: vi.fn().mockResolvedValue(undefined),
 	drainPendingDreams: vi.fn().mockResolvedValue(undefined),
 	renderTranscript: vi.fn().mockReturnValue(""),
+	// The trigger gates on the master switch before doing any work; keep it
+	// open here so the writer spies below actually get called.
+	isAutoMemoryEnabled: vi.fn().mockReturnValue(true),
 }))
 
 vi.mock("../../../i18n", () => ({

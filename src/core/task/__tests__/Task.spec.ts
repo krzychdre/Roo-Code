@@ -170,6 +170,12 @@ vi.mock("../../condense", async (importOriginal) => {
 	}
 })
 // Mock storagePathManager to prevent dynamic import issues.
+// getStorageBasePath is deliberately NOT mocked: the real ClineProvider used
+// as mockProvider acquires a TaskHistoryStore in its constructor, and the
+// missing export makes that init fail fast BEFORE the store starts fs
+// watchers and self-rescheduling reconcile timers. Completing the mock
+// activates that machinery for every constructed provider and hangs the
+// fake-timer condense tests (runAllTimers loops on the reconcile timer).
 vi.mock("../../../utils/storage", () => ({
 	getTaskDirectoryPath: vi
 		.fn()
@@ -193,6 +199,27 @@ const mockMessages = [
 		text: "historical task",
 	},
 ]
+
+// Several describes below use a REAL ClineProvider as their mock provider, so
+// completing/aborting a task fires the real memory background writers
+// (extraction + autoDream). Those are irrelevant here: autoDream's
+// getTaskHistory round-trip hits the incomplete utils/storage mock and logs
+// "[memory] autoDream trigger failed" after every abort-path test. Kill the
+// writers via the env master switch (TaskLifecycle gates on it before doing
+// any work); save/restore because the Windows CI single fork shares
+// process.env across all test files.
+let priorDisableAutoMemory: string | undefined
+beforeAll(() => {
+	priorDisableAutoMemory = process.env.ROO_DISABLE_AUTO_MEMORY
+	process.env.ROO_DISABLE_AUTO_MEMORY = "1"
+})
+afterAll(() => {
+	if (priorDisableAutoMemory === undefined) {
+		delete process.env.ROO_DISABLE_AUTO_MEMORY
+	} else {
+		process.env.ROO_DISABLE_AUTO_MEMORY = priorDisableAutoMemory
+	}
+})
 
 describe("Cline", () => {
 	let mockProvider: any
