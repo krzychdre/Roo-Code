@@ -1,4 +1,4 @@
-import { useCallback, useState, memo, useMemo } from "react"
+import { useCallback, useState, useMemo } from "react"
 import { useEvent } from "react-use"
 import { t } from "i18next"
 import { ChevronDown, OctagonX } from "lucide-react"
@@ -36,22 +36,26 @@ interface CommandExecutionProps {
 	text?: string
 	icon?: JSX.Element | null
 	title?: JSX.Element | null
+	// Expansion is owned by the chat row (ChatView's expandedRows map keyed by
+	// message ts), exactly like the other collapsible rows, so the choice
+	// survives virtualized unmount/remount and defaults to collapsed. Command
+	// output can run to thousands of lines, so it must never open on its own.
+	isExpanded?: boolean
+	onToggleExpand?: () => void
 }
 
-export const CommandExecution = ({ executionId, text, icon, title }: CommandExecutionProps) => {
-	const {
-		terminalShellIntegrationDisabled = false,
-		allowedCommands = [],
-		deniedCommands = [],
-		setAllowedCommands,
-		setDeniedCommands,
-	} = useExtensionState()
+export const CommandExecution = ({
+	executionId,
+	text,
+	icon,
+	title,
+	isExpanded = false,
+	onToggleExpand,
+}: CommandExecutionProps) => {
+	const { allowedCommands = [], deniedCommands = [], setAllowedCommands, setDeniedCommands } = useExtensionState()
 
 	const { command, output: parsedOutput } = useMemo(() => parseCommandAndOutput(text), [text])
 
-	// If we aren't opening the VSCode terminal for this command then we default
-	// to expanding the command execution output.
-	const [isExpanded, setIsExpanded] = useState(terminalShellIntegrationDisabled)
 	const [streamingOutput, setStreamingOutput] = useState("")
 	// Initialize from the module-level cache so that components mounting after
 	// the "started" event was delivered still show the running indicator.
@@ -157,7 +161,8 @@ export const CommandExecution = ({ executionId, text, icon, title }: CommandExec
 							// Not a terminal state -- signals a mid-execution retry
 							// via execa after a shell integration failure. A new
 							// "started" event will follow, so leave the cache intact.
-							setIsExpanded(true)
+							// The output stays collapsed; the user opens it with the
+							// chevron like any other row.
 							break
 						case "output":
 							setStreamingOutput(data.output)
@@ -227,7 +232,16 @@ export const CommandExecution = ({ executionId, text, icon, title }: CommandExec
 							</div>
 						)}
 						{output.length > 0 && (
-							<Button variant="ghost" size="icon" onClick={() => setIsExpanded(!isExpanded)}>
+							<Button
+								variant="ghost"
+								size="icon"
+								aria-label={t(
+									isExpanded
+										? "chat:commandExecution.collapseOutput"
+										: "chat:commandExecution.expandOutput",
+								)}
+								aria-expanded={isExpanded}
+								onClick={onToggleExpand}>
 								<ChevronDown
 									className={cn(
 										"size-4 transition-transform duration-300",
@@ -243,7 +257,11 @@ export const CommandExecution = ({ executionId, text, icon, title }: CommandExec
 			<div className="bg-vscode-editor-background border border-vscode-border rounded-xs ml-6 mt-2">
 				<div className="p-2">
 					<CodeBlock source={command} language="shell" />
-					<OutputContainer isExpanded={isExpanded} output={output} />
+					{isExpanded && output.length > 0 && (
+						<div className="mt-1 pt-1 border-t border-border/25">
+							<TerminalOutput content={output} />
+						</div>
+					)}
 				</div>
 				{command && command.trim() && (
 					<CommandPatternSelector
@@ -260,18 +278,6 @@ export const CommandExecution = ({ executionId, text, icon, title }: CommandExec
 }
 
 CommandExecution.displayName = "CommandExecution"
-
-const OutputContainerInternal = ({ isExpanded, output }: { isExpanded: boolean; output: string }) => (
-	<div
-		className={cn("overflow-hidden", {
-			"max-h-0": !isExpanded,
-			"max-h-[100%] mt-1 pt-1 border-t border-border/25": isExpanded,
-		})}>
-		{output.length > 0 && <TerminalOutput content={output} />}
-	</div>
-)
-
-const OutputContainer = memo(OutputContainerInternal)
 
 const parseCommandAndOutput = (text: string | undefined) => {
 	if (!text) {

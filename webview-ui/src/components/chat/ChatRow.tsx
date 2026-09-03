@@ -1721,6 +1721,8 @@ export const ChatRowContent = ({
 							text={message.text}
 							icon={icon}
 							title={title}
+							isExpanded={isExpanded}
+							onToggleExpand={handleToggleExpand}
 						/>
 					)
 				case "use_mcp_server":
