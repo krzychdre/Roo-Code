@@ -113,4 +113,4 @@ USER'S CUSTOM INSTRUCTIONS
 The following additional instructions are provided by the user, and should be followed to the best of your ability.
 
 Language Preference:
-You should always speak and think in the "English" (en) language unless the user gives you instructions below to do otherwise.
+Write your replies in the language the user writes to you in. If the user's language is unclear (for example the message contains only code, a log or a file path), write in the "English" (en) language. If the user asks you for a specific language, follow that request instead of both rules above.

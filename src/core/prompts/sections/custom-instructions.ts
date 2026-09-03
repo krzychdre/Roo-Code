@@ -461,11 +461,22 @@ export async function addCustomInstructions(
 		}
 	}
 
-	// Add language preference if provided
+	// Add language preference if provided.
+	//
+	// The conversation wins over the configured language. The old wording ("you should ALWAYS
+	// speak and think in <language>") pinned every reply to the settings value, so a user
+	// writing in Polish to an English-configured install kept getting English answers, and the
+	// only escape hatch it offered was custom instructions, not the language of the chat.
+	// The configured language now serves as the fallback for messages that carry no language
+	// signal at all (a bare path, a stack trace, a diff).
+	//
+	// Keep this section unconditional: it is what keeps the USER'S CUSTOM INSTRUCTIONS block
+	// rendering for every task, which the prompt prefix depends on. See the guard test in
+	// `__tests__/prefix-stability.spec.ts`.
 	if (options.language) {
 		const languageName = isLanguage(options.language) ? LANGUAGES[options.language] : options.language
 		sections.push(
-			`Language Preference:\nYou should always speak and think in the "${languageName}" (${options.language}) language unless the user gives you instructions below to do otherwise.`,
+			`Language Preference:\nWrite your replies in the language the user writes to you in. If the user's language is unclear (for example the message contains only code, a log or a file path), write in the "${languageName}" (${options.language}) language. If the user asks you for a specific language, follow that request instead of both rules above.`,
 		)
 	}
 

@@ -86,7 +86,7 @@ __setMockImplementation(
 		// Add language preference if provided
 		if (options?.language) {
 			sections.push(
-				`Language Preference:\nYou should always speak and think in the "${options.language}" language.`,
+				`Language Preference:\nWrite your replies in the language the user writes to you in. If the user's language is unclear, write in the "${options.language}" language.`,
 			)
 		}
 
@@ -316,7 +316,7 @@ describe("SYSTEM_PROMPT", () => {
 		)
 
 		expect(prompt).toContain("Language Preference:")
-		expect(prompt).toContain('You should always speak and think in the "es" language')
+		expect(prompt).toContain('write in the "es" language')
 
 		// Reset mock
 		vscode.env = { language: "en" }
