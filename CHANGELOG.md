@@ -1,5 +1,25 @@
 # Tumble Code Changelog
 
+## 1.1.0
+
+### Minor Changes
+
+- **Provider cleanup.** Seven redundant AI providers were retired: Poe, Unbound, Requesty and Vercel AI Gateway, which were niche brokers overlapping with OpenRouter and LiteLLM, plus Baseten, SambaNova and Fireworks, inference platforms whose models are reachable through OpenRouter anyway. An existing profile pointing at one of them still loads and reports that the provider is no longer supported, instead of failing outright.
+- **New and updated models.** Added Claude Opus 5 and Claude Sonnet 5, with Opus 5 replacing the superseded Sonnet 4.5 as the Anthropic default; Gemini 3.7 Flash, 3.6 Flash and 3.5 Flash-Lite; Grok 4.6, 4.5 and 4.3, with 4.6 as the new xAI default; DeepSeek's experimental vision model; and Mistral Small 4, Medium 3.5, Large 3, Ministral 3 and the Z.ai GLM 5.2 passthrough.
+- **Corrected model pricing.** GPT-5.6 Sol, Terra and Luna were priced well above their published rates, Luna by five times, which overstated every cost estimate on that family; DeepSeek was priced at its off-peak rates, which understated them. Both now follow the published standard rates.
+- **Models retired by their providers.** Mistral's Devstral, Magistral and Pixtral entries are replaced by their actual successors now that Mistral has shut them down, three Gemini models Google has shut down are hidden from the model picker while existing profiles still resolve, and two DeepSeek compatibility aliases past their retirement date were dropped.
+
+### Patch Changes
+
+- The "Running" command row in the chat no longer opens its output automatically. Command output (which can run to thousands of lines for a diff or a test run) now starts collapsed and is opened with the chevron, exactly like the file read and diff rows, and the expanded state is remembered by the chat view instead of being lost when the row scrolls out of view. Collapsed output is not rendered at all, so long outputs no longer cost ANSI conversion work for rows nobody opened.
+- Storage failures are no longer silent. When the task history store or a provider profile save fails (for example a full disk, an exceeded quota or a read-only file system, which is easy to hit in Remote SSH windows where the storage lives on the server), the extension now shows a persistent red banner with the underlying cause above the chat and in the settings view, with a "Show logs" shortcut that opens the extension's Output channel. The banner disappears once storage works again. Error toasts for saving, renaming and loading provider profiles and for opening a task now also include the actual failure reason instead of a generic message.
+- A failed task history store initialization no longer stays broken until the window is reloaded. Previously one transient I/O error at startup (for example a briefly full disk on a Remote SSH server) made every task operation and the whole state refresh fail forever; the extension now retries the store initialization on the next use (with a short cooldown to avoid hammering a permanently broken file system), and while the store is down the UI keeps working with an empty task history instead of throwing, with the failure reason still shown in the storage error banner. Once storage works again the task history recovers without a window reload.
+- The Windows CI unit test job no longer times out. Its vitest pool ran all test files in one process without per-file isolation (singleFork), so leaked globals, stray timers and unbounded heap growth accumulated until whole test files froze at the 20 second limit. Test files now still run one at a time on Windows CI but each in a fresh process. The memory background writers also bail out early when auto memory is disabled, which removes the "autoDream trigger failed" noise from the Task test logs.
+- The system prompt's operating system line is resolved once per session instead of on every request. On Windows the lookup shells out synchronously to `wmic` (or to PowerShell where wmic no longer exists) to tell desktop and Server editions apart, which froze the extension host for seconds before each API call. The Task unit tests that were meant to stub the system prompt now stub the method the API loop actually calls, so they no longer build the real prompt (and no longer hit that shell-out on Windows CI).
+- Added the GLM-5.3, GLM-5-Turbo and GLM-5V-Turbo models to the Z.ai provider on both the international and the China API lines, and made GLM-5.3 the new default model
+- Kept reasoning enabled for GLM-5.3, which rejects requests that ask it to turn thinking off, on both the Z.ai provider and the generic OpenAI-compatible path
+- Corrected stale Z.ai pricing: GLM-5 on the international line, plus GLM-5, GLM-5.1 and GLM-5.2 on the China line
+
 ## 1.0.0
 
 ### Major Changes
