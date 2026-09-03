@@ -137,3 +137,13 @@ instead.
   cross-worker flakes stay quiet, or reintroduce `singleFork` per-shard.
 - The one-process-per-file model is what non-Windows CI and local runs
   always used, so no new behavior class is introduced.
+
+## Historia
+
+- 2026-08-26: analiza i poprawka na gałęzi `fix/task-spec-windows-ci-timeouts` (commit
+  `ea964730f`, 5 commitów za `main`, nigdy nie wypchnięta).
+- 2026-09-03: użytkownik najpierw poprosił o usunięcie zadania Windows z CI (gałąź
+  `ci/drop-windows-unit-test-job`, zostaje lokalnie, niewypchnięta), a po przeczytaniu tej
+  analizy zmienił decyzję: zadanie zostaje, poprawka ma wejść. Commit przeniesiony
+  (cherry-pick) na świeżą gałąź `fix/windows-ci-sequential-isolated-forks` od aktualnego
+  `origin/main`, dodany changeset, gałąź wypchnięta.
